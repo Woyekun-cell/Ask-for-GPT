@@ -1,0 +1,31 @@
+:root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; color: light-dark(#292b2d, #e5e6e8); background: light-dark(#e7e8ea, #292a2d); }
+* { box-sizing: border-box; }
+body { margin: 0; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+.toolbar { min-height: 52px; display: flex; align-items: center; gap: 18px; padding: 9px 16px; flex: 0 0 auto; background: light-dark(#f7f7f8, #202124); border-bottom: 1px solid light-dark(#d3d5d8, #414246); }
+.document-title { font-size: 13px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 40px; flex: 1; }
+.controls { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; flex-wrap: wrap; }
+button, select, input { min-height: 30px; border: 1px solid light-dark(#d5d6d9, #4c4e53); border-radius: 7px; color: inherit; background: light-dark(#fff, #303136); font: inherit; }
+button, select { padding: 5px 9px; }
+button { cursor: pointer; white-space: nowrap; }
+button:hover { background: light-dark(#eeeeef, #3c3e44); }
+button.primary { background: light-dark(#2563eb, #447cf3); color: white; border-color: transparent; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #6194f7; outline-offset: 2px; }
+#page { width: 58px; padding: 4px 5px; text-align: center; font-variant-numeric: tabular-nums; }
+.page-count { opacity: .65; font-variant-numeric: tabular-nums; }
+.divider { height: 18px; width: 1px; background: light-dark(#d3d5d8, #4c4e53); margin: 0 3px; }
+.translation-progress { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; min-height: 30px; padding: 6px 16px; background: light-dark(#f7f7f8, #202124); }
+#progress-label { flex: 0 0 auto; font-size: 11px; line-height: 16px; color: light-dark(#62666d, #b7bbc2); font-variant-numeric: tabular-nums; }
+#progress-bar { appearance: none; border: 0; border-radius: 3px; overflow: hidden; display: block; flex: 1; min-width: 40px; height: 3px; background: light-dark(#dce0e6, #42464e); accent-color: light-dark(#3478f6, #6a9cff); }
+#progress-bar::-webkit-progress-bar { background: light-dark(#dce0e6, #42464e); border-radius: 3px; }
+#progress-bar::-webkit-progress-value { background: light-dark(#3478f6, #6a9cff); border-radius: 3px; }
+#progress-bar:indeterminate { background: linear-gradient(90deg, transparent, light-dark(#3478f6, #6a9cff), transparent); background-size: 200% 100%; animation: preparing 1.6s ease-in-out infinite; }
+#progress-bar:indeterminate::-webkit-progress-bar { background: transparent; }
+@keyframes preparing { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+main { flex: 1; min-height: 0; }
+iframe { width: 100%; height: 100%; border: 0; display: block; }
+#error { margin: 0; padding: 10px 16px; background: light-dark(#fff2e6, #493221); color: light-dark(#853e12, #f3c597); font-size: 13px; flex: 0 0 auto; }
+[hidden] { display: none !important; }
+@media (max-width: 950px) { .toolbar { align-items: flex-start; flex-direction: column; gap: 7px; } .document-title { width: 100%; flex: 0 0 auto; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } #progress-bar:indeterminate { animation: none; background-position: 50% 0; } }
+@media (forced-colors: active) { #progress-bar { appearance: auto; } #progress-bar:indeterminate { animation: none; background: none; } }

@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""Bundle reviewed local engine sources and license; runtime and user files stay private."""
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+
+root = Path(__file__).resolve().parent.parent
+source = root / "Integrations/PDFLayout"
+destination = Path(sys.argv[1])
+names = ("server.py", "worker.py", "layout_common.py", "gpt_batch.py", "page_parallel.py", "batch_permits.py", "alignment.py", "sentence_alignment.py", "phrase_alignment.py", "sentence_service.py", "layout_quality.py", "paragraph_continuity.py", "prepare-assets.py", "install-runtime",
+         "requirements.in", "requirements.lock", "UPSTREAM.json", "LICENSE-BabelDOC-AGPL-3.0.txt")
+for name in names:
+    path = source / name
+    if path.is_symlink() or not path.is_file():
+        raise SystemExit("Missing or unsafe PDF layout resource: " + name)
+destination.parent.mkdir(parents=True, exist_ok=True)
+with tempfile.TemporaryDirectory(prefix=".pdf-layout-package-", dir=destination.parent) as temporary:
+    stage = Path(temporary) / "PDFLayout"
+    stage.mkdir()
+    for name in names:
+        shutil.copyfile(source / name, stage / name)
+    manifest = {"protocolVersion": 1, "engine": "BabelDOC", "engineVersion": "0.6.4",
+                "files": {name: hashlib.sha256((stage / name).read_bytes()).hexdigest() for name in names},
+                "containsCredentials": False, "containsDocuments": False}
+    (stage / "package-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    if destination.exists():
+        if destination.is_symlink() or not (destination / "package-manifest.json").is_file():
+            raise SystemExit("Refusing to replace an unrecognized PDF layout package")
+        shutil.rmtree(destination)
+    stage.rename(destination)
+print(json.dumps({"engineVersion": "0.6.4", "files": len(names), "containsCredentials": False}))

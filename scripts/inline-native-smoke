@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Exercise the real native engine on public fixtures through the paired bridge."""
+from pathlib import Path
+import platform
+import subprocess
+import sys
+import tempfile
+
+root = Path(__file__).resolve().parent.parent
+architecture = "arm64" if platform.machine() == "arm64" else "x86_64"
+debug = root / ".build/sdk26" / f"{architecture}-apple-macosx/debug"
+sdk = Path("/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk")
+core = sorted((root / "Sources/AskGPTCore").glob("*.swift"))
+objects = [debug / "AskGPTCore.build" / f"{p.name}.o" for p in core]
+if not all(p.is_file() for p in objects):
+    raise SystemExit("Run scripts/test first")
+work = root / "work/inline-reading"
+work.mkdir(exist_ok=True)
+with tempfile.TemporaryDirectory(prefix="native-probe-", dir=work) as temporary:
+    binary = Path(temporary) / "inline-native-smoke"
+    subprocess.run(["/usr/bin/swiftc", "-parse-as-library", "-swift-version", "5", "-sdk", str(sdk),
+        "-I", str(debug / "Modules"), str(root / "scripts/inline-native-smoke.swift"),
+        *map(str, objects), "-o", str(binary)], check=True, timeout=90)
+    result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=30)
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    raise SystemExit(result.returncode)

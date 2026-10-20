@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "name": "Ask for GPT Inline",
+  "version": "0.3.24",
+  "description": "Layout-preserving PDF translation in the current Zotero reader tab, using local Ask for GPT.",
+  "author": "Ask for GPT",
+  "applications": {
+    "zotero": {
+      "id": "askgpt-inline@local.askgpt.reader",
+      "update_url": "https://127.0.0.1:43792/v1/inline/zotero-updates.json",
+      "strict_min_version": "9.0",
+      "strict_max_version": "9.*"
+    }
+  }
+}

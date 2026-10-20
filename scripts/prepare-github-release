@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Prepare an allowlisted source snapshot, or verify its published manifest.
+
+No credentials, installation, network requests, or application changes.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import re
+import shutil
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+MANIFEST = Path("docs/release-manifest.json")
+TOP_FILES = ("Package.swift", "README.md", "README.en.md", "NOTICE.md", ".gitignore")
+TREES = ("Sources", "Tests", "Integrations", "Resources", "scripts")
+DOC_FILES = ("docs/HANDBOOK.zh-CN.md", "docs/GALLERY.md")
+DOC_TREES = ("docs/images", "docs/demo-source")
+IGNORED = {".git", ".build", "work", "dist", ".superpowers", "__pycache__", "node_modules", ".venv"}
+FORBIDDEN_SUFFIXES = {".pyc", ".pyo", ".p12", ".pfx", ".pem", ".key", ".keychain-db", ".pdf"}
+SECRET_PATTERNS = (
+    re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    re.compile(rb"\bgh[pousr]_[A-Za-z0-9]{36,}\b"),
+    re.compile(rb"\bgithub_pat_[A-Za-z0-9_]{50,}\b"),
+    re.compile(rb"\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b"),
+)
+
+
+def files_under(root):
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if any(part in IGNORED for part in relative.parts):
+            continue
+        if path.is_symlink():
+            raise ValueError("Symlink excluded: " + str(relative))
+        if path.is_file():
+            yield path, relative
+
+
+def validate(path, relative):
+    if (path.suffix.lower() in FORBIDDEN_SUFFIXES or path.name == "connection.local.json"
+            or path.name == ".DS_Store" or path.name.startswith(".env")):
+        raise ValueError("Private or generated file excluded: " + str(relative))
+    if path.stat().st_size >= 100 * 1024 * 1024:
+        raise ValueError("GitHub file size exceeded: " + str(relative))
+    data = path.read_bytes()
+    if any(pattern.search(data) for pattern in SECRET_PATTERNS):
+        raise ValueError("Credential pattern found in " + str(relative))
+    return {"path": relative.as_posix(), "bytes": len(data),
+            "sha256": hashlib.sha256(data).hexdigest()}
+
+
+def selected():
+    result = {}
+    for name in TOP_FILES + DOC_FILES:
+        path = ROOT / name
+        if not path.is_file() or path.is_symlink():
+            raise ValueError("Missing publication file: " + name)
+        result[name] = path
+    for name in TREES + DOC_TREES:
+        directory = ROOT / name
+        if not directory.exists() and name in DOC_TREES:
+            continue
+        for path, relative in files_under(directory):
+            if path.suffix.lower() in {".pyc", ".pyo"} or path.name == ".DS_Store":
+                continue
+            result[(Path(name) / relative).as_posix()] = path
+    return result
+
+
+def prepare(destination):
+    destination = destination.expanduser().absolute()
+    if destination.exists():
+        raise ValueError("Use a new output directory; refusing to replace " + str(destination))
+    sources = selected()
+    records = [validate(path, Path(relative)) for relative, path in sorted(sources.items())]
+    destination.mkdir(parents=True)
+    for relative, source in sorted(sources.items()):
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    manifest = {"schemaVersion": 1, "project": "Ask for GPT", "snapshotDate": "2026-10-20",
+                "distribution": "source", "files": records,
+                "excluded": ["work", ".build", "runtime credentials", "research documents", "historical internal reports"],
+                "scope": "File integrity and credential-pattern checks; not a clean-machine installation or live-host acceptance test."}
+    (destination / MANIFEST).write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
+    return check(destination)
+
+
+def check(directory):
+    directory = directory.expanduser().resolve()
+    manifest = json.loads((directory / MANIFEST).read_text())
+    expected = {entry["path"]: entry for entry in manifest["files"]}
+    if len(expected) != len(manifest["files"]):
+        raise ValueError("Duplicate manifest path")
+    actual = {}
+    for path, relative in files_under(directory):
+        if relative == MANIFEST:
+            continue
+        actual[relative.as_posix()] = validate(path, relative)
+    if set(actual) != set(expected):
+        raise ValueError("Manifest path mismatch: " + repr(sorted(set(actual) ^ set(expected))))
+    for name, entry in expected.items():
+        if entry != actual[name]:
+            raise ValueError("Hash or size mismatch: " + name)
+    required = {"Resources/Dictionary/words.sqlite", "Resources/Dictionary/LICENSE",
+                "Resources/Dictionary/provenance.json", "Integrations/PDFLayout/LICENSE-BabelDOC-AGPL-3.0.txt",
+                "docs/images/translation.png", "docs/images/settings.png", "docs/images/writing.png",
+                "docs/images/bilingual-reading.jpg", "docs/images/provenance.json"}
+    if not required <= set(actual):
+        raise ValueError("Required release files missing: " + repr(sorted(required - set(actual))))
+    return {"status": "PASS", "files": len(actual) + 1,
+            "bytes": sum(entry["bytes"] for entry in actual.values()) + (directory / MANIFEST).stat().st_size,
+            "manifest": MANIFEST.as_posix(), "credentialsFound": False}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--output", type=Path)
+    group.add_argument("--check", type=Path)
+    args = parser.parse_args()
+    result = prepare(args.output) if args.output else check(args.check)
+    print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ValueError, OSError, KeyError) as error:
+        print("RELEASE_CHECK_FAILED: " + str(error), file=sys.stderr)
+        sys.exit(1)

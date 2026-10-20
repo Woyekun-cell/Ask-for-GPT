@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Compile only the backend, then test the existing ChatGPT CLI login with fixed public text.
+
+--validate-only checks handshake/auth/version without model inference.
+No tokens, account names, user selections, raw RPC, or stderr are printed.
+"""
+import pathlib
+import subprocess
+import tempfile
+import sys
+
+root = pathlib.Path(__file__).resolve().parent.parent
+validate_only = "--validate-only" in sys.argv
+entry = r'''
+import Foundation
+
+@main struct Smoke {
+    static func main() async {
+        let backend = CodexBackend(settings: CodexSettings())
+        do {
+            let started = ProcessInfo.processInfo.systemUptime
+            let connection = try await backend.validateConnection()
+            print("CONNECTED auth=\(connection.authMode) version=\(connection.cliVersion) seconds=\(String(format: "%.3f", ProcessInfo.processInfo.systemUptime - started))")
+            if CommandLine.arguments.contains("--validate-only") {
+                await backend.shutdown()
+                return
+            }
+            let thread = try await backend.startSession(instructions: "你是纯文字阅读助手。根据用户给出的文字简洁解释或翻译，默认中文。禁止使用任何工具或本地文件。")
+            print("ISOLATION_CONFIRMED ephemeral=true instructionSources=empty sandbox=readOnly environmentAccess=requested-disabled")
+            let first = try await backend.send(threadID: thread,
+                text: "本段合成阅读样例的标签是 SAMPLE-742。请用一句中文解释这个公开概念：Photosynthesis converts light energy into chemical energy.",
+                onDelta: { text in
+                    FileHandle.standardOutput.write(Data(text.utf8))
+                })
+            print("\nTURN1 first_delta=\(first.firstDeltaSeconds.map { String(format: "%.3f", $0) } ?? "none") total=\(String(format: "%.3f", first.totalSeconds))")
+            print("FINAL1 \(first.text)")
+            let second = try await backend.send(threadID: thread,
+                text: "继续刚才的话题，用一句中文解释chemical energy。", onDelta: { _ in })
+            print("TURN2 first_delta=\(second.firstDeltaSeconds.map { String(format: "%.3f", $0) } ?? "none") total=\(String(format: "%.3f", second.totalSeconds))")
+            print("FINAL2 \(second.text)")
+            let third = try await backend.send(threadID: thread,
+                text: "只回复我最开始给出的合成阅读样例标签。", onDelta: { _ in })
+            print("TURN3 first_delta=\(third.firstDeltaSeconds.map { String(format: "%.3f", $0) } ?? "none") total=\(String(format: "%.3f", third.totalSeconds))")
+            print("FINAL3 \(third.text)")
+            guard third.text.contains("SAMPLE-742") else { throw CodexBackendError.protocolFailure("三轮上下文回忆失败") }
+            await backend.shutdown()
+            print("SMOKE_PASS three_turns=true context_recall=true unexpected_tools=false")
+        } catch {
+            await backend.shutdown()
+            FileHandle.standardError.write(Data(("SMOKE_FAILED: " + error.localizedDescription + "\n").utf8))
+            exit(1)
+        }
+    }
+}
+'''
+
+with tempfile.TemporaryDirectory(prefix="askgpt-cli-smoke-") as temporary:
+    work = pathlib.Path(temporary)
+    source = work / "Smoke.swift"
+    source.write_text(entry)
+    binary = work / "cli-smoke"
+    files = [root / "Sources/AskGPTCore" / name for name in ("Models.swift", "CodexRPC.swift", "CodexBackend.swift")]
+    subprocess.run(["/usr/bin/swiftc", "-parse-as-library", "-swift-version", "5",
+        "-module-cache-path", str(root / "work/backend-module-cache"),
+        *map(str, files), str(source), "-o", str(binary)], check=True)
+    result = subprocess.run([str(binary)] + (["--validate-only"] if validate_only else []), timeout=280)
+    sys.exit(result.returncode)

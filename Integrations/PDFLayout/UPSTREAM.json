@@ -1,0 +1,23 @@
+{
+  "name": "BabelDOC",
+  "version": "0.6.4",
+  "license": "AGPL-3.0",
+  "source": "https://github.com/funstory-ai/BabelDOC/tree/v0.6.4",
+  "pypi": "https://pypi.org/project/BabelDOC/0.6.4/",
+  "licenseSource": "https://raw.githubusercontent.com/funstory-ai/BabelDOC/v0.6.4/LICENSE",
+  "directInternalAPI": true,
+  "offlineWorker": true,
+  "translationProvider": "Page-batched GPT via the existing ChatGPT-signed-in Codex CLI and dedicated native JSONL helper",
+  "translationRevision": "pdf-layout-gpt-v5-context-paragraph",
+  "compatibilityPins": {
+    "bitstring": "4.3.1"
+  },
+  "compatibilityNotes": [
+    "BabelDOC imports BitStream, removed by bitstring 5.",
+    "Direct BabelDOC internal API is pinned and covered by real-engine PDF regression.",
+    "Dual PDF composition uses visible crop/rotation geometry and vector PDF forms.",
+    "Upstream paragraph SQLite cache is disabled; job retention controls document copies.",
+    "Python PDF workers remain offline; only the text-only isolated Codex helper translates quoted page segments.",
+    "Completed outputs are keyed by document hash, physical pages, language pair and translation revision."
+  ]
+}

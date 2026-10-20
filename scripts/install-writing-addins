@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""Prepare reviewable Mac addin resources. Installation is a separate explicit subcommand."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import runpy
+import shutil
+import stat
+import subprocess
+import tempfile
+import uuid
+import xml.etree.ElementTree as ET
+from xml.parsers import expat
+
+ROOT = Path(__file__).resolve().parent.parent
+PACKAGE_ID = "askgpt-writing"
+WORD_ID = "931f421a-3efa-48bd-906a-dc3182d38f5b"
+PLUGIN_DIRECTORY = PACKAGE_ID + "_0.1.0"
+WPS_HOME = "Library/Containers/com.kingsoft.wpsoffice.mac/Data/.kingsoft/wps/jsaddons"
+WORD_HOME = "Library/Containers/com.microsoft.Word/Data/Documents/wef"
+SOURCES = {"word/" + WORD_ID + ".xml": WORD_HOME + "/" + WORD_ID + ".xml",
+           "wps/jsplugins.xml": WPS_HOME + "/jsplugins.xml", "wps/publish.xml": WPS_HOME + "/publish.xml",
+           **{"wps/" + PLUGIN_DIRECTORY + "/" + name: WPS_HOME + "/" + PLUGIN_DIRECTORY + "/" + name for name in ("main.js", "ribbon.xml")}}
+
+
+def digest_bytes(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def safe_read(path):
+    if path.is_symlink():
+        raise ValueError("Refusing symbolic-link target: " + str(path))
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise ValueError("Expected regular file: " + str(path))
+    return path.read_bytes()
+
+
+def token_end(data, start):
+    quote = None
+    for index in range(start, len(data)):
+        value = data[index]
+        if quote:
+            if value == quote:
+                quote = None
+        elif value in (34, 39):
+            quote = value
+        elif value == 62:
+            return index + 1
+    raise ValueError("Unterminated XML element")
+
+
+def merge_wps(original, entry):
+    """Patch only this plugin's exact elements, preserving every other original byte."""
+    if original is None:
+        original = b'<?xml version="1.0" encoding="UTF-8"?>\n<jsplugins>\n</jsplugins>\n'
+    if b"<!DOCTYPE" in original.upper() or b"<!ENTITY" in original.upper():
+        raise ValueError("WPS config with DTD/entity declarations is unsupported")
+    parsed = ET.fromstring(original)
+    if parsed.tag != "jsplugins":
+        raise ValueError("Expected WPS jsplugins XML root")
+    parser = expat.ParserCreate()
+    stack, owned = [], []
+    closing = None
+
+    def start(name, attrs):
+        begin = parser.CurrentByteIndex
+        end = token_end(original, begin)
+        stack.append((name, begin, end, len(stack) == 1 and name in {"jsplugin", "jspluginonline"} and attrs.get("name") == PACKAGE_ID))
+
+    def end(name):
+        nonlocal closing
+        _, begin, begin_end, is_owned = stack.pop()
+        self_closing = original[begin:begin_end].rstrip().endswith(b"/>")
+        if is_owned:
+            owned.append((begin, begin_end if self_closing else token_end(original, parser.CurrentByteIndex)))
+        if not stack:
+            if self_closing:
+                # Root-only configuration has no lexical closing tag yet.
+                closing = (begin, begin_end)
+            else:
+                closing = (parser.CurrentByteIndex, parser.CurrentByteIndex)
+
+    parser.StartElementHandler, parser.EndElementHandler = start, end
+    parser.Parse(original, True)
+    serialized = ET.tostring(entry, encoding="utf-8")
+    if owned:
+        replacements = [(begin, end, serialized if index == 0 else b"") for index, (begin, end) in enumerate(owned)]
+    elif closing[0] != closing[1]:
+        root_start = original[closing[0]:closing[1]].rstrip()
+        replacements = [(closing[0], closing[1], root_start[:-2] + b">\n  " + serialized + b"\n</jsplugins>")]
+    else:
+        replacements = [(closing[0], closing[1], b"  " + serialized + b"\n")]
+    for begin, end, value in sorted(replacements, reverse=True):
+        original = original[:begin] + value + original[end:]
+    ET.fromstring(original)
+    return original
+
+
+def validate_word(data):
+    root = ET.fromstring(data)
+    identity = root.find("{http://schemas.microsoft.com/office/appforoffice/1.1}Id")
+    if identity is None or identity.text != WORD_ID:
+        raise ValueError("Word target is owned by a different addin ID")
+
+
+def prepare(output, home):
+    output, home = Path(output).expanduser().absolute(), Path(home).expanduser().absolute()
+    if output.exists() or output.is_symlink():
+        raise ValueError("Preparation directory already exists; choose a fresh output")
+    wps_root, word_root = home / WPS_HOME, home / WORD_HOME
+    if wps_root.is_symlink() or word_root.is_symlink() or (wps_root / PLUGIN_DIRECTORY).is_symlink():
+        raise ValueError("Refusing symbolic-link addin directories")
+    old = {source: safe_read(home / target) for source, target in SOURCES.items()}
+    if old["word/" + WORD_ID + ".xml"] is not None:
+        validate_word(old["word/" + WORD_ID + ".xml"])
+    registration = ET.parse(ROOT / "Integrations/Writing/wps/jsplugins.xml").getroot()[0]
+    merged = {name: merge_wps(old["wps/" + name], registration) for name in ("jsplugins.xml", "publish.xml")}
+    output.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".writing-prepare-", dir=output.parent))
+    try:
+        package = runpy.run_path(str(ROOT / "scripts/package-writing-integrations"))
+        package["package_public"](staging / "runtime")
+        (staging / "word").mkdir()
+        shutil.copyfile(staging / "runtime/word/manifest.xml", staging / "word" / (WORD_ID + ".xml"))
+        plugin = staging / "wps" / PLUGIN_DIRECTORY
+        plugin.mkdir(parents=True)
+        for name in ("main.js", "ribbon.xml"):
+            shutil.copyfile(staging / "runtime/wps" / name, plugin / name)
+        for name, data in merged.items():
+            (staging / "wps" / name).write_bytes(data)
+        files = [{"source": source, "target": str(home / target), "sha256": digest_bytes((staging / source).read_bytes()),
+                  "previousSHA256": None if old[source] is None else digest_bytes(old[source])} for source, target in SOURCES.items()]
+        report = {"packageID": PACKAGE_ID, "version": "0.1.0", "home": str(home), "status": "PREPARED_NOT_INSTALLED",
+                  "tlsTrust": "NOT_GRANTED", "hostCompatibility": "NOT_VERIFIED", "files": files}
+        (staging / "prepared.json").write_text(json.dumps(report, indent=2) + "\n")
+        staging.rename(output)
+        return report
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+
+
+def hosts_running():
+    result = subprocess.run(["ps", "-axo", "comm="], text=True, capture_output=True, check=True)
+    return any("Microsoft Word.app/Contents/MacOS/" in line or "wpsoffice.app/Contents/MacOS/" in line or "WPS Office.app/Contents/MacOS/" in line for line in result.stdout.splitlines())
+
+
+def atomic_write(path, data, mode=0o600):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle, temporary = tempfile.mkstemp(prefix=".askgpt-writing-", dir=path.parent)
+    try:
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(data)
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def install(prepared, hosts_closed=False, tls_trusted=False):
+    if not hosts_closed or not tls_trusted:
+        raise ValueError("Install requires --hosts-closed and --tls-trusted after explicit user authorization; this script does not quit apps or trust certificates")
+    if hosts_running():
+        raise ValueError("Word or WPS is running; save and close it yourself before installation")
+    prepared = Path(prepared).expanduser().absolute()
+    report = json.loads((prepared / "prepared.json").read_text())
+    if report.get("packageID") != PACKAGE_ID or report.get("version") != "0.1.0":
+        raise ValueError("Not an owned writing-addin preparation")
+    home = Path(report["home"])
+    expected = {source: str(home / target) for source, target in SOURCES.items()}
+    files = report["files"]
+    if len(files) != len(expected) or {entry["source"]: entry["target"] for entry in files} != expected:
+        raise ValueError("Preparation target list is invalid")
+    originals, contents = {}, {}
+    for entry in files:
+        source, target = prepared / entry["source"], Path(entry["target"])
+        if source.is_symlink() or any(parent.is_symlink() for parent in (target.parent, home / WPS_HOME, home / WORD_HOME)):
+            raise ValueError("Refusing symbolic-link installation paths")
+        original, content = safe_read(target), safe_read(source)
+        if content is None or digest_bytes(content) != entry["sha256"]:
+            raise ValueError("Prepared resource changed; prepare again")
+        if (None if original is None else digest_bytes(original)) != entry["previousSHA256"]:
+            raise ValueError("Host configuration changed since prepare; prepare again")
+        originals[target], contents[target] = original, content
+    validate_word(contents[home / WORD_HOME / (WORD_ID + ".xml")])
+    backup = prepared / "backups" / uuid.uuid4().hex
+    backup.mkdir(parents=True, mode=0o700)
+    changed = []
+    try:
+        for index, (target, content) in enumerate(contents.items()):
+            original = originals[target]
+            if original is not None:
+                atomic_write(backup / str(index) / target.name, original)
+            mode = stat.S_IMODE(target.stat().st_mode) if target.exists() else 0o600
+            atomic_write(target, content, mode)
+            changed.append(target)
+    except BaseException:
+        for target in reversed(changed):
+            if originals[target] is None:
+                target.unlink()
+            else:
+                atomic_write(target, originals[target])
+        raise
+    result = {"packageID": PACKAGE_ID, "status": "FILES_INSTALLED_HOST_NOT_VERIFIED", "backup": str(backup)}
+    (prepared / "installation.json").write_text(json.dumps(result, indent=2) + "\n")
+    return result
+
+
+def main():
+    os.umask(0o077)
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="command")
+    preparation = commands.add_parser("prepare")
+    preparation.add_argument("--output", default=str(ROOT / "work/writing-addins-prepared"))
+    preparation.add_argument("--home", default=str(Path.home()), help="Target Mac user home; preparation only reads host files")
+    installation = commands.add_parser("install")
+    installation.add_argument("--prepared", required=True)
+    installation.add_argument("--hosts-closed", action="store_true")
+    installation.add_argument("--tls-trusted", action="store_true")
+    arguments = parser.parse_args()
+    if arguments.command == "install":
+        result = install(arguments.prepared, arguments.hosts_closed, arguments.tls_trusted)
+    else:
+        result = prepare(getattr(arguments, "output", ROOT / "work/writing-addins-prepared"), getattr(arguments, "home", Path.home()))
+    print(json.dumps(result))
+
+
+if __name__ == "__main__":
+    main()

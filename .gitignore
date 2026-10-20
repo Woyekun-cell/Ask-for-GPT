@@ -1,0 +1,17 @@
+.DS_Store
+.build/
+work/
+dist/
+.superpowers/
+__pycache__/
+*.py[cod]
+node_modules/
+.venv/
+.env
+.env.*
+!.env.example
+connection.local.json
+*.p12
+*.pfx
+*.keychain-db
+*-key.pem

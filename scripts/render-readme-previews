@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Render current native SwiftUI views with synthetic state, without live services.
+
+Requires a current debug AskGPTCore from scripts/test. Does not build the core,
+control an installed app, capture the desktop, or run an end-to-end test.
+"""
+import hashlib
+import json
+import pathlib
+import platform
+import subprocess
+import tempfile
+from datetime import datetime, timezone
+
+root = pathlib.Path(__file__).resolve().parent.parent
+work = root / "work/github-release-preview"
+output = root / "docs/images"
+work.mkdir(parents=True, exist_ok=True)
+output.mkdir(parents=True, exist_ok=True)
+architecture = "arm64" if platform.machine() == "arm64" else "x86_64"
+debug = root / ".build/sdk26" / f"{architecture}-apple-macosx/debug"
+core_sources = sorted((root / "Sources/AskGPTCore").glob("*.swift"))
+objects = [debug / "AskGPTCore.build" / f"{source.name}.o" for source in core_sources]
+if not (debug / "Modules/AskGPTCore.swiftmodule").is_file() or any(
+    not obj.is_file() or source.stat().st_mtime > obj.stat().st_mtime
+    for source, obj in zip(core_sources, objects)
+):
+    raise SystemExit("Current debug AskGPTCore required; run scripts/test first")
+sdk = pathlib.Path("/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk")
+if not sdk.is_dir():
+    sdk = pathlib.Path(subprocess.check_output(
+        ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip())
+sources = [root / "Sources/AskGPT" / name for name in (
+    "ReaderStore.swift", "PanelController.swift", "Views.swift", "GlassStyle.swift",
+    "WordWritingPopoverView.swift")]
+entry = root / "docs/demo-source/READMEPreviews.swift"
+with tempfile.TemporaryDirectory(prefix="render-", dir=work) as temporary:
+    binary = pathlib.Path(temporary) / "readme-previews"
+    subprocess.run(["/usr/bin/swiftc", "-parse-as-library", "-swift-version", "5",
+        "-module-name", "AskGPTREADMEPreviews", "-sdk", str(sdk),
+        "-module-cache-path", str(work / "module-cache"), "-I", str(debug / "Modules"),
+        *map(str, sources), str(entry), *map(str, objects), "-o", str(binary)],
+        check=True, timeout=180)
+    subprocess.run([str(binary), str(output), temporary], check=True, timeout=30)
+digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+report = {
+    "renderedAt": datetime.now(timezone.utc).isoformat(),
+    "renderer": "macOS AppKit NSHostingView.cacheDisplay of current source SwiftUI views",
+    "fixtures": {
+        "translation.png": "AutomaticTranslationView; evidence dictionary card; deterministic injected DemoWordProvider and DemoTranslationDriver; no real engine/model",
+        "settings.png": "SettingsView; in-memory UserDefaults; default public CLI/model settings",
+        "writing.png": "WordWritingPopoverView; synthetic writting to writing correction; inert action closures"
+    },
+    "sideEffects": "No app control, desktop capture, service startup, real translation engine/model call, document mutation, or permission request. ReaderStore/SettingsView read this renderer process's accessibility trust status. App preferences are in-memory overrides.",
+    "validationScope": "Native view demonstration renders only; not end-to-end or installed-app testing.",
+    "sources": {str(path.relative_to(root)): digest(path) for path in sources + [entry] + core_sources},
+    "images": {name: {"sha256": digest(output / name), "bytes": (output / name).stat().st_size}
+        for name in ("translation.png", "settings.png", "writing.png")}
+}
+historical = output / "bilingual-reading.jpg"
+if historical.is_file():
+    report["fixtures"][historical.name] = "Historical synthetic bilingual-reading UI preview, captured 2026-10-16; not a current-source render"
+    report["images"][historical.name] = {"sha256": digest(historical), "bytes": historical.stat().st_size,
+        "capturedDate": "2026-10-16", "source": "work/reading-ui/preview-wide.jpg", "historical": True}
+(output / "provenance.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

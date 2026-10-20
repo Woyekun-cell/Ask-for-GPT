@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Copy the pinned offline word database and its license into the app."""
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import sqlite3
+import sys
+import tempfile
+
+root = Path(__file__).resolve().parent.parent
+source = root / "Resources/Dictionary"
+destination = Path(sys.argv[1])
+names = ("words.sqlite", "LICENSE", "provenance.json")
+for name in names:
+    path = source / name
+    if path.is_symlink() or not path.is_file():
+        raise SystemExit("Missing or unsafe dictionary resource: " + name)
+if any(source.glob("words.sqlite-*")):
+    raise SystemExit("Dictionary must be a standalone, fully committed database")
+database = source / "words.sqlite"
+if database.stat().st_size > 128 * 1024 * 1024:
+    raise SystemExit("Dictionary database exceeds the package size limit")
+with sqlite3.connect(database.as_uri() + "?mode=ro", uri=True) as connection:
+    assert connection.execute("PRAGMA application_id").fetchone()[0] == 0x41574C44
+    assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert connection.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+    count = connection.execute("SELECT count(*) FROM entries").fetchone()[0]
+    assert 100_000 < count < 2_000_000
+    metadata = dict(connection.execute("SELECT key,value FROM metadata"))
+    assert metadata["source_commit"] == "bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b"
+    assert metadata["license"] == "MIT"
+provenance = json.loads((source / "provenance.json").read_text())
+assert isinstance(provenance, dict) and "MIT License" in (source / "LICENSE").read_text()
+destination.parent.mkdir(parents=True, exist_ok=True)
+if destination.is_symlink():
+    raise SystemExit("Dictionary destination must not be a symlink")
+with tempfile.TemporaryDirectory(prefix=".dictionary-package-", dir=destination.parent) as temporary:
+    stage = Path(temporary) / "Dictionary"
+    stage.mkdir()
+    for name in names:
+        shutil.copyfile(source / name, stage / name)
+        (stage / name).chmod(0o444)
+    if destination.exists():
+        if not destination.is_dir() or {p.name for p in destination.iterdir()} != set(names):
+            raise SystemExit("Refusing to replace an unrecognized dictionary package")
+        shutil.rmtree(destination)
+    stage.rename(destination)
+print(json.dumps({"dictionaryEntries": count, "bytes": database.stat().st_size,
+                  "sha256": hashlib.sha256(database.read_bytes()).hexdigest(), "offline": True}))

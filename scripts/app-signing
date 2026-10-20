@@ -1,0 +1,351 @@
+#!/usr/bin/env python3
+"""Local, pinned signing for Ask for GPT. Never changes trust or TCC settings.
+
+prepare creates a persistent identity; it does not make that identity trusted.
+The private key exists outside its dedicated keychain only in a temporary dir.
+An incomplete existing state is an error, never permission to replace the key.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import plistlib
+import re
+import secrets
+import shlex
+import stat
+import subprocess
+import sys
+import tempfile
+
+
+BUNDLE_ID = "local.askgpt.reader"
+IDENTITY_NAME = "Ask for GPT Local Signing"
+FILES = {
+    "metadata": "identity.json",
+    "certificate": "certificate.cer",
+    "password": "keychain.password",
+    "keychain": "signing.keychain-db",
+}
+SECURITY = "/usr/bin/security"
+CODESIGN = "/usr/bin/codesign"
+OPENSSL = "/usr/bin/openssl"
+
+
+class SigningError(Exception):
+    pass
+
+
+def run(arguments, action):
+    """Never include child output or arguments in errors: some contain secrets."""
+    environment = {
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+        "HOME": str(Path.home()),
+        "LANG": "C",
+        "LC_ALL": "C",
+    }
+    try:
+        result = subprocess.run(
+            arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=environment, cwd="/", check=False, timeout=45,
+        )
+    except subprocess.TimeoutExpired:
+        raise SigningError(action + " timed out after 45 seconds") from None
+    except OSError:
+        raise SigningError(action + " could not start") from None
+    if result.returncode:
+        raise SigningError(action + " failed (exit " + str(result.returncode) + ")")
+    return result
+
+
+def checked_path(value):
+    text = str(value)
+    if any(ord(character) < 32 for character in text):
+        raise SigningError("Paths must not contain control characters")
+    path = Path(text).expanduser()
+    if not path.is_absolute():
+        raise SigningError("Use an absolute path")
+    normalized = Path(os.path.abspath(path))
+    if normalized.resolve() != normalized:
+        raise SigningError("Symlink paths are not allowed")
+    return normalized
+
+
+def private_file(path, limit):
+    try:
+        info = path.lstat()
+    except OSError:
+        raise SigningError("Signing state is incomplete") from None
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
+            or info.st_size < 1 or info.st_size > limit):
+        raise SigningError("Signing files must be owned by this user, regular, and mode 0600")
+    return path.read_bytes()
+
+
+def check_root(root):
+    try:
+        info = root.lstat()
+    except OSError:
+        raise SigningError("Signing state has not been prepared") from None
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+        raise SigningError("Signing directory must be owned by this user and mode 0700")
+    entries = {entry.name: entry for entry in root.iterdir()}
+    if not set(FILES.values()).issubset(entries):
+        raise SigningError("Signing state is incomplete or contains unexpected files; not replacing it")
+    # Security.framework may leave an empty file-lock marker beside a keychain.
+    for name in entries.keys() - set(FILES.values()):
+        details = entries[name].lstat()
+        if (not re.fullmatch(r"\.fl[0-9A-Fa-f]{8}", name)
+                or not stat.S_ISREG(details.st_mode) or details.st_uid != os.geteuid()
+                or stat.S_IMODE(details.st_mode) != 0o600
+                or details.st_size != 0 or details.st_nlink != 1):
+            raise SigningError("Unexpected signing-state entry; not replacing it")
+
+
+def fingerprint(data):
+    return hashlib.sha1(data).hexdigest().upper(), hashlib.sha256(data).hexdigest()
+
+
+def load_state(root):
+    check_root(root)
+    try:
+        metadata = json.loads(private_file(root / FILES["metadata"], 16384))
+    except (ValueError, UnicodeError):
+        raise SigningError("Invalid signing metadata") from None
+    fixed = {
+        "schema_version": 1, "bundle_id": BUNDLE_ID,
+        "common_name": IDENTITY_NAME, "keychain": FILES["keychain"],
+        "certificate": FILES["certificate"],
+    }
+    if (not isinstance(metadata, dict)
+            or set(metadata) != set(fixed) | {"certificate_sha1", "certificate_sha256"}
+            or any(type(metadata.get(key)) is not type(value) or metadata[key] != value
+                   for key, value in fixed.items())):
+        raise SigningError("Signing metadata does not match the fixed AskGPT identity")
+    for key, length, alphabet in (("certificate_sha1", 40, "A-F0-9"), ("certificate_sha256", 64, "a-f0-9")):
+        if not isinstance(metadata.get(key), str) or not re.fullmatch(
+                "[" + alphabet + "]{" + str(length) + "}", metadata[key]):
+            raise SigningError("Invalid certificate pin")
+    certificate = private_file(root / FILES["certificate"], 65536)
+    actual = fingerprint(certificate)
+    if actual != (metadata["certificate_sha1"], metadata["certificate_sha256"]):
+        raise SigningError("Certificate pin mismatch; not replacing identity")
+    private_file(root / FILES["keychain"], 32 * 1024 * 1024)
+    password = private_file(root / FILES["password"], 256)
+    if not re.fullmatch(rb"[A-Za-z0-9_-]{32,128}\n?", password):
+        raise SigningError("Invalid keychain password file")
+    return metadata
+
+
+def write_private(path, data):
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(data)
+
+
+def search_list():
+    output = run([SECURITY, "list-keychains", "-d", "user"], "Read user keychain search list")
+    try:
+        return shlex.split(output.stdout.decode("utf-8"))
+    except (ValueError, UnicodeError):
+        raise SigningError("Could not parse user keychain search list") from None
+
+
+def restore_search_list(original):
+    if search_list() != original:
+        run([SECURITY, "list-keychains", "-d", "user", "-s", *original],
+            "Restore user keychain search list")
+        if search_list() != original:
+            raise SigningError("User keychain search list restoration did not verify")
+
+
+def public_status(root, metadata=None):
+    if metadata is None:
+        if not root.exists():
+            return {"prepared": False, "root": str(root)}
+        metadata = load_state(root)
+    return {
+        "prepared": True, "root": str(root), **metadata,
+        "permissions": {"directory": "0700", "stateFiles": "0600"},
+        "trustPolicy": "This tool never changes certificate trust or TCC",
+    }
+
+
+def prepare(root):
+    if root.exists():
+        return public_status(root, load_state(root))
+    if root == Path("/") or root == Path.home():
+        raise SigningError("Refusing unsafe signing directory")
+    root.mkdir(mode=0o700, parents=True)
+    password = secrets.token_urlsafe(48)
+    write_private(root / FILES["password"], (password + "\n").encode("ascii"))
+    with tempfile.TemporaryDirectory(prefix="askgpt-identity-") as temporary:
+        temporary = Path(temporary)
+        config = temporary / "openssl.cnf"
+        config.write_text(
+            "[req]\ndistinguished_name=dn\nprompt=no\nx509_extensions=signing\n"
+            "[dn]\nCN=" + IDENTITY_NAME + "\n[signing]\n"
+            "basicConstraints=critical,CA:false\n"
+            "keyUsage=critical,digitalSignature\n"
+            "extendedKeyUsage=critical,codeSigning\nsubjectKeyIdentifier=hash\n",
+            encoding="ascii",
+        )
+        pem, key, p12 = (temporary / name for name in ("certificate.pem", "private.pem", "identity.p12"))
+        run([OPENSSL, "req", "-new", "-newkey", "rsa:3072", "-x509", "-sha256",
+             "-days", "3650", "-nodes", "-config", str(config),
+             "-keyout", str(key), "-out", str(pem)], "Create local signing identity")
+        certificate = run([OPENSSL, "x509", "-in", str(pem), "-outform", "DER"],
+                          "Export public signing certificate").stdout
+        write_private(root / FILES["certificate"], certificate)
+        run([OPENSSL, "pkcs12", "-export", "-inkey", str(key), "-in", str(pem),
+             "-out", str(p12), "-name", IDENTITY_NAME,
+             "-passout", "file:" + str(root / FILES["password"])], "Package signing identity")
+        original = search_list()
+        keychain = root / FILES["keychain"]
+        try:
+            run([SECURITY, "create-keychain", "-p", password, str(keychain)], "Create dedicated signing keychain")
+            os.chmod(keychain, 0o600)
+            run([SECURITY, "import", str(p12), "-k", str(keychain), "-P", password,
+                 "-x", "-T", CODESIGN], "Import local signing identity")
+        finally:
+            try:
+                if keychain.exists():
+                    run([SECURITY, "lock-keychain", str(keychain)], "Lock dedicated signing keychain")
+            finally:
+                restore_search_list(original)
+    sha1, sha256 = fingerprint(certificate)
+    metadata = {
+        "schema_version": 1, "bundle_id": BUNDLE_ID, "common_name": IDENTITY_NAME,
+        "keychain": FILES["keychain"], "certificate": FILES["certificate"],
+        "certificate_sha1": sha1, "certificate_sha256": sha256,
+    }
+    write_private(root / FILES["metadata"], (json.dumps(metadata, indent=2) + "\n").encode("utf-8"))
+    return public_status(root, load_state(root))
+
+
+def checked_bundle(value):
+    bundle = checked_path(value)
+    if bundle.suffix != ".app" or not bundle.is_dir():
+        raise SigningError("Expected an Ask for GPT .app bundle")
+    contents = checked_path(bundle / "Contents")
+    info_path = checked_path(contents / "Info.plist")
+    try:
+        info = plistlib.loads(info_path.read_bytes())
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        raise SigningError("Invalid application Info.plist") from None
+    if (not isinstance(info, dict) or info.get("CFBundleIdentifier") != BUNDLE_ID
+            or info.get("CFBundleExecutable") != "AskGPT"):
+        raise SigningError("Only local.askgpt.reader with executable AskGPT may be signed")
+    executable = checked_path(contents / "MacOS" / "AskGPT")
+    for path in (bundle, contents, info_path, executable):
+        try:
+            details = path.stat()
+        except OSError:
+            raise SigningError("Application bundle is incomplete") from None
+        if details.st_uid != os.geteuid() or details.st_mode & 0o022:
+            raise SigningError("Application must be user-owned and not writable by other users")
+    if not executable.is_file():
+        raise SigningError("Application executable is missing")
+    return bundle
+
+
+def requirement(metadata):
+    return 'identifier "' + BUNDLE_ID + '" and certificate leaf = H"' + metadata["certificate_sha1"] + '"'
+
+
+def verify(root, value, metadata=None):
+    metadata = metadata or load_state(root)
+    bundle = checked_bundle(value)
+    run([CODESIGN, "--verify", "--deep", "--strict", "--verbose=2", "--test-requirement",
+         "=" + requirement(metadata), str(bundle)], "Verify pinned application signature")
+    displayed = run([CODESIGN, "--display", "--requirements", "-", str(bundle)],
+                    "Read application designated requirement")
+    lines = (displayed.stdout + displayed.stderr).decode("utf-8", errors="replace").splitlines()
+    designated = [line.strip().removeprefix("# ") for line in lines if "designated =>" in line]
+    expected = 'designated => ' + requirement(metadata)
+    if len(designated) != 1 or designated[0].lower() != expected.lower():
+        raise SigningError("Application has an unexpected designated requirement")
+    with tempfile.TemporaryDirectory(prefix="askgpt-signature-") as temporary:
+        prefix = Path(temporary) / "certificate"
+        run([CODESIGN, "--display", "--extract-certificates=" + str(prefix), str(bundle)],
+            "Extract actual signing certificate")
+        leaf = Path(str(prefix) + "0")
+        try:
+            actual = fingerprint(leaf.read_bytes())
+        except OSError:
+            raise SigningError("Application has no signing certificate; ad-hoc signatures are rejected") from None
+        if actual != (metadata["certificate_sha1"], metadata["certificate_sha256"]):
+            raise SigningError("Actual application signing certificate does not match pinned identity")
+    return {"verified": True, "bundle": str(bundle), "bundleIdentifier": BUNDLE_ID,
+            "certificate_sha1": metadata["certificate_sha1"], "certificate_sha256": metadata["certificate_sha256"]}
+
+
+def sign(root, value):
+    metadata = load_state(root)
+    bundle = checked_bundle(value)
+    password = private_file(root / FILES["password"], 256).decode("ascii").rstrip("\n")
+    keychain = str(root / FILES["keychain"])
+    original = search_list()
+    try:
+        if keychain not in original:
+            run([SECURITY, "list-keychains", "-d", "user", "-s", *original, keychain],
+                "Temporarily expose dedicated signing identity to codesign")
+        run([SECURITY, "unlock-keychain", "-p", password, keychain], "Unlock dedicated signing keychain")
+        helper = bundle / "Contents/MacOS/AskGPTTranslate"
+        if helper.exists():
+            helper_info = helper.lstat()
+            if (not stat.S_ISREG(helper_info.st_mode) or helper.is_symlink()
+                    or helper_info.st_uid != os.geteuid()):
+                raise SigningError("Translation helper must be an owned regular file")
+            run([CODESIGN, "--force", "--sign", metadata["certificate_sha1"], "--keychain", keychain,
+                 "--timestamp=none", "--identifier", BUNDLE_ID + ".translate", str(helper)],
+                "Sign local translation helper with pinned identity")
+        run([CODESIGN, "--force", "--sign", metadata["certificate_sha1"], "--keychain", keychain,
+             "--timestamp=none", "--requirements", "=designated => " + requirement(metadata),
+             str(bundle)], "Sign application with pinned identity")
+        return verify(root, bundle, metadata)
+    finally:
+        try:
+            run([SECURITY, "lock-keychain", keychain], "Lock dedicated signing keychain")
+        finally:
+            restore_search_list(original)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--root", help="Absolute dedicated signing directory (fixture override)")
+    commands = parser.add_subparsers(dest="command", required=True)
+    for name in ("prepare", "status", "sign", "verify"):
+        command = commands.add_parser(name)
+        command.add_argument("--root", default=argparse.SUPPRESS)
+        if name in ("sign", "verify"):
+            command.add_argument("bundle")
+    arguments = parser.parse_args()
+    os.umask(0o077)
+    try:
+        default = Path.home() / "Library/Application Support/AskGPTReader/Signing"
+        root = checked_path(arguments.root or default)
+        if arguments.command == "prepare":
+            result = prepare(root)
+        elif arguments.command == "status":
+            result = public_status(root)
+        elif arguments.command == "sign":
+            result = sign(root, arguments.bundle)
+        else:
+            result = verify(root, arguments.bundle)
+        print(json.dumps(result, indent=2))
+        return 0
+    except (SigningError, OSError, UnicodeError):
+        error = sys.exc_info()[1]
+        # OSError paths and child diagnostics are deliberately not echoed.
+        message = str(error) if isinstance(error, SigningError) else "Signing state could not be accessed safely"
+        print("app-signing: " + message, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

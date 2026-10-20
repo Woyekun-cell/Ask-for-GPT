@@ -1,0 +1,965 @@
+const assert=require('node:assert/strict');
+const Native=require('../content/pdf-native-view.js');
+const DOM=require('./fake-dom.cjs');
+const vm=require('node:vm');
+const clone=value=>JSON.parse(JSON.stringify(value));
+const tick=()=>new Promise(setImmediate);
+let checks=0;
+async function check(name,callback){await callback();checks++;process.stdout.write('PASS '+name+'\n');}
+function alignment(sourcePages=[0]){
+  const value={schema:1,coordinateSpace:'pdf',granularity:'sentence',sentenceAlignmentRevision:'pdf-sentence-semantic-v1',sentencePages:sourcePages.slice(),pages:sourcePages.map((sourcePage,outputPage)=>({sourcePage,outputPage,source:{mediaBox:[0,0,600,800],cropBox:[0,0,600,800],rotation:0},mono:{mediaBox:[0,0,600,800],cropBox:[0,0,600,800],rotation:0},dual:{mediaBox:[0,0,1200,800],cropBox:[0,0,1200,800],rotation:0},sourceToDual:[1,0,0,1,0,0],targetToDual:[1,0,0,1,600,0],paragraphs:[{id:'p'+sourcePage+'_0',source:{text:'Original first sentence. Another sentence.',rects:[[40,690,250,710],[40,670,220,690]]},target:{text:'第一句。另一句。',rects:[[40,690,300,710]]},dualSource:{rects:[[40,690,250,710],[40,670,220,690]]},dualTarget:{rects:[[640,690,900,710]]},sentences:[{id:'s0',method:'semantic-model',source:{text:'Original first sentence.',rects:[[40,690,250,710]]},target:{text:'第一句。',rects:[[40,690,170,710]]},dualSource:{rects:[[40,690,250,710]]},dualTarget:{rects:[[640,690,770,710]]}},{id:'s1',method:'semantic-model',source:{text:'Another sentence.',rects:[[40,670,220,690]]},target:{text:'另一句。',rects:[[170,690,300,710]]},dualSource:{rects:[[40,670,220,690]]},dualTarget:{rects:[[770,690,900,710]]}}]}]}))};
+  value.phraseAlignmentRevision='pdf-phrase-semantic-v1';value.phrasePages=sourcePages.slice();value.phraseExtractionRevision='pdf-glyph-boundary-v2';value.phraseExtractedPages=sourcePages.slice();value.phraseCoverage=Object.fromEntries(sourcePages.map(p=>[String(p),{sentences:2,extractable:2,aligned:2,unavailable:0,sourceTokens:6,targetTokens:8,mappedSourceTokens:6,mappedTargetTokens:8}]));
+  for(const page of value.pages)for(const paragraph of page.paragraphs)for(const sentence of paragraph.sentences){
+    const index=sentence.id==='s0'?0:1,x=index?190:45,width=index?30:25;
+    for(const side of ['source','target']){const part=sentence[side],chars=Array.from(part.text),r=side==='source'?part.rects[0]:[x,690,x+width,710];part.glyphs=chars.map((text,i)=>({text,line:0,rect:[r[0]+(r[2]-r[0])*i/chars.length,r[1],r[0]+(r[2]-r[0])*(i+1)/chars.length,r[3]]}));}
+    const target={...clone(sentence.target),rects:[[x,690,x+width,710]]};sentence.phrases=[{id:sentence.id+'_phrase',method:'semantic-phrase-model',source:clone(sentence.source),target,dualSource:clone(sentence.dualSource),dualTarget:{rects:target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])},sourceTokenCount:3,targetTokenCount:4}];
+  }return value;
+
+}
+function legacyAlignment(sourcePages=[0]){const value=alignment(sourcePages);value.granularity='paragraph';delete value.sentenceAlignmentRevision;delete value.sentencePages;delete value.phraseAlignmentRevision;delete value.phrasePages;delete value.phraseExtractionRevision;delete value.phraseExtractedPages;delete value.phraseCoverage;for(const page of value.pages)for(const paragraph of page.paragraphs)delete paragraph.sentences;return value;}
+function selectionAlignment(sourcePages=[0]){const value=phraseAlignment(),page=value.pages[0],coverage=value.phraseCoverage['0'];value.sourceSHA256='a'.repeat(64);value.sentencePages=sourcePages.slice();value.phrasePages=sourcePages.slice();value.phraseExtractedPages=sourcePages.slice();value.phraseCoverage=Object.fromEntries(sourcePages.map(page=>[String(page),clone(coverage)]));value.pages=sourcePages.map((sourcePage,outputPage)=>({...clone(page),sourcePage,outputPage}));return value;}
+function longSelectionAlignment(sourcePages=[0],count=200){
+  const value=selectionAlignment(sourcePages),sg=[],tg=[],phrases=[],sourceRects=[],targetRects=[],dual=part=>({rects:part.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])}),part=(text,glyphs,rects)=>({text,glyphs,rects});
+  for(let i=0;i<count;i++){
+    const col=i%16,line=Math.floor(i/16),x=40+col*32,y=750-line*14,gs=text=>Array.from(text).map((text,j)=>({text,line,rect:[x+j*2,y,x+j*2+2,y+10]}));
+    const a=gs('genome'),b=gs('甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳'),source=part('genome',a,[[x,y,x+12,y+10]]),target=part(b.map(g=>g.text).join(''),b,[[x,y,x+32,y+10]]);
+    sg.push(...a,{text:' ',line,rect:[x+12,y,x+14,y+10]});tg.push(...b);sourceRects.push(source.rects[0]);targetRects.push(target.rects[0]);
+    phrases.push({id:'word'+i,method:'semantic-phrase-model',source,target,dualSource:{rects:source.rects},dualTarget:dual(target),sourceTokenCount:1,targetTokenCount:16});
+  }
+  const merge=rects=>{const output=[];for(const r of rects){const previous=output.at(-1);if(previous&&previous[1]===r[1])previous[2]=r[2];else output.push(r.slice());}return output;};
+  const source=part(sg.map(g=>g.text).join(''),sg,merge(sourceRects)),target=part(tg.map(g=>g.text).join(''),tg,merge(targetRects)),sentence={id:'s0',method:'semantic-model',source,target,dualSource:{rects:source.rects},dualTarget:dual(target),phrases};
+  for(const page of value.pages)page.paragraphs=[{id:'p'+page.sourcePage,source:clone(source),target:clone(target),dualSource:clone(sentence.dualSource),dualTarget:clone(sentence.dualTarget),sentences:[clone(sentence)]}];
+  const partial=clone(target.rects);partial.at(-1)[2]-=28;
+  return {value,full:target.rects,partial,text:target.text.slice(0,-14)};
+}
+function phraseAlignment(){
+  const value=alignment();value.phraseAlignmentRevision='pdf-phrase-semantic-v1';value.phrasePages=[0];const paragraph=value.pages[0].paragraphs[0];
+  function glyphs(text,width){let x=40;return Array.from(text).map(text=>{const w=text===' '?3:width,rect=[x,690,x+w,710];x+=w;return {text,rect,line:0};});}
+  function part(text,glyphs){return {text,glyphs,rects:[[Math.min(...glyphs.map(g=>g.rect[0])),690,Math.max(...glyphs.map(g=>g.rect[2])),710]]};}
+  function dual(part){return {rects:part.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])};}
+  const sourceText='The human genome is complex.',targetText='人类基因组很复杂。',sourceGlyphs=glyphs(sourceText,6),targetGlyphs=glyphs(targetText,10),source=part(sourceText,sourceGlyphs),target=part(targetText,targetGlyphs),sentence={id:'s0',method:'semantic-model',source,target,dualSource:{rects:source.rects},dualTarget:dual(target),phrases:[]};
+  function phrase(id,english,chinese,sourceTokenCount){const a=sourceText.indexOf(english),b=targetText.indexOf(chinese),source=part(english,sourceGlyphs.slice(a,a+english.length)),target=part(chinese,targetGlyphs.slice(b,b+chinese.length));return {id,method:'semantic-phrase-model',source,target,dualSource:{rects:source.rects},dualTarget:dual(target),sourceTokenCount,targetTokenCount:chinese.length};}
+  sentence.phrases=[phrase('human','human','人类',1),phrase('genome','genome','基因组',1),phrase('complex','is complex','很复杂',2),phrase('period','.','。',1)];Object.assign(paragraph,{source,target,dualSource:sentence.dualSource,dualTarget:sentence.dualTarget,sentences:[sentence]});return value;
+}
+function highlight(pageIndex=0,rects=[[45,694,70,708]]){return {type:'highlight',color:'#ffd400',text:'第一句',position:{pageIndex,rects},sortIndex:'placeholder'};}
+function trackedGlyphPages(value,side,counter){return Object.fromEntries(value.pages.map(page=>[side==='source'?page.sourcePage:page.outputPage,{chars:page.paragraphs.flatMap(paragraph=>(paragraph.sentences||[]).flatMap(sentence=>(sentence[side].glyphs||[]).filter(g=>g.rect).map(g=>({c:g.text,get rect(){counter.reads++;return g.rect;}}))))}]));}
+async function fixture(appearance={},beforeMount=()=>{},actions={},nativeAPI=Native){
+  const win=new DOM.Window(),doc=win.document;doc.defaultView=win;
+  const container=new DOM.Element(doc,'div');doc.body.appendChild(container);
+  const writes=[],updates=[],deletions=[],states=[],popups=[],findStates=[],views=[],errors=[],frames=new Map();let frameID=0,time=0,exits=0;
+  win.requestAnimationFrame=callback=>{const id=++frameID;frames.set(id,callback);return id;};win.cancelAnimationFrame=id=>frames.delete(id);
+  let held=null;
+  class NativeView{
+    constructor(options){this._options=options;this._tools=options.tools;this._pageLabels=options.pageLabels;this._iframe=new DOM.Element(doc,'iframe');const target=new DOM.Window(),scroll=new DOM.Element(target.document,'div');scroll.scrollLeft=0;scroll.scrollTop=20;scroll.clientWidth=800;scroll.clientHeight=600;scroll.scrollWidth=2000;target.document.ids.set('viewerContainer',scroll);target.PDFViewerApplication={pdfDocument:{translated:true},pdfViewer:{}};target.requestAnimationFrame=callback=>{const id=++frameID;frames.set(id,callback);return id;};target.cancelAnimationFrame=id=>frames.delete(id);target.getComputedStyle=()=>({lineHeight:'16px'});target.matchMedia=()=>({matches:false});this._iframeWindow=target;container.appendChild(this._iframe);options.container.appendChild(this._iframe);this._annotations=options.annotations;this._tool=options.tool;this.calls=[];this.initializedPromise=held||Promise.resolve();held=null;views.push(this);}
+    setAnnotations(value){this._annotations=value;this.calls.push(['annotations',value]);}
+    setTool(value){this._tool=value;this.calls.push(['tool',value]);}
+    setSelectedAnnotationIDs(ids){this.selected=ids;this.calls.push(['selected',ids]);}
+    setReadOnly(value){this.readOnly=value;}
+    setPageLabels(value){this._pageLabels=value;this.calls.push(['pageLabels',value]);}
+    setSelectionPopup(value){this._selectionPopup=value;this.calls.push(['selectionPopup',value]);}
+    setAnnotationPopup(value){this._annotationPopup=value;this.calls.push(['annotationPopup',value]);}
+    setOverlayPopup(value){this._overlayPopup=value;this.calls.push(['overlayPopup',value]);}
+    _getPageLabel(index){return this._pageLabels[index]||String(index+1);}
+    navigate(...values){this.calls.push(['navigate',...values]);}
+    setFindState(value){this.findState=value;this.calls.push(['find',value]);}
+    findNext(){this.calls.push(['findNext']);}
+    findPrevious(){this.calls.push(['findPrevious']);}
+    focus(){this.calls.push(['focus']);}
+    zoomIn(){this.calls.push(['zoomIn']);}
+    zoomPageWidth(){this.calls.push(['fitWidth']);this._iframeWindow.PDFViewerApplication.pdfViewer.currentScaleValue='page-width';}
+    navigateToNextPage(){this.calls.push(['next']);}
+    destroy(){this.destroyed=true;}
+  }
+  const source=Object.create(NativeView.prototype),sourceFrame=new DOM.Element(doc,'iframe');container.appendChild(sourceFrame);
+  const reader={_state:{annotations:[],primaryViewState:{pageIndex:0,scale:125,top:700,left:40,scrollMode:0,spreadMode:0},tool:{type:'pointer'},selectedAnnotationIDs:[]}};
+  Object.assign(source,{_iframe:sourceFrame,_options:{container,tool:reader._state.tool},_annotations:[],calls:[],_tool:reader._state.tool,_pdfPages:{},_iframeWindow:{PDFViewerApplication:{pdfDocument:{source:true},pdfViewer:{scrollPageIntoView:value=>states.push({navigation:value})}}},_getPageLabel:index=>'p'+(index+1)});
+  reader._annotationManager={addAnnotation(value,select){if(reader._state.readOnly)return null;const saved={...clone(value),id:'ABCDEFG'+writes.length};writes.push({value:clone(saved),select});reader._state.annotations.push(saved);source.setAnnotations(reader._state.annotations);return saved;}};
+  const sourceWindow=new DOM.Window();Object.assign(sourceWindow,source._iframeWindow);sourceWindow.document.ids.set('viewerContainer',new DOM.Element(sourceWindow.document,'div'));source._iframeWindow=sourceWindow;
+  source._onAddAnnotation=(value,select)=>{const saved=reader._annotationManager.addAnnotation(value,select);if(saved&&select)source.setSelectedAnnotationIDs([saved.id]);return saved;};
+  source._onUpdateAnnotations=values=>{updates.push(clone(values));for(const value of values){const at=reader._state.annotations.findIndex(a=>a.id===value.id);reader._state.annotations[at]={...reader._state.annotations[at],...clone(value)};}source.setAnnotations(reader._state.annotations);};
+  source._onDeleteAnnotations=ids=>{deletions.push(ids);reader._state.annotations=reader._state.annotations.filter(a=>!ids.includes(a.id));source.setAnnotations(reader._state.annotations);};
+  source._onSelectAnnotations=ids=>source.setSelectedAnnotationIDs(ids);
+  source._onSetSelectionPopup=value=>{popups.push(value);reader._state.primaryViewSelectionPopup=value;source.setSelectionPopup(value);};
+  source._onSetAnnotationPopup=value=>{popups.push(value);reader._state.primaryViewAnnotationPopup=value;source.setAnnotationPopup(value);};
+  source._onSetDataTransferAnnotations=()=>{};
+  source._onOpenAnnotationContextMenu=()=>{};
+  source._onChangeViewState=value=>{states.push(clone(value));reader._state.primaryViewState=clone(value);};
+  source._onSetFindState=value=>findStates.push(value);
+  reader.setTool=value=>{reader._state.tool=clone(value);source.setTool(clone(value));};
+  beforeMount({source,reader});
+  const layer=await nativeAPI.mount({sourceView:source,reader,win,pageCount:10},'',{...actions,failure:error=>errors.push(error),exit:()=>{exits++;}},appearance);
+  return {layer,source,sourceFrame,reader,views,writes,updates,deletions,states,popups,findStates,errors,exits:()=>exits,async flush(){time+=16;const callbacks=[...frames.values()];frames.clear();for(const callback of callbacks)callback(time);await tick();},show:async(pages=[0],mode='mono',data=alignment(pages))=>layer.showOutput(new Uint8Array([1,2,3]).buffer,pages,mode,data),hold(){let resolve;held=new Promise(r=>{resolve=r;});return resolve;},close(){layer.dispose();}};
+}
+async function figurePreparationFixture(){
+  // Zotero's chrome script scope has no global timer. Load the actual indexer
+  // in that scope so only the native window's explicitly injected yield works.
+  const fs=require('node:fs'),path=require('node:path'),figureScope={module:{exports:{}}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../content/pdf-figure-navigation.js'),'utf8'),figureScope,{filename:'pdf-figure-navigation.js'});
+  const nativeScope={module:{exports:{}},require:name=>name==='./pdf-figure-navigation.js'?figureScope.module.exports:require('../content/'+name.slice(2))};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../content/pdf-native-view.js'),'utf8'),nativeScope,{filename:'pdf-native-view.js'});
+  assert.equal(vm.runInNewContext('typeof setTimeout',figureScope),'undefined');
+  const reads=[],texts=[],timers=[],diagnostics=[],captions=['Fig. 1 | Genome diversity.','Table 1 | Variant classes.','Fig. 2 | Structural variation.'];
+  const pdf={numPages:3,async getPage(number){assert(Number.isInteger(number));reads.push(number);return {view:[0,0,600,800],async getTextContent(){texts.push(number);return {items:[{str:captions[number-1],transform:[10,0,0,10,40,700],height:10,width:captions[number-1].length*5}]};}};}};
+  const f=await fixture({reportDiagnostic:(stage,error)=>diagnostics.push({stage,error})},({source})=>{source._iframeWindow.PDFViewerApplication.pdfDocument=pdf;const nativeWindow=source._options.container.ownerDocument.defaultView;nativeWindow.setTimeout=(callback,delay)=>{assert.equal(delay,0);timers.push(callback);return timers.length;};nativeWindow.clearTimeout=()=>{};},{},nativeScope.module.exports);
+  return {...f,reads,texts,timers,diagnostics};
+}
+(async()=>{
+  await check('translation controls dock into an owned native-toolbar slot while PDF body contains only the reader viewport',async()=>{
+    let slot,nativeButton;const f=await fixture({toolbarHost:()=>slot},({source})=>{const doc=source._options.container.ownerDocument;slot=new DOM.Element(doc,'span');nativeButton=new DOM.Element(doc,'button');slot.appendChild(nativeButton);doc.body.appendChild(slot);});try{
+      assert.equal(f.layer.header.parentNode,slot);assert.equal(slot.children[0],nativeButton);assert.equal(f.layer.menu.parentNode,f.layer.doc.body);assert.equal(f.layer.menu.hidden,true);assert.deepEqual(f.layer.host.children,[f.layer.body]);assert.equal(f.layer.header.allNodes().filter(node=>node.tagName==='button').length,6,'modes, navigation and More share the native toolbar');assert.deepEqual(f.layer.header.allNodes().filter(node=>node.tagName==='button').map(node=>node.textContent),['原文','译文','对照','联动','图表','⋯']);for(const node of f.layer.header.allNodes().filter(node=>node.tagName==='button')){assert.equal(node.getAttribute('tabindex'),'-1');assert(node.className.includes('toolbar-button'));}
+      f.layer.setProgress({stage:'translating',completed:3,total:12});const progress=f.layer.header.children.find(node=>node.className==='askgpt-native-progress');assert.equal(progress.hidden,false);assert.equal(progress.getAttribute('title'),'翻译 · 3 / 12');f.layer.setStatus('example status');const status=f.layer.header.children.find(node=>node.className==='askgpt-native-status');assert.equal(status.hidden,false);assert.equal(status.getAttribute('title'),'example status');assert.equal(f.layer.host.children.length,1);f.close();assert.deepEqual(slot.children,[nativeButton]);assert.equal(f.layer.menu.parentNode,null);assert.equal(f.layer.header.parentNode,null);
+    }finally{f.close();}
+  });
+  await check('native toolbar replacement reattaches the same controls without starting work or changing mode and cannot revive a disposed header',async()=>{
+    let slot;const f=await fixture({toolbarHost:()=>slot},({source})=>{const doc=source._options.container.ownerDocument;slot=new DOM.Element(doc,'span');doc.body.appendChild(slot);});try{await f.show([0],'dual');const header=f.layer.header,view=f.layer.nativeView,replacement=new DOM.Element(f.layer.doc,'span'),nativeButton=new DOM.Element(f.layer.doc,'button');replacement.appendChild(nativeButton);f.layer.doc.body.appendChild(replacement);assert.equal(f.layer.attachToolbar(replacement),true);assert.equal(header.parentNode,replacement);assert.deepEqual(slot.children,[]);assert.equal(f.layer.attachToolbar(replacement),true);assert.equal(replacement.children.filter(node=>node===header).length,1);assert.equal(f.layer.nativeView,view);assert.equal(f.views.length,1);assert.equal(header.allNodes().find(node=>node.textContent==='对照').getAttribute('aria-pressed'),'true');assert.equal(f.layer.attachToolbar(new DOM.Element(new DOM.Document(),'span')),false);assert.equal(header.parentNode,replacement);f.close();assert.deepEqual(replacement.children,[nativeButton]);assert.equal(f.layer.attachToolbar(replacement),false);assert.deepEqual(replacement.children,[nativeButton]);
+    }finally{f.close();}
+  });
+  await check('native toolbar discovery uses the official CustomSections host and no host keeps controls outside the PDF rather than floating',async()=>{
+    let fallback;const f=await fixture({toolbarHost:()=>null},({source})=>{const doc=source._options.container.ownerDocument;fallback=new DOM.Element(doc,'div');doc.body.appendChild(fallback);doc.querySelector=selector=>selector==='.toolbar .end > .custom-sections'?fallback:null;});try{assert.equal(f.layer.header.parentNode,fallback);}finally{f.close();}
+    const g=await fixture();try{assert.equal(g.layer.header.parentNode,null);assert.deepEqual(g.layer.host.children,[g.layer.body]);assert.equal(g.layer.attachToolbar(null),false);const slot=new DOM.Element(g.layer.doc,'span');g.layer.doc.body.appendChild(slot);assert.equal(g.layer.attachToolbar(slot),true);assert.equal(g.layer.header.parentNode,slot);}finally{g.close();}
+  });
+  await check('distinct Xray document and parent wrappers dock only after trusted DOM identity confirmation and nativeReady preserves the attachment snapshot',async()=>{
+    let slot,parentAlias,documentAlias;const diagnostics=[],f=await fixture({toolbarHost:()=>slot,reportDiagnostic:(stage,error)=>diagnostics.push({stage,error})},({source})=>{
+      const doc=source._options.container.ownerDocument;documentAlias=new Proxy(doc,{});doc.isSameNode=node=>node===doc||node===documentAlias;slot=new DOM.Element(doc,'span');slot.ownerDocument=documentAlias;slot.isConnected=true;slot.getBoundingClientRect=()=>({left:500,top:4,width:180,height:28});parentAlias=new Proxy(slot,{});slot.isSameNode=node=>node===slot||node===parentAlias;const append=slot.appendChild;slot.appendChild=function(node){const result=Reflect.apply(append,this,[node]);node.parentNode=parentAlias;return result;};doc.body.appendChild(slot);
+    });try{
+      assert.notEqual(slot.ownerDocument,f.layer.doc);assert.notEqual(f.layer.header.parentNode,slot);assert.equal(f.layer.header.parentNode,parentAlias);assert.equal(f.layer.attachToolbar(slot),true);assert.equal(slot.children.filter(node=>node===f.layer.header).length,1);f.layer.header.isConnected=true;f.layer.header.getBoundingClientRect=()=>({left:510,top:4,width:154,height:28});await f.show();const snapshot=diagnostics.findLast(value=>value.stage==='nativeReady').error;assert.equal(snapshot.name,'RenderSnapshot');assert.equal(snapshot.code,'rendered');assert.equal(snapshot.errorDetail,undefined);assert.equal(snapshot.renderNumbers.renderedCount,6);assert.equal(snapshot.renderNumbers.width,154);assert.equal(snapshot.layoutNumbers.canvasConnected,1);assert.equal(snapshot.layoutNumbers.holderConnected,1);assert.equal(snapshot.layoutNumbers.canvasLeft,510);assert.equal(snapshot.layoutNumbers.canvasTop,4);
+      const safe=require('../content/pdf-layout.js').diagnostic('nativeReady',snapshot);assert.equal(safe.code,'rendered');assert.equal(safe.layoutNumbers.canvasLeft,510);assert.equal(safe.renderNumbers.renderedCount,6);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('genuine foreign documents stay rejected even if their own isSameNode lies, and the ready snapshot retains the fixed failure reason',async()=>{
+    const foreign=new DOM.Document(),slot=new DOM.Element(foreign,'span'),diagnostics=[];foreign.isSameNode=()=>true;const f=await fixture({toolbarHost:slot,reportDiagnostic:(stage,error)=>diagnostics.push({stage,error})},({source})=>{const doc=source._options.container.ownerDocument;doc.isSameNode=node=>node===doc;});try{assert.equal(f.layer.header.parentNode,null);assert.equal(f.layer.attachToolbar(slot),false);assert.equal(slot.children.length,0);await f.show();const snapshot=diagnostics.findLast(value=>value.stage==='nativeReady').error;assert.equal(snapshot.code,'compatibility');assert.equal(snapshot.errorDetail,'id');assert.equal(snapshot.renderNumbers.renderedCount,0);assert.equal(snapshot.layoutNumbers.canvasConnected,0);assert.equal(f.layer.header.parentNode,null);
+    }finally{f.close();}
+  });
+  await check('toolbar diagnostics distinguish unavailable hosts, missing append methods, denied appends and ineffective appends without retaining private errors',async()=>{
+    const diagnostics=[],f=await fixture({reportDiagnostic:(stage,error)=>diagnostics.push({stage,error})});try{assert.equal(diagnostics.findLast(value=>value.stage==='toolbar').error.errorDetail,'missingProperty');for(const [kind,expected] of [['missing','notFunction'],['throw','permission'],['noop','other']]){const slot={ownerDocument:f.layer.doc,children:[],...(kind==='missing'?{}:{appendChild(){if(kind==='throw')throw Error('PRIVATE_PATH_TEXT_TOKEN');}})};assert.equal(f.layer.attachToolbar(slot),false);const snapshot=diagnostics.findLast(value=>value.stage==='toolbar').error;assert.equal(snapshot.errorDetail,expected);assert.equal(snapshot.code,'compatibility');assert.equal(snapshot.renderNumbers.renderedCount,0);assert(!JSON.stringify(snapshot).includes('PRIVATE_PATH_TEXT_TOKEN'));}assert.equal(f.layer.header.parentNode,null);
+    }finally{f.close();}
+  });
+  await check('the native More menu retains all existing actions and closes on selection, Escape or an outside click',async()=>{
+    let slot;const invoked=[],f=await fixture({toolbarHost:()=>slot},({source})=>{const doc=source._options.container.ownerDocument;slot=new DOM.Element(doc,'span');doc.body.appendChild(slot);},{current:()=>invoked.push('current'),whole:()=>invoked.push('whole'),stop:()=>invoked.push('stop'),resume:()=>invoked.push('resume'),direction:value=>invoked.push(value)});try{
+      const more=f.layer.header.allNodes().find(node=>node.getAttribute('aria-haspopup')==='menu'),items=f.layer.menu.allNodes().filter(node=>node.tagName==='button');for(const node of [...items,more])node.focus=()=>{f.layer.doc.activeElement=node;};Object.assign(f.layer.doc.defaultView,{innerWidth:600,innerHeight:400});more.getBoundingClientRect=()=>({right:550,bottom:41});f.layer.menu.getBoundingClientRect=()=>({width:190,height:160});more.emit('click');await tick();assert.equal(f.layer.menu.hidden,false);assert.equal(more.getAttribute('aria-expanded'),'true');assert.equal(f.layer.menu.style.getPropertyValue('left'),'360px');assert.equal(f.layer.menu.style.getPropertyValue('top'),'45px');assert.equal(f.layer.doc.activeElement,items[0]);assert(f.layer.menu.emit('keydown',{key:'ArrowDown'}).defaultPrevented);assert.equal(f.layer.doc.activeElement,items[1]);assert(f.layer.menu.emit('keydown',{key:'Escape'}).defaultPrevented);assert.equal(f.layer.menu.hidden,true);assert.equal(f.layer.doc.activeElement,more);
+      for(const [title,result] of [['Translate current page · 本页','current'],['Translate whole PDF · 整份','whole'],['Stop · 停止','stop'],['Retry · 重试','resume'],['Translation direction · 翻译方向','zh-en']]){more.emit('click');await tick();const item=items.find(node=>node.getAttribute('title')===title);assert(item);assert.equal(item.getAttribute('role'),'menuitem');item.emit('click');assert.equal(f.layer.menu.hidden,true);await tick();assert.equal(invoked.at(-1),result);}
+      more.emit('click');await tick();f.layer.doc.emit('pointerdown',{target:f.layer.body});assert.equal(f.layer.menu.hidden,true);assert.equal(more.getAttribute('aria-expanded'),'false');more.emit('click');await tick();f.source._iframeWindow.emit('pointerdown');assert.equal(f.layer.menu.hidden,true,'PDF iframe input does not bubble into the toolbar document, so the source has its own dismiss listener');await f.show();more.emit('click');await tick();f.layer.nativeView._iframeWindow.emit('pointerdown');assert.equal(f.layer.menu.hidden,true,'translated native iframe input dismisses the same menu');assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('the first ready bilingual layout fits both actual native views once and retains later independent zooms',async()=>{
+    const f=await fixture();try{const bytes=new Uint8Array([1,2,3]).buffer,data=alignment([0,1]);await f.layer.showOutput(bytes,[0,1],'dual',data);const target=f.layer.nativeView,count=view=>view.calls.filter(value=>value[0]==='fitWidth').length;
+      assert.equal(count(f.source),0);assert.equal(count(target),0);await f.flush();assert.equal(count(f.source),1,'the source fit must bypass its redirected command wrapper');assert.equal(count(target),1);assert.equal(f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScaleValue,'page-width');assert.equal(target._iframeWindow.PDFViewerApplication.pdfViewer.currentScaleValue,'page-width');
+      f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScaleValue=1.6;target._iframeWindow.PDFViewerApplication.pdfViewer.currentScaleValue=2.1;await f.layer.showOutput(bytes,[0,1],'mono',data);await f.flush();await f.layer.showOutput(bytes,[0,1],'dual',data);await f.flush();assert.equal(count(f.source),1);assert.equal(count(target),1);assert.equal(f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScaleValue,1.6);assert.equal(target._iframeWindow.PDFViewerApplication.pdfViewer.currentScaleValue,2.1);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('a pending first-split fit waits for readiness and cancels on original, mono and disposal',async()=>{
+    for(const cancel of ['original','mono','dispose']){const f=await fixture();try{const release=f.hold(),bytes=new Uint8Array([1,2,3]).buffer,data=alignment([0]),pending=f.layer.showOutput(bytes,[0],'dual',data);await tick();await f.flush();assert.equal(f.source.calls.some(value=>value[0]==='fitWidth'),false);release();await pending;const target=f.layer.nativeView;
+      if(cancel==='original')f.layer.showOriginal();else if(cancel==='mono')await f.layer.showOutput(bytes,[0],'mono',data);else f.close();await f.flush();assert.equal(f.source.calls.some(value=>value[0]==='fitWidth'),false);assert.equal(target.calls.some(value=>value[0]==='fitWidth'),false);
+      if(cancel!=='dispose'){await f.layer.showOutput(bytes,[0],'dual',data);await f.flush();assert.equal(f.source.calls.filter(value=>value[0]==='fitWidth').length,1);assert.equal(target.calls.filter(value=>value[0]==='fitWidth').length,1);}
+    }finally{f.close();}}
+  });
+  await check('an inactive original follower cannot overwrite the active translated reading position',async()=>{
+    const f=await fixture();try{await f.show([0,1],'dual');const target=f.layer.nativeView;target._iframeWindow.emit('pointermove');target._options.onChangeViewState({pageIndex:1,left:70,top:600,scale:175});const canonical=clone(f.reader._state.primaryViewState);assert.equal(canonical.pageIndex,1,'the intended target-to-source canonical publish must reach native persistence');const saved=f.states.filter(value=>Number.isInteger(value.pageIndex)).length;
+      f.source._onChangeViewState({pageIndex:0,left:20,top:750,scale:125});assert.deepEqual(f.reader._state.primaryViewState,canonical,'a later inactive follower must not overwrite parent state or the saved reading progress');assert.equal(f.states.filter(value=>Number.isInteger(value.pageIndex)).length,saved);f.layer.showOriginal();assert.equal(f.states.at(-1).navigation.pageNumber,2);assert.equal(f.states.at(-1).navigation.destArray[3],600);assert.equal(f.states.at(-1).navigation.destArray[4],null);
+    }finally{f.close();}
+  });
+  await check('hovering a delayed follower never steals the wheel leader or reverses a coalesced scroll from either pane',async()=>{
+    for(const lane of ['source','target']){const f=await fixture();try{
+      await f.show([2,5],'dual');await f.flush();const target=f.layer.nativeView,sourceViewer=f.source._iframeWindow.PDFViewerApplication.pdfViewer,targetViewer=target._iframeWindow.PDFViewerApplication.pdfViewer,sourceNavigation=[],targetNavigation=[];Object.assign(sourceViewer,{currentPageNumber:6,scrollPageIntoView:value=>sourceNavigation.push(value)});Object.assign(targetViewer,{currentPageNumber:2,scrollPageIntoView:value=>targetNavigation.push(value)});
+      const active=lane==='source'?f.source:target,follower=lane==='source'?target:f.source;active._iframeWindow.emit('wheel',{deltaY:60});for(let i=0;i<25;i++){const state={pageIndex:lane==='source'?5:1,left:20,top:650-i*2,scale:125};if(lane==='source')f.source._onChangeViewState(state);else target._options.onChangeViewState(state);}const canonical=clone(f.reader._state.primaryViewState);assert.equal(sourceNavigation.length+targetNavigation.length,0,'ordinary callbacks wait for one rendering frame');
+      follower._iframeWindow.emit('pointermove');if(lane==='source')target._options.onChangeViewState({pageIndex:0,left:80,top:740,scale:200});else f.source._onChangeViewState({pageIndex:2,left:80,top:740,scale:125});assert.deepEqual(f.reader._state.primaryViewState,canonical);await f.flush();const peer=lane==='source'?targetNavigation:sourceNavigation;assert.equal(peer.length,1);assert.equal((lane==='source'?sourceNavigation:targetNavigation).length,0);assert.deepEqual(peer[0].destArray,[null,{name:'XYZ'},20,602,null]);assert.equal(peer[0].pageNumber,lane==='source'?2:6);
+      if(lane==='source')target._options.onChangeViewState({pageIndex:0,left:90,top:720,scale:200});else f.source._onChangeViewState({pageIndex:2,left:90,top:720,scale:125});await f.flush();assert.equal(peer.length,1);assert.deepEqual(f.reader._state.primaryViewState,canonical);assert.equal(f.writes.length,0);
+    }finally{f.close();}}
+  });
+  await check('a genuine normal wheel resumes paired scrolling immediately after Option zoom while modified Control remains native',async()=>{
+    const f=await fixture();try{await f.show([0,1],'dual');const target=f.layer.nativeView;target._iframeWindow.emit('pointermove');const before=f.states.filter(value=>value.navigation).length;target._iframeWindow.emit('wheel',{altKey:true,deltaY:-20,clientX:50,clientY:70});target._options.onChangeViewState({pageIndex:0,left:50,top:600,scale:175});assert.equal(f.states.filter(value=>value.navigation).length,before);
+      const control=target._iframeWindow.emit('wheel',{ctrlKey:true,shiftKey:true,deltaY:20});assert.equal(control.defaultPrevented,undefined);target._options.onChangeViewState({pageIndex:0,left:50,top:590,scale:180});assert.equal(f.states.filter(value=>value.navigation).length,before);
+      const normal=target._iframeWindow.emit('wheel',{deltaY:20});assert.equal(normal.defaultPrevented,undefined);target._options.onChangeViewState({pageIndex:1,left:50,top:600,scale:180});await f.flush();assert.equal(f.states.filter(value=>value.navigation).length,before+1);assert.equal(f.states.at(-1).navigation.pageNumber,2);
+      const targetNavigation=[];target._iframeWindow.PDFViewerApplication.pdfViewer.scrollPageIntoView=value=>targetNavigation.push(value);const sourceWheel=f.source._iframeWindow.emit('wheel',{deltaY:-20});assert.equal(sourceWheel.defaultPrevented,undefined);f.source._onChangeViewState({pageIndex:0,left:50,top:600,scale:125});await f.flush();assert.equal(targetNavigation.at(-1).pageNumber,1,'ordinary source wheel owns the scroll without requiring a preceding pointermove');
+    }finally{f.close();}
+  });
+  function configureZoom(candidate,scale,index,box,changes,onChange=()=>{}){
+    const viewer=candidate._iframeWindow.PDFViewerApplication.pdfViewer,viewport={width:600,height:800,convertToPdfPoint:(x,y)=>[x,800-y],convertToViewportPoint:(x,y)=>[x,800-y]},page={viewport,canvas:{getBoundingClientRect:()=>box}};
+    Object.assign(viewer,{currentScale:scale,currentScaleValue:scale,currentPageNumber:index+1,getPageView:number=>number===index?page:null,updateScale(value){changes.push(clone(value));if(value.steps){const delta=value.steps>0?1.1:1/1.1,round=value.steps>0?Math.ceil:Math.floor;for(let i=0;i<Math.abs(value.steps);i++)viewer.currentScale=round((viewer.currentScale*delta).toFixed(2)*10)/10;}else viewer.currentScale*=value.scaleFactor;viewer.currentScaleValue=viewer.currentScale;onChange();}});return viewer;
+  }
+  await check('independent bilingual scrolling preserves the other native viewport after ordinary wheel and view-state events from either side',async()=>{
+    const f=await fixture();try{
+      await f.show([2,5],'dual');await f.flush();const target=f.layer.nativeView,left=[],right=[],sourceViewer=configureZoom(f.source,1.25,2,{left:0,top:0,width:600,height:800},left),targetViewer=configureZoom(target,2,1,{left:600,top:0,width:600,height:800},right),sourceNavigation=[],targetNavigation=[];
+      sourceViewer.scrollPageIntoView=value=>sourceNavigation.push(value);targetViewer.scrollPageIntoView=value=>targetNavigation.push(value);const sourceScroll=f.source._iframeWindow.document.getElementById('viewerContainer'),targetScroll=target._iframeWindow.document.getElementById('viewerContainer');Object.assign(sourceScroll,{scrollLeft:30,scrollTop:111});Object.assign(targetScroll,{scrollLeft:90,scrollTop:222});assert.equal(f.layer.setScrollLinked(false),false);
+      assert.equal(f.source._iframeWindow.emit('wheel',{deltaY:120}).defaultPrevented,undefined);sourceScroll.scrollTop=231;sourceViewer.currentPageNumber=6;sourceViewer._location={pageNumber:6,left:20,top:560,scale:125};f.source._onChangeViewState({pageIndex:5,left:20,top:560,scale:125});assert.equal(targetScroll.scrollTop,222);assert.equal(targetScroll.scrollLeft,90);assert.deepEqual(targetNavigation,[]);
+      assert.equal(target._iframeWindow.emit('wheel',{deltaY:-100}).defaultPrevented,undefined);targetScroll.scrollTop=122;targetViewer.currentPageNumber=1;targetViewer._location={pageNumber:1,left:25,top:570,scale:200};target._options.onChangeViewState({pageIndex:0,left:25,top:570,scale:200});await f.flush();assert.equal(sourceScroll.scrollTop,231);assert.equal(sourceScroll.scrollLeft,30);assert.deepEqual(sourceNavigation,[]);assert.deepEqual(targetNavigation,[]);assert.equal(sourceViewer.currentScale,1.25);assert.equal(targetViewer.currentScale,2);assert.deepEqual(left,[]);assert.deepEqual(right,[]);assert.equal(f.layer.scrollLinked,false);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('restoring linked scrolling aligns only the peer to the active real page and keeps both independent zoom levels',async()=>{
+    for(const lane of ['source','target']){const f=await fixture();try{
+      await f.show([2,5],'dual');await f.flush();const target=f.layer.nativeView,left=[],right=[],sourceViewer=configureZoom(f.source,1.25,2,{left:0,top:0,width:600,height:800},left),targetViewer=configureZoom(target,2,0,{left:600,top:0,width:600,height:800},right),sourceNavigation=[],targetNavigation=[];sourceViewer.scrollPageIntoView=value=>sourceNavigation.push(value);targetViewer.scrollPageIntoView=value=>targetNavigation.push(value);f.layer.setScrollLinked(false);
+      const active=lane==='source'?f.source:target,viewer=lane==='source'?sourceViewer:targetViewer;viewer.currentPageNumber=lane==='source'?6:2;viewer._location={pageNumber:viewer.currentPageNumber,left:20,top:560,scale:lane==='source'?125:200};active._iframeWindow.emit('wheel',{deltaY:50});if(lane==='source')f.source._onChangeViewState({pageIndex:5,left:20,top:560,scale:125});else target._options.onChangeViewState({pageIndex:1,left:20,top:560,scale:200});assert.equal(sourceNavigation.length+targetNavigation.length,0);
+      assert.equal(f.layer.setScrollLinked(true),true);assert.equal(f.layer.scrollLinked,true);const navigation=lane==='source'?targetNavigation:sourceNavigation;assert.equal(navigation.length,1);assert.equal((lane==='source'?sourceNavigation:targetNavigation).length,0);assert.equal(navigation[0].pageNumber,lane==='source'?2:6);assert.deepEqual(navigation[0].destArray,[null,{name:'XYZ'},20,560,null]);assert.equal(sourceViewer.currentScale,1.25);assert.equal(targetViewer.currentScale,2);assert.deepEqual(left,[]);assert.deepEqual(right,[]);assert.equal(f.writes.length,0);
+    }finally{f.close();}}
+  });
+  await check('figure jumps move only their chosen native side, automatically unlink scrolling and reject an untranslated target page',async()=>{
+    const f=await fixture();try{
+      await f.show([2,5],'dual');await f.flush();const target=f.layer.nativeView,left=[],right=[],sourceViewer=configureZoom(f.source,1.25,2,{left:0,top:0,width:600,height:800},left),targetViewer=configureZoom(target,2,0,{left:600,top:0,width:600,height:800},right),sourceNavigation=[],targetNavigation=[];sourceViewer.scrollPageIntoView=value=>sourceNavigation.push(value);targetViewer.scrollPageIntoView=value=>targetNavigation.push(value);
+      const figure={id:'fig5',pageIndex:5,left:140,top:430};assert.equal(f.layer.jumpFigure(figure,'source'),true);assert.equal(f.layer.scrollLinked,false);assert.equal(sourceNavigation.length,1);assert.deepEqual(sourceNavigation[0].destArray,[null,{name:'XYZ'},140,430,null]);assert.equal(sourceNavigation[0].pageNumber,6);assert.equal(targetNavigation.length,0);
+      assert.equal(f.layer.jumpFigure(figure,'target'),true);assert.equal(f.layer.scrollLinked,false);assert.equal(sourceNavigation.length,1);assert.equal(targetNavigation.length,1);assert.deepEqual(targetNavigation[0].destArray,[null,{name:'XYZ'},140,430,null]);assert.equal(targetNavigation[0].pageNumber,2);
+      assert.equal(f.layer.jumpFigure({...figure,pageIndex:7},'target'),false);assert.equal(sourceNavigation.length,1);assert.equal(targetNavigation.length,1);assert.equal(f.layer.jumpFigure({...figure,pageIndex:7},'source'),true);assert.equal(sourceNavigation.at(-1).pageNumber,8);assert.equal(targetNavigation.length,1);assert.equal(sourceViewer.currentScale,1.25);assert.equal(targetViewer.currentScale,2);assert.deepEqual(left,[]);assert.deepEqual(right,[]);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('an untranslated active source page cannot relink or map ordinary scrolling to the first translated page',async()=>{
+    const f=await fixture();try{
+      await f.show([2,5],'dual');await f.flush();const target=f.layer.nativeView,sourceViewer=f.source._iframeWindow.PDFViewerApplication.pdfViewer,targetNavigation=[];target._iframeWindow.PDFViewerApplication.pdfViewer.scrollPageIntoView=value=>targetNavigation.push(value);f.layer.setScrollLinked(false);sourceViewer.currentPageNumber=8;sourceViewer._location={pageNumber:8,left:20,top:560,scale:125};f.source._iframeWindow.emit('wheel',{deltaY:80});f.source._onChangeViewState({pageIndex:7,left:20,top:560,scale:125});assert.equal(f.layer.setScrollLinked(true),false);assert.equal(f.layer.scrollLinked,false);assert.deepEqual(targetNavigation,[]);const status=f.layer.header.children.find(node=>node.className==='askgpt-native-status');assert.equal(status.textContent,'本页尚无译文');
+      sourceViewer.currentPageNumber=6;sourceViewer._location={pageNumber:6,left:20,top:560,scale:125};f.source._iframeWindow.emit('wheel',{deltaY:-80});f.source._onChangeViewState({pageIndex:5,left:20,top:560,scale:125});assert.equal(f.layer.setScrollLinked(true),true);assert.equal(targetNavigation.length,1);assert.equal(targetNavigation[0].pageNumber,2);sourceViewer.currentPageNumber=8;sourceViewer._location={pageNumber:8,left:20,top:550,scale:125};f.source._iframeWindow.emit('wheel',{deltaY:50});f.source._onChangeViewState({pageIndex:7,left:20,top:550,scale:125});assert.equal(f.layer.scrollLinked,false);assert.equal(targetNavigation.length,1,'missing source pages never fall back to output page zero');assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('independent reading retains paired Control zoom and Command pan but keeps Option zoom and Option Shift pan local',async()=>{
+    for(const lane of ['source','target']){const f=await fixture();try{
+      await f.show([2,5],'dual');await f.flush();const target=f.layer.nativeView,left=[],right=[],sourceViewer=configureZoom(f.source,1,5,{left:10,top:20,width:600,height:800},left),targetViewer=configureZoom(target,2,1,{left:30,top:40,width:600,height:800},right),sourceScroll=f.source._iframeWindow.document.getElementById('viewerContainer'),targetScroll=target._iframeWindow.document.getElementById('viewerContainer'),active=lane==='source'?f.source:target;Object.assign(sourceScroll,{scrollLeft:100,scrollTop:111,scrollWidth:2000,clientWidth:500});Object.assign(targetScroll,{scrollLeft:200,scrollTop:222,scrollWidth:2000,clientWidth:500});f.source._iframeWindow.requestAnimationFrame=target._iframeWindow.requestAnimationFrame;f.source._iframeWindow.cancelAnimationFrame=target._iframeWindow.cancelAnimationFrame;f.layer.setScrollLinked(false);
+      assert(active._iframeWindow.emit('wheel',{ctrlKey:true,deltaY:-30,clientX:130,clientY:240}).defaultPrevented);await f.flush();assert.equal(left.length,1);assert.equal(right.length,1);assert(Math.abs(targetViewer.currentScale/sourceViewer.currentScale-2)<1e-12);
+      const sourceScale=sourceViewer.currentScale,targetScale=targetViewer.currentScale;assert(active._iframeWindow.emit('wheel',{altKey:true,deltaY:-20,clientX:130,clientY:240}).defaultPrevented);await f.flush();assert.equal(left.length,lane==='source'?2:1);assert.equal(right.length,lane==='target'?2:1);assert.equal(lane==='source'?targetViewer.currentScale:sourceViewer.currentScale,lane==='source'?targetScale:sourceScale);
+      const activeScroll=lane==='source'?sourceScroll:targetScroll,peerScroll=lane==='source'?targetScroll:sourceScroll,activeViewer=lane==='source'?sourceViewer:targetViewer,peerViewer=lane==='source'?targetViewer:sourceViewer,position=activeScroll.scrollLeft,peerPosition=peerScroll.scrollLeft;assert(active._iframeWindow.emit('wheel',{metaKey:true,deltaY:120}).defaultPrevented);for(let i=0;i<40;i++)await f.flush();assert(Math.abs(activeScroll.scrollLeft-position-120)<1e-8);assert(Math.abs(peerScroll.scrollLeft-peerPosition-120*peerViewer.currentScale/activeViewer.currentScale)<1e-8);
+      const local=activeScroll.scrollLeft,peer=peerScroll.scrollLeft;assert(active._iframeWindow.emit('wheel',{altKey:true,shiftKey:true,deltaY:-40}).defaultPrevented);for(let i=0;i<40;i++)await f.flush();assert(Math.abs(activeScroll.scrollLeft-local+40)<1e-8);assert.equal(peerScroll.scrollLeft,peer);assert.equal(sourceScroll.scrollTop,111);assert.equal(targetScroll.scrollTop,222);assert.equal(f.layer.scrollLinked,false);assert.equal(f.views.length,1);assert.equal(f.writes.length,0);
+    }finally{f.close();}}
+  });
+  await check('clicking either native PDF iframe closes the figure chooser without changing panes or annotations',async()=>{
+    const f=await fixture();try{await f.show([0],'dual');const target=f.layer.nativeView,panel=f.layer.figurePanel;assert(panel);for(const active of [f.source,target]){panel.toggle();assert.equal(panel.open,true);const count=f.states.filter(value=>value.navigation).length;active._iframeWindow.emit('pointerdown',{target:active._iframeWindow.document.body});assert.equal(panel.open,false);assert.equal(f.states.filter(value=>value.navigation).length,count);assert.equal(f.layer.scrollLinked,true);assert.equal(f.writes.length,0);}}finally{f.close();}
+  });
+  await check('translation preparation indexes all figure pages before the menu opens and reuses their exact cached entries',async()=>{
+    const f=await figurePreparationFixture();try{
+      const panel=f.layer.figurePanel;assert.equal(panel.open,false);assert.deepEqual(f.reads,[]);f.layer.prepareOutput();f.layer.prepareOutput();await tick();assert.deepEqual(f.reads,[1,2]);assert.deepEqual(f.texts,[1,2]);assert.equal(f.timers.length,1,'native window yield runs between page batches without a global setTimeout');assert.equal(panel.open,false);assert.equal(f.views.length,0,'figure indexing begins before a translated native view exists');
+      f.timers.shift()();await tick();assert.deepEqual(f.reads,[1,2,3]);assert.deepEqual(f.texts,[1,2,3]);const rows=()=>panel.element.allNodes().filter(node=>node.getAttribute?.('data-figure-id'));assert.deepEqual(rows().map(node=>node.getAttribute('data-figure-id')),['figure-main-1','table-main-1','figure-main-2']);assert.equal(panel.open,false);const cachedText=rows().map(node=>node.textContent);
+      f.layer.prepareOutput();panel.toggle();await tick();assert.equal(panel.open,true);assert.deepEqual(rows().map(node=>node.textContent),cachedText);assert.deepEqual(f.reads,[1,2,3]);assert.deepEqual(f.texts,[1,2,3]);assert.deepEqual(f.timers,[]);assert.equal(f.diagnostics.some(value=>value.stage==='nativeFigures'),false);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('disposing during figure preparation prevents later pages and cached callbacks from reviving the panel',async()=>{
+    const f=await figurePreparationFixture();try{
+      const panel=f.layer.figurePanel,batches=[],setEntries=panel.setEntries;panel.setEntries=function(...args){batches.push(args);return Reflect.apply(setEntries,this,args);};f.layer.prepareOutput();await tick();assert.deepEqual(f.reads,[1,2]);assert.equal(batches.length,1);assert.equal(f.timers.length,1);f.close();assert.equal(panel.element.parentNode,null);assert.equal(panel.open,false);
+      f.timers.shift()();await tick();f.layer.prepareOutput();panel.toggle();await tick();assert.deepEqual(f.reads,[1,2]);assert.deepEqual(f.texts,[1,2]);assert.equal(batches.length,1);assert.equal(panel.element.parentNode,null);assert.equal(panel.open,false);assert.equal(f.views.length,0);assert.equal(f.diagnostics.some(value=>value.stage==='nativeFigures'),false);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('Control zoom from the translated pane scales both real viewers once per frame and anchors the matching physical PDF point',async()=>{
+    const f=await fixture();try{await f.show([2,5],'dual');const target=f.layer.nativeView,left=[],right=[],sourceViewer=configureZoom(f.source,1.25,5,{left:10,top:20,width:600,height:800},left,()=>f.source._onChangeViewState({pageIndex:5,left:90,top:600,scale:150})),targetViewer=configureZoom(target,2,1,{left:30,top:40,width:600,height:800},right,()=>target._options.onChangeViewState({pageIndex:1,left:100,top:600,scale:220})),navigation=f.states.filter(value=>value.navigation).length;
+      for(let i=0;i<2;i++)assert(target._iframeWindow.emit('wheel',{ctrlKey:true,deltaY:-20,clientX:130,clientY:240}).defaultPrevented);assert.equal(left.length,0);assert.equal(right.length,0);await f.flush();
+      assert.equal(left.length,1);assert.equal(right.length,1);assert.equal(right[0].steps,1);assert.equal(left[0].scaleFactor,1.1);assert.deepEqual(right[0].origin,[130,240]);assert.deepEqual(left[0].origin,[110,220]);assert.equal(left[0].drawingDelay,400);assert.equal(right[0].drawingDelay,400);assert(Math.abs(targetViewer.currentScale/sourceViewer.currentScale-1.6)<1e-12);assert.equal(f.views.length,1);assert.equal(f.states.filter(value=>value.navigation).length,navigation,'scaling callbacks must never navigate the opposite pane');assert.equal(f.writes.length,0);
+      target._options.onChangeViewState({pageIndex:1,left:100,top:590,scale:targetViewer.currentScale*100});assert.equal(f.states.filter(value=>value.navigation).length,navigation,'the deferred native scale event remains suppressed');target._iframeWindow.emit('wheel',{deltaY:30});target._options.onChangeViewState({pageIndex:1,left:100,top:580,scale:targetViewer.currentScale*100});await f.flush();assert.equal(f.states.filter(value=>value.navigation).length,navigation+1,'ordinary scroll resumes synchronization on the next frame');
+    }finally{f.close();}
+  });
+  await check('Control zoom from the original pane preserves independent scale ratios while Option changes only that pane',async()=>{
+    const f=await fixture();try{await f.show([2,5],'dual');const target=f.layer.nativeView,left=[],right=[],sourceViewer=configureZoom(f.source,1.5,5,{left:10,top:20,width:600,height:800},left),targetViewer=configureZoom(target,2.25,1,{left:30,top:40,width:600,height:800},right),navigation=[],count=f.states.filter(value=>value.navigation).length;targetViewer.scrollPageIntoView=value=>navigation.push(value);f.source._iframeWindow.requestAnimationFrame=target._iframeWindow.requestAnimationFrame;f.source._iframeWindow.cancelAnimationFrame=target._iframeWindow.cancelAnimationFrame;
+      assert(f.source._iframeWindow.emit('wheel',{ctrlKey:true,deltaY:40,clientX:110,clientY:220}).defaultPrevented);await f.flush();assert.equal(left.length,1);assert.equal(right.length,1);assert.deepEqual(left[0].origin,[110,220]);assert.deepEqual(right[0].origin,[130,240]);assert(Math.abs(targetViewer.currentScale/sourceViewer.currentScale-1.5)<1e-12);
+      const previous=targetViewer.currentScale;assert(f.source._iframeWindow.emit('wheel',{altKey:true,deltaY:-25,clientX:110,clientY:220}).defaultPrevented);await f.flush();assert.equal(left.length,2);assert.equal(right.length,1);assert.equal(targetViewer.currentScale,previous);f.source._onChangeViewState({pageIndex:5,left:100,top:580,scale:sourceViewer.currentScale*100});assert.equal(navigation.length,0);assert.equal(f.states.filter(value=>value.navigation).length,count);
+      assert.equal(f.source._iframeWindow.emit('wheel',{deltaY:20}).defaultPrevented,undefined);f.source._onChangeViewState({pageIndex:5,left:100,top:570,scale:sourceViewer.currentScale*100});await f.flush();assert.equal(navigation.length,1);assert.equal(navigation[0].pageNumber,2);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('Control zoom in mono or original mode never changes a hidden pane and Command cancels unpresented zoom',async()=>{
+    const f=await fixture();try{await f.show([0],'mono');const target=f.layer.nativeView,left=[],right=[];configureZoom(f.source,1.25,0,{left:0,top:0,width:600,height:800},left);configureZoom(target,2,0,{left:0,top:0,width:600,height:800},right);target._iframeWindow.emit('wheel',{ctrlKey:true,deltaY:-30,clientX:100,clientY:200});await f.flush();assert.equal(left.length,0);assert.equal(right.length,1);
+      target._iframeWindow.emit('wheel',{ctrlKey:true,deltaY:-30});const command=target._iframeWindow.emit('wheel',{metaKey:true,deltaY:100});assert(command.defaultPrevented);await f.flush();assert.equal(right.length,1);assert.equal(left.length,0);f.layer.showOriginal();f.source._iframeWindow.emit('wheel',{ctrlKey:true,deltaY:-30,clientX:100,clientY:200});assert.equal(left.length,1);assert.equal(right.length,1);
+    }finally{f.close();}
+  });
+  await check('bilingual mode hides only the middle scrollbar and restores its exact original property and priority',async()=>{
+    const f=await fixture({},({source})=>source._iframeWindow.document.getElementById('viewerContainer').style.setProperty('scrollbar-width','thin','important'));try{const bytes=new Uint8Array([1,2,3]).buffer,data=alignment();await f.layer.showOutput(bytes,[0],'dual',data);const original=f.source._iframeWindow.document.getElementById('viewerContainer'),target=f.layer.nativeView._iframeWindow.document.getElementById('viewerContainer');assert.equal(original.style.getPropertyValue('scrollbar-width'),'none');assert.equal(target.style.getPropertyValue('scrollbar-width'),'');original.scrollTop=200;assert.equal(original.scrollTop,200);f.layer.showOriginal();assert.equal(original.style.getPropertyValue('scrollbar-width'),'thin');assert.equal(original.style.getPropertyPriority('scrollbar-width'),'important');await f.layer.showOutput(bytes,[0],'dual',data);await f.layer.showOutput(bytes,[0],'mono',data);assert.equal(original.style.getPropertyValue('scrollbar-width'),'thin');await f.layer.showOutput(bytes,[0],'dual',data);f.close();assert.equal(original.style.getPropertyValue('scrollbar-width'),'thin');assert.equal(original.style.getPropertyPriority('scrollbar-width'),'important');
+    }finally{f.close();}
+  });
+  await check('gesture capture listeners and their options enter the reader realm and remove with the same native identities',async()=>{
+    const owned=new WeakSet(),listeners=new Map();let registered=0,removed=0;
+    const cloneInto=value=>{if(value===null||typeof value!=='object'||value instanceof DOM.Element||value instanceof DOM.Window||typeof value.then==='function')return value;const result=value instanceof Uint8Array?new Uint8Array(value):Array.isArray(value)?value.map(cloneInto):Object.fromEntries(Object.entries(value).map(([key,item])=>[key,cloneInto(item)]));owned.add(result);return result;};
+    const observe=win=>{const add=win.addEventListener,remove=win.removeEventListener;win.addEventListener=function(type,callback,options){if(type==='wheel'){assert(owned.has(callback),'the listener must be an exported content callable');assert(owned.has(options),'capture/passive options must be cloned into the reader compartment');assert.deepEqual(options,{capture:true,passive:false});listeners.set(callback,options);registered++;}return Reflect.apply(add,this,[type,callback,options]);};win.removeEventListener=function(type,callback,options){if(type==='wheel'){assert.equal(listeners.get(callback),options);removed++;}return Reflect.apply(remove,this,[type,callback,options]);};};
+    const f=await fixture({Components:{utils:{cloneInto,exportFunction(callback){const result=function(...args){return Reflect.apply(callback,this,args);};owned.add(result);return result;}}}},({source})=>{observe(source._iframeWindow);const Base=source.constructor;source.constructor=class extends Base{constructor(options){super(options);observe(this._iframeWindow);}};});try{await f.show();assert.equal(registered,2);f.close();assert.equal(removed,2);}finally{f.close();}
+  });
+  await check('Command pans only horizontally and late viewport callbacks never move the opposite pane until ordinary navigation resumes',async()=>{
+    const f=await fixture();try{await f.show([0,1],'dual');const target=f.layer.nativeView,scroll=target._iframeWindow.document.getElementById('viewerContainer'),navigation=f.states.filter(value=>value.navigation).length,now=Date.now;target._iframeWindow.emit('wheel',{metaKey:true,deltaY:90});try{Date.now=()=>now()+5000;for(let i=0;i<30;i++)await f.flush();target._options.onChangeViewState({pageIndex:0,left:140,top:600,scale:125});assert.equal(scroll.scrollLeft,90);assert.equal(scroll.scrollTop,20);assert.equal(f.states.filter(value=>value.navigation).length,navigation);}finally{Date.now=now;}
+      target._iframeWindow.emit('keydown',{code:'PageDown'});target._options.onChangeViewState({pageIndex:1,left:140,top:600,scale:125});await f.flush();assert.equal(f.states.filter(value=>value.navigation).length,navigation+1);
+    }finally{f.close();}
+  });
+  await check('Command pans both native panes by the same PDF distance from either side while Option+Shift pans only the hovered side',async()=>{
+    for(const lane of ['source','target']){const f=await fixture();try{await f.show([0,1],'dual');const target=f.layer.nativeView,sourceScroll=f.source._iframeWindow.document.getElementById('viewerContainer'),targetScroll=target._iframeWindow.document.getElementById('viewerContainer'),active=lane==='source'?f.source:target,other=lane==='source'?targetScroll:sourceScroll;Object.assign(sourceScroll,{scrollLeft:100,scrollTop:111,scrollWidth:2000,clientWidth:500});Object.assign(targetScroll,{scrollLeft:200,scrollTop:222,scrollWidth:2000,clientWidth:500});f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScale=1;target._iframeWindow.PDFViewerApplication.pdfViewer.currentScale=2;f.source._iframeWindow.requestAnimationFrame=target._iframeWindow.requestAnimationFrame;f.source._iframeWindow.cancelAnimationFrame=target._iframeWindow.cancelAnimationFrame;const before=f.states.filter(value=>value.navigation).length;
+      assert(active._iframeWindow.emit('wheel',{metaKey:true,deltaY:120}).defaultPrevented);for(let i=0;i<40;i++)await f.flush();assert(Math.abs(sourceScroll.scrollLeft-(lane==='source'?220:160))<1e-8);assert(Math.abs(targetScroll.scrollLeft-(lane==='source'?440:320))<1e-8);assert.equal(sourceScroll.scrollTop,111);assert.equal(targetScroll.scrollTop,222);assert.equal(f.states.filter(value=>value.navigation).length,before);assert.equal(f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScale,1);assert.equal(target._iframeWindow.PDFViewerApplication.pdfViewer.currentScale,2);
+      const original=other.scrollLeft,current=lane==='source'?sourceScroll:targetScroll,position=current.scrollLeft;assert(active._iframeWindow.emit('wheel',{altKey:true,shiftKey:true,deltaY:-40}).defaultPrevented);for(let i=0;i<40;i++)await f.flush();assert(Math.abs(current.scrollLeft-position+40)<1e-8);assert.equal(other.scrollLeft,original);assert.equal(sourceScroll.scrollTop,111);assert.equal(targetScroll.scrollTop,222);assert.equal(f.views.length,1);assert.equal(f.writes.length,0);
+    }finally{f.close();}}
+  });
+  await check('horizontal pan clamps each native width independently and changing paired/local modifiers discards the old queued destination',async()=>{
+    const f=await fixture();try{await f.show([0],'dual');const target=f.layer.nativeView,sourceScroll=f.source._iframeWindow.document.getElementById('viewerContainer'),targetScroll=target._iframeWindow.document.getElementById('viewerContainer');Object.assign(sourceScroll,{scrollLeft:10,scrollTop:111,scrollWidth:2000,clientWidth:500});Object.assign(targetScroll,{scrollLeft:1490,scrollTop:222,scrollWidth:2000,clientWidth:500});f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScale=1;target._iframeWindow.PDFViewerApplication.pdfViewer.currentScale=2;f.source._iframeWindow.requestAnimationFrame=target._iframeWindow.requestAnimationFrame;f.source._iframeWindow.cancelAnimationFrame=target._iframeWindow.cancelAnimationFrame;
+      f.source._iframeWindow.emit('wheel',{metaKey:true,deltaY:100});for(let i=0;i<40;i++)await f.flush();assert.equal(sourceScroll.scrollLeft,110);assert.equal(targetScroll.scrollLeft,1500);f.source._iframeWindow.emit('wheel',{metaKey:true,deltaY:300});f.source._iframeWindow.emit('wheel',{altKey:true,shiftKey:true,deltaY:-10});for(let i=0;i<40;i++)await f.flush();assert.equal(sourceScroll.scrollLeft,100);assert.equal(targetScroll.scrollLeft,1500);f.source._iframeWindow.emit('wheel',{metaKey:true,deltaY:-200});for(let i=0;i<40;i++)await f.flush();assert.equal(sourceScroll.scrollLeft,0);assert(Math.abs(targetScroll.scrollLeft-1300)<1e-8);assert.equal(sourceScroll.scrollTop,111);assert.equal(targetScroll.scrollTop,222);
+    }finally{f.close();}
+  });
+  await check('paired horizontal movement retains fractional PDF distance when native scroll offsets are rounded to integer pixels',async()=>{
+    const f=await fixture();try{await f.show([0],'dual');const target=f.layer.nativeView,sourceScroll=f.source._iframeWindow.document.getElementById('viewerContainer'),targetScroll=target._iframeWindow.document.getElementById('viewerContainer');let left=100,right=200;for(const scroll of [sourceScroll,targetScroll])Object.assign(scroll,{scrollWidth:2000,clientWidth:500});Object.defineProperty(sourceScroll,'scrollLeft',{get:()=>left,set:value=>{left=Math.round(value);}});Object.defineProperty(targetScroll,'scrollLeft',{get:()=>right,set:value=>{right=Math.round(value);}});f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScale=1;target._iframeWindow.PDFViewerApplication.pdfViewer.currentScale=1.5;f.source._iframeWindow.requestAnimationFrame=target._iframeWindow.requestAnimationFrame;f.source._iframeWindow.cancelAnimationFrame=target._iframeWindow.cancelAnimationFrame;f.source._iframeWindow.emit('wheel',{metaKey:true,deltaY:100.4});for(let i=0;i<50;i++)await f.flush();assert.equal(left,200);assert.equal(right,350,'fractional peer deltas must accumulate before native rounding rather than drift each frame');
+    }finally{f.close();}
+  });
+  await check('explicit native parent navigation releases gesture isolation and cancels pending input for either active pane',async()=>{
+    for(const lane of ['source','target'])for(const method of ['navigate','navigateToNextPage']){const f=await fixture();try{await f.show([2,5],'dual');const target=f.layer.nativeView,active=lane==='source'?f.source:target,targetNavigation=[];target._iframeWindow.PDFViewerApplication.pdfViewer.scrollPageIntoView=value=>targetNavigation.push(value);active._iframeWindow.emit('wheel',{altKey:true,deltaY:-20,clientX:90,clientY:100});if(lane==='source')f.source._onChangeViewState({pageIndex:2,left:40,top:680,scale:125});else target._options.onChangeViewState({pageIndex:0,left:40,top:680,scale:150});const count=f.states.filter(value=>value.navigation).length;assert.equal(targetNavigation.length,0);f.source[method]({pageIndex:5});await f.flush();
+      if(lane==='source'){f.source._onChangeViewState({pageIndex:5,left:40,top:660,scale:125});await f.flush();assert.equal(targetNavigation.at(-1).pageNumber,2);}else{target._options.onChangeViewState({pageIndex:1,left:40,top:660,scale:150});await f.flush();assert.equal(f.states.filter(value=>value.navigation).length,count+1);assert.equal(f.states.at(-1).navigation.pageNumber,6);}assert.equal(f.writes.length,0);
+    }finally{f.close();}}
+  });
+  await check('match pane zoom copies active translated numerical zoom only to the source while preserving its paired reading position',async()=>{
+    const updates=[],f=await fixture({},({source})=>{const viewer=source._iframeWindow.PDFViewerApplication.pdfViewer;viewer.currentScale=1.25;viewer.currentScaleValue=1.25;viewer.updateScale=value=>{updates.push(value);viewer.currentScale*=value.scaleFactor;viewer.currentScaleValue=viewer.currentScale;};});try{
+      await f.show([0,1],'dual');const target=f.layer.nativeView,viewer=target._iframeWindow.PDFViewerApplication.pdfViewer;viewer.currentScale=2;viewer.currentScaleValue=2;target._iframeWindow.emit('pointermove');target._options.onChangeViewState({pageIndex:1,left:70,top:600,scale:200});const scroll=target._iframeWindow.document.getElementById('viewerContainer'),left=scroll.scrollLeft,top=scroll.scrollTop,button=f.layer.menu.allNodes().find(node=>node.getAttribute('title')==='Match pane zoom · 同步大小');assert(button);assert.equal(button.disabled,false);button.emit('click');await tick();await f.flush();
+      assert.equal(updates.length,1);assert.equal(updates[0].scaleFactor,1.6);assert.equal(f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScale,2);assert.equal(viewer.currentScale,2);assert.equal(scroll.scrollLeft,left);assert.equal(scroll.scrollTop,top);assert.equal(f.states.at(-1).navigation.pageNumber,2);assert.equal(f.states.at(-1).navigation.destArray[3],600);assert.equal(f.states.at(-1).navigation.destArray[4],null);assert.equal(target.calls.some(value=>value[0]==='fitWidth'),false,'an explicit zoom match supersedes a pending default fit');assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('match pane zoom copies active original scale only to the translation and keeps the original native viewport untouched',async()=>{
+    const f=await fixture({},({source})=>{const viewer=source._iframeWindow.PDFViewerApplication.pdfViewer;Object.assign(viewer,{currentPageNumber:2,currentScale:1.75,currentScaleValue:'page-width',_location:{pageNumber:2,left:50,top:650,scale:175}});Object.assign(source._iframeWindow.document.getElementById('viewerContainer'),{scrollLeft:37,scrollTop:91});});try{
+      await f.show([0,1],'dual');const target=f.layer.nativeView,viewer=target._iframeWindow.PDFViewerApplication.pdfViewer,updates=[],navigation=[];viewer.currentScale=2;viewer.currentScaleValue=2;viewer.updateScale=value=>{updates.push(value);viewer.currentScale*=value.scaleFactor;viewer.currentScaleValue=viewer.currentScale;};viewer.scrollPageIntoView=value=>navigation.push(value);f.source._iframeWindow.emit('pointermove');f.layer.menu.allNodes().find(node=>node.getAttribute('title')==='Match pane zoom · 同步大小').emit('click');await tick();await f.flush();
+      assert.equal(updates.length,1);assert.equal(updates[0].scaleFactor,.875);assert.equal(viewer.currentScale,1.75);assert.equal(f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScale,1.75);assert.equal(f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScaleValue,'page-width');assert.equal(f.source._iframeWindow.document.getElementById('viewerContainer').scrollLeft,37);assert.equal(f.source._iframeWindow.document.getElementById('viewerContainer').scrollTop,91);assert.equal(navigation.at(-1).pageNumber,2);assert.equal(navigation.at(-1).destArray[3],650);assert.equal(navigation.at(-1).destArray[4],null);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('match pane zoom is disabled outside bilingual mode and safely ignores unavailable native scale or update APIs',async()=>{
+    const f=await fixture();try{const bytes=new Uint8Array([1,2,3]).buffer,data=alignment();await f.layer.showOutput(bytes,[0],'mono',data);const button=f.layer.menu.allNodes().find(node=>node.getAttribute('title')==='Match pane zoom · 同步大小');assert.equal(button.disabled,true);button.emit('click');await tick();assert.equal(f.errors.length,0);
+      await f.layer.showOutput(bytes,[0],'dual',data);assert.equal(button.disabled,false);const count=f.states.filter(value=>value.navigation).length;button.emit('click');await tick();assert.equal(f.states.filter(value=>value.navigation).length,count);assert.equal(f.errors.length,0);
+      f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentScale=1.25;f.layer.nativeView._iframeWindow.PDFViewerApplication.pdfViewer.currentScale=2;button.emit('click');await tick();assert.equal(f.states.filter(value=>value.navigation).length,count);assert.equal(f.errors.length,0);f.layer.showOriginal();assert.equal(button.disabled,true);
+    }finally{f.close();}
+  });
+  await check('bilingual mode uses independent source and translated native pages and reuses the local document',async()=>{
+    const f=await fixture();try{const bytes=new Uint8Array([1,2,3]).buffer,data=alignment([0]);await f.layer.showOutput(bytes,[0],'dual',data);const translated=f.layer.nativeView;
+      assert.equal(f.sourceFrame.style.getPropertyValue('width'),'50%');assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'visible');
+      assert.equal(f.layer.body.style.getPropertyValue('left'),'50%');assert.equal(translated._options.viewState.scale,125);
+      f.layer.showOriginal();assert.equal(translated.destroyed,undefined);assert.equal(f.layer.visible,false);assert.equal(f.sourceFrame.style.getPropertyValue('width'),'');
+      await f.layer.showOutput(bytes,[0],'mono',data);assert.equal(f.layer.nativeView,translated);assert.equal(f.views.length,1);assert.equal(f.layer.body.style.getPropertyValue('left'),'0');
+    }finally{f.close();}
+  });
+  await check('normal bilingual scrolling follows both directions while Option zoom keeps the other pane fixed',async()=>{
+    const f=await fixture();try{await f.show([0,1],'dual');await f.flush();const target=f.layer.nativeView,sourceViewer=f.source._iframeWindow.PDFViewerApplication.pdfViewer,targetViewer=target._iframeWindow.PDFViewerApplication.pdfViewer,navigation=[];targetViewer.scrollPageIntoView=value=>navigation.push(value);
+      f.source._iframeWindow.emit('wheel',{deltaY:20});f.source._onChangeViewState({pageIndex:1,left:50,top:700,scale:150});await f.flush();assert.equal(navigation.at(-1).pageNumber,2);assert.equal(navigation.at(-1).destArray[4],null);
+      target._iframeWindow.emit('wheel',{deltaY:-20});target._options.onChangeViewState({pageIndex:0,left:50,top:700,scale:175});await f.flush();assert.equal(f.states.at(-1).navigation.pageNumber,1);assert.equal(f.reader._state.primaryViewState.scale,150);
+      const count=f.states.filter(value=>value.navigation).length;target._iframeWindow.emit('wheel',{altKey:true,deltaY:-20,clientX:90,clientY:100});target._options.onChangeViewState({pageIndex:0,left:60,top:680,scale:200});assert.equal(f.states.filter(value=>value.navigation).length,count);
+      f.layer.showOriginal();f.source._onChangeViewState({pageIndex:1,left:40,top:650,scale:150});await f.layer.showOutput(f.layer.nativeView?._options.data.buf,[0,1],'mono',alignment([0,1]));assert.equal(f.reader._state.primaryViewState.pageIndex,1);
+    }finally{f.close();}
+  });
+  async function warmFixture(holdIndex=null){
+    const reads=[],operators=[],texts=[],basics=[],listeners=new Map();let release;const held=new Promise(resolve=>{release=resolve;});
+    const bus={on(name,fn){if(!listeners.has(name))listeners.set(name,new Set());listeners.get(name).add(fn);},off(name,fn){listeners.get(name)?.delete(fn);},emit(name,value){for(const fn of listeners.get(name)||[])fn(value);}};
+    const f=await fixture({},({source})=>{const Parent=source.constructor;source.constructor=class extends Parent{constructor(options){super(options);const application=this._iframeWindow.PDFViewerApplication;application.eventBus=bus;application.pdfViewer.currentPageNumber=3;application.pdfDocument={numPages:8,async getPage(number){reads.push(number);return {async getOperatorList(){operators.push(number);},async getTextContent(){texts.push(number);}};}};this._ensureBasicPageData=async index=>{basics.push(index);if(index===holdIndex)await held;};}};});
+    const until=async predicate=>{for(let i=0;i<200;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,1));}assert.fail('page warming did not settle');};
+    return {...f,reads,operators,texts,basics,bus,release,until};
+  }
+  await check('native page warming runs after presentation and prepares current, next two and previous page once',async()=>{
+    const f=await warmFixture(2);try{await f.show([0,1,2,3,4,5,6,7]);assert.equal(f.layer.visible,true);assert.equal(f.basics.length,0,'idle warming must not run inside showOutput');await f.until(()=>f.basics.length===1);assert.deepEqual(f.basics,[2]);assert.equal(f.reads.length,0,'a held selection-data load never blocks nativeReady');
+      f.release();await f.until(()=>f.texts.length===4);assert.deepEqual(f.basics,[2,3,4,1]);assert.deepEqual(f.reads,[3,4,5,2]);assert.deepEqual(f.operators,f.reads);assert.deepEqual(f.texts,f.reads);
+      f.bus.emit('pagechanging',{pageNumber:3});await new Promise(resolve=>setTimeout(resolve,5));assert.equal(f.reads.length,4,'native data already warmed remains reusable');
+    }finally{f.release();f.close();}
+  });
+  await check('rapid page changes discard obsolete neighbors and finish warming the last visible page',async()=>{
+    const f=await warmFixture(2);try{await f.show([0,1,2,3,4,5,6,7]);await f.until(()=>f.basics.length===1);f.bus.emit('pagechanging',{pageNumber:6});f.bus.emit('pagechanging',{pageNumber:7});f.release();await f.until(()=>f.texts.length===3);
+      assert.deepEqual(f.basics,[2,6,7,5]);assert.deepEqual(f.reads,[7,8,6]);assert(!f.reads.includes(4),'obsolete next-page work must not stay ahead of the new reading location');
+    }finally{f.release();f.close();}
+  });
+  await check('disposing a native reader stops pending warming before PDF page work continues',async()=>{
+    const f=await warmFixture(2);try{await f.show([0,1,2,3,4,5,6,7]);await f.until(()=>f.basics.length===1);f.bus.emit('pagechanging',{pageNumber:7});f.close();f.release();await new Promise(resolve=>setTimeout(resolve,5));assert.deepEqual(f.reads,[]);assert.deepEqual(f.basics,[2]);
+    }finally{f.release();f.close();}
+  });
+  await check('switching to original during native initialization retains the completed local view without reopening it',async()=>{
+    const f=await fixture();try{const release=f.hold(),pending=f.show();await tick();f.layer.showOriginal();release();await pending;assert.equal(f.layer.visible,false);assert.equal(f.layer.nativeView.destroyed,undefined);assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');}finally{f.close();}
+  });
+  await check('original mode clears translated native popups and retains Option zoom and current physical page',async()=>{
+    const f=await fixture();try{await f.show([0,1],'mono');const target=f.layer.nativeView;target._iframeWindow.PDFViewerApplication.pdfViewer.currentPageNumber=2;assert.equal(f.layer.currentSourcePage,1);target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight()});assert(f.reader._state.primaryViewSelectionPopup);f.layer.showOriginal();assert.equal(f.reader._state.primaryViewSelectionPopup,null);assert.equal(target._selectionPopup,null);f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentPageNumber=2;assert.equal(f.layer.currentSourcePage,1);const wheel=f.source._iframeWindow.emit('wheel',{altKey:true,deltaY:-20,clientX:50,clientY:70});assert(wheel.defaultPrevented);assert.equal(target.destroyed,undefined);}finally{f.close();}
+  });
+  await check('showing original before any translated view exists and showing it again never jumps to its stale startup page',async()=>{
+    const f=await fixture({},({reader,source})=>{reader._state.primaryViewState={pageIndex:8,left:40,top:700,scale:125};const viewer=source._iframeWindow.PDFViewerApplication.pdfViewer;viewer.currentPageNumber=9;viewer._location={pageNumber:9,left:40,top:700,scale:125};});try{
+      const viewer=f.source._iframeWindow.PDFViewerApplication.pdfViewer;f.layer.showOriginal();assert.equal(f.layer.nativeView,null);assert.equal(f.states.filter(value=>value.navigation).length,0);
+      viewer.currentPageNumber=1;viewer._location={pageNumber:1,left:20,top:720,scale:125};f.layer.showOriginal();assert.equal(f.states.filter(value=>value.navigation).length,0);assert.equal(f.layer.currentSourcePage,0);
+    }finally{f.close();}
+  });
+  await check('new and reused translated views prioritize the real original page over stale PDF.js location and debounced parent state',async()=>{
+    const f=await fixture({},({reader,source})=>{reader._state.primaryViewState={pageIndex:8,left:40,top:700,scale:125};const viewer=source._iframeWindow.PDFViewerApplication.pdfViewer;viewer.currentPageNumber=1;viewer._location={pageNumber:9,left:40,top:700,scale:125};});try{
+      const bytes=new Uint8Array([1,2,3]).buffer,data=alignment([0,8]);f.layer.showOriginal();await f.layer.showOutput(bytes,[0,8],'mono',data);const target=f.layer.nativeView;assert.equal(target._options.viewState.pageIndex,0);assert.equal(target._options.viewState.left,0);assert.equal(target._options.viewState.top,800,'coordinates from another physical page must not carry into page one');
+      const navigation=[];target._iframeWindow.PDFViewerApplication.pdfViewer.scrollPageIntoView=value=>navigation.push(value);f.layer.showOriginal();await f.layer.showOutput(bytes,[0,8],'dual',data);assert.equal(f.layer.nativeView,target);assert.equal(navigation.at(-1).pageNumber,1);assert.equal(navigation.at(-1).destArray[4],null);assert.equal(f.reader._state.primaryViewState.scale,125);
+    }finally{f.close();}
+  });
+  await check('reloading a mono scope retains translated reading position instead of its hidden original, while the active source lane owns its own reload',async()=>{
+    const f=await fixture({},({source})=>{const viewer=source._iframeWindow.PDFViewerApplication.pdfViewer;viewer.currentPageNumber=1;viewer._location={pageNumber:1,left:10,top:770,scale:125};});try{
+      const data=alignment([0,8]);await f.layer.showOutput(new Uint8Array([1,2,3]).buffer,[0,8],'mono',data);const first=f.layer.nativeView;first._options.onChangeViewState({pageIndex:1,left:70,top:600,scale:200});f.reader._state.primaryViewState={pageIndex:0,left:10,top:770,scale:125};
+      const secondBytes=new Uint8Array([4,5,6]).buffer;await f.layer.showOutput(secondBytes,[0,8],'mono',data);const second=f.layer.nativeView;assert.notEqual(second,first);assert.equal(second._options.viewState.pageIndex,1);assert.equal(second._options.viewState.left,70);assert.equal(second._options.viewState.top,600);assert.equal(second._options.viewState.scale,125);assert.equal(f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentPageNumber,1);
+      await f.layer.showOutput(secondBytes,[0,8],'dual',data);f.source._iframeWindow.emit('pointermove');await f.layer.showOutput(new Uint8Array([7,8,9]).buffer,[0,8],'dual',data);assert.equal(f.layer.nativeView._options.viewState.pageIndex,0);assert.equal(f.layer.nativeView._options.viewState.top,770);assert.equal(f.layer.nativeView._options.viewState.scale,125);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('alignment validates identity, physical page order and affine geometry',()=>{
+    assert.equal(Native.validateAlignment(alignment([3]),[3]).pages[0].sourcePage,3);
+    for(const mutate of [value=>value.schema=2,value=>value.pages[0].sourcePage=1,value=>value.pages[0].sourceToDual=[0,0,0,0,0,0],value=>value.pages[0].paragraphs[0].source.rects=[[0,0,NaN,4]],value=>value.coordinateSpace='css']){const value=alignment();mutate(value);assert.throws(()=>Native.validateAlignment(value,[0]),{code:'compatibility'});}
+  });
+  await check('unchanged glyph identity accepts only exact text and real identical rectangles',()=>{
+    const value=alignment(),row=value.pages[0].paragraphs[0].sentences[0];
+    row.method='glyph-identity';row.target=structuredClone(row.source);delete row.phrases;
+    row.dualTarget={rects:row.target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])};
+    const valid=Native.validateAlignment(value,[0]);assert.equal(valid.pages[0].paragraphs[0].sentences[0].method,'glyph-identity');
+    const mapper=Native.createMapper(valid,'mono');assert.deepEqual(mapper.toSourceAnnotation(highlight(0,[[50,694,150,708]])).position.rects,[[50,694,150,708]]);
+    for(const change of [s=>s.target.text=s.target.text.toLowerCase(),s=>s.target.rects[0][0]+=.02,s=>s.target.rects.push(s.target.rects[0])]){
+      const bad=structuredClone(value);change(bad.pages[0].paragraphs[0].sentences[0]);assert.throws(()=>Native.validateAlignment(bad,[0]),{code:'compatibility'});
+    }
+  });
+  await check('sentence metadata requires the trusted semantic revision, method and physical-page allowlist',()=>{
+    for(const mutate of [value=>delete value.sentenceAlignmentRevision,value=>value.sentenceAlignmentRevision='length-ratio-v1',value=>delete value.pages[0].paragraphs[0].sentences[0].method,value=>value.pages[0].paragraphs[0].sentences[0].method='ordered-sentences',value=>value.sentencePages=[],value=>value.sentencePages=[1],value=>value.sentencePages=[0,0]]){const value=alignment();mutate(value);assert.throws(()=>Native.validateAlignment(value,[0]),{code:'compatibility'});}
+    const mixed=alignment([3,4]);mixed.sentencePages=[3];mixed.phrasePages=[3];mixed.phraseExtractedPages=[3];delete mixed.pages[1].paragraphs[0].sentences;assert.deepEqual(Native.validateAlignment(mixed,[3,4]).sentencePages,[3]);mixed.pages[1].paragraphs[0].sentences=[];assert.throws(()=>Native.validateAlignment(mixed,[3,4]),{code:'compatibility'});
+    assert.equal(Native.validateAlignment(legacyAlignment(),[0]).granularity,'paragraph');
+  });
+  await check('partial sentence pages expose exact completed words without pretending the whole page is ready',async()=>{
+    const value=selectionAlignment([4]);value.sentencePages=[];value.sentencePartialPages=[4];value.phraseExtractedPages=[];const paragraph=value.pages[0].paragraphs[0];value.pages[0].paragraphs.push({id:'p4_pending',source:{text:'Still unprepared',rects:[[40,500,200,520]]},target:{text:'尚未准备',rects:[[40,500,200,520]]},dualSource:{rects:[[40,500,200,520]]},dualTarget:{rects:[[640,500,800,520]]}});
+    const valid=Native.validateAlignment(value,[4]),mapper=Native.createMapper(valid,'mono');assert.equal(mapper.toSourceAnnotation({...highlight(0,[[60,690,90,710]]),text:'基因组'}).text,'genome');assert.deepEqual(mapper.selectionUnits(highlight(4,[[94,690,130,710]]),'source'),['s0']);assert.deepEqual(mapper.selectionUnits(highlight(4,[[45,504,70,518]]),'source'),['p4_pending']);assert.throws(()=>mapper.toSourceAnnotation(highlight(0,[[45,504,70,518]])),{code:'annotation_sentence'});
+    const calls=[],f=await fixture({},()=>{},{align:page=>{calls.push(page);return 'started';}});try{await f.show([4],'mono',valid);await tick();assert.deepEqual(calls,[4],'a partial checkpoint must not suppress preparation for other words on the page');assert.equal(f.writes.length,0);}finally{f.close();}
+    for(const mutate of [v=>v.sentencePages=[4],v=>v.sentencePartialPages=[4,4],v=>v.sentencePartialPages=[5],v=>v.sentencePartialPages=['4'],v=>v.phraseExtractedPages=[4]]){const invalid=clone(value);mutate(invalid);assert.throws(()=>Native.validateAlignment(invalid,[4]),{code:'compatibility'});}
+    assert.equal(paragraph.id,'p0_0');
+  });
+  await check('three selected Chinese characters map only to the aligned English word, never the entire sentence',()=>{
+    const value=phraseAlignment(),mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono'),result=mapper.toSourceAnnotation({...highlight(0,[[60,690,90,710]]),text:'基因组'}),expected=value.pages[0].paragraphs[0].sentences[0].phrases[1].source;assert.deepEqual(result.position.rects,expected.rects);assert.equal(result.text,'genome');assert.equal(result.comment,'译文摘录：基因组');assert.equal(result.color,'#ffd400');
+  });
+  await check('foreign native position arrays are normalized before any prototype-dependent glyph operation',()=>{
+    const hide=value=>Array.isArray(value)?new Proxy(value.map(hide),{get(target,key){return ['map','every','some','flatMap','filter','slice'].includes(key)?undefined:Reflect.get(target,key);}}):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,hide(v)])):value;
+    const mapper=Native.createMapper(Native.validateAlignment(phraseAlignment(),[0]),'mono'),input=hide({...highlight(0,[[60,690,90,710]]),text:'基因组'});assert.equal(input.position.rects.some,undefined);assert.equal(mapper.toSourceAnnotation(input).text,'genome');const source=hide({...highlight(0,[[94,690,130,710]]),text:'genome',id:'FOREIGN'});assert.equal(mapper.projectAnnotation(source).text,'基因组');
+  });
+  await check('native glyph rectangles with hidden foreign prototypes preserve exact selection in both directions without whole-page cloning',()=>{
+    const value=Native.validateAlignment(phraseAlignment(),[0]),row=value.pages[0].paragraphs[0].sentences[0],views={};let coordinateReads=0;
+    for(const side of ['source','target']){const chars=vm.runInNewContext(JSON.stringify(row[side].glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))));for(let i=0;i<chars.length;i++)chars[i].rect=new Proxy(chars[i].rect,{get(target,key){if(['every','map','some','slice','filter'].includes(key))return undefined;if(['0','1','2','3'].includes(key))coordinateReads++;return Reflect.get(target,key);}});views[side]={_pdfPages:{0:{chars}}};assert.equal(chars[0].rect.every,undefined);}
+    const mapper=Native.createMapper(value,'mono',views.source,views.target),source={...highlight(0,[[94,690,130,710]]),text:'genome',id:'FOREIGNGLYPH'};
+    const projected=mapper.projectAnnotation(source);assert(projected,'foreign PDF.js glyph evidence must not silently discard an already proved word');assert.equal(projected.text,'基因组');assert.equal(mapper.hasExactSourceSelection(source),true);assert.equal(mapper.toSourceAnnotation({...highlight(0,[[60,690,90,710]]),text:'基因组'}).text,'genome');assert(coordinateReads>0);assert.equal(views.source._pdfPages[0].chars[0].rect.every,undefined,'native data itself stays foreign and untouched');
+  });
+  await check('selection unit priorities use only the current physical page and exact saved sentence rectangles',()=>{
+    const value=selectionAlignment([5,9]),mapper=Native.createMapper(Native.validateAlignment(value,[5,9]),'mono'),source={...highlight(5,[[94,690,130,710]]),text:'genome'},before=clone(source);
+    assert.deepEqual(mapper.selectionUnits(source,'source'),['s0']);assert.deepEqual(mapper.selectionUnits(highlight(0,[[60,690,90,710]]),'target'),['s0']);assert.deepEqual(mapper.selectionUnits({...source,position:{...source.position,pageIndex:9}},'source'),['s0']);assert.deepEqual(mapper.selectionUnits(highlight(1,[[60,690,90,710]]),'target'),['s0']);
+    assert.deepEqual(mapper.selectionUnits({...source,position:{...source.position,pageIndex:0}},'source'),[]);assert.deepEqual(mapper.selectionUnits(highlight(5,[[60,690,90,710]]),'target'),[]);assert.deepEqual(mapper.selectionUnits(source,'other'),[]);assert.deepEqual(source,before);
+    const both=alignment([5,9]),two=Native.createMapper(Native.validateAlignment(both,[5,9]),'mono'),selected=highlight(5,[[40,690,250,710],[40,670,220,690]]);selected.position.nextPageRects=[[40,690,250,710]];assert.deepEqual(two.selectionUnits(selected,'source'),['s0','s1'],'a priority request never silently includes another physical page');
+  });
+  await check('selection unit priorities reject unsupported evidence, ambiguous overlap and more than eight matches',()=>{
+    const value=alignment(),mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono');for(const input of [null,{...highlight(),type:'ink'},highlight(0,[]),highlight(0,[[20,720,30,730]]),highlight(0,[[20,690,70,710]])])assert.deepEqual(mapper.selectionUnits(input,'source'),[]);
+    assert.deepEqual(Native.createMapper(legacyAlignment(),'mono').selectionUnits(highlight(0,[[20,720,30,730]]),'source'),[]);
+    const overlapping=clone(value),rows=overlapping.pages[0].paragraphs[0].sentences;rows[1].source.rects=clone(rows[0].source.rects);assert.deepEqual(Native.createMapper(overlapping,'mono').selectionUnits(highlight(),'source'),[],'intersecting alternative sentence anchors are not disambiguated by their array order');
+    rows[1].source.rects=[[40,670,220,690]];rows[1].id=rows[0].id;assert.deepEqual(Native.createMapper(overlapping,'mono').selectionUnits(highlight(0,[[40,690,250,710],[40,670,220,690]]),'source'),[]);
+    const many=legacyAlignment(),paragraph=many.pages[0].paragraphs[0];many.sentenceAlignmentRevision='pdf-sentence-semantic-v1';many.sentencePages=[0];paragraph.sentences=Array.from({length:9},(_,i)=>({id:'unit'+i,method:'semantic-model',source:{rects:[[40,700-i*20,100,710-i*20]]},target:{rects:[[40,700-i*20,100,710-i*20]]}}));const bounded=Native.createMapper(many,'mono');assert.equal(bounded.selectionUnits(highlight(0,paragraph.sentences.slice(0,8).flatMap(s=>s.source.rects)),'source').length,8);assert.deepEqual(bounded.selectionUnits(highlight(0,paragraph.sentences.flatMap(s=>s.source.rects)),'source'),[]);
+  });
+  await check('an unprepared paragraph is only a bounded scheduling hint and never becomes a guessed word correspondence',()=>{
+    const value=legacyAlignment([4]),mapper=Native.createMapper(Native.validateAlignment(value,[4]),'mono');assert.deepEqual(mapper.selectionUnits(highlight(4,[[45,694,70,708]]),'source'),['p4_0']);assert.deepEqual(mapper.selectionUnits(highlight(0,[[45,694,70,708]]),'target'),['p4_0']);assert.equal(mapper.hasExactSourceSelection(highlight(4,[[45,694,70,708]])),false);assert.equal(mapper.projectAnnotation(highlight(4,[[45,694,70,708]])),null);assert.throws(()=>mapper.toSourceAnnotation(highlight()),{code:'annotation_sentence'});
+    const ambiguous=clone(value);ambiguous.pages[0].paragraphs.push({...clone(ambiguous.pages[0].paragraphs[0]),id:'other'});assert.deepEqual(Native.createMapper(ambiguous,'mono').selectionUnits(highlight(4,[[45,694,70,708]]),'source'),[]);
+  });
+  await check('partial Chinese glyphs map a single complete English word but never a coarse multiword group',()=>{
+    const mapper=Native.createMapper(Native.validateAlignment(phraseAlignment(),[0]),'mono');
+    assert.equal(mapper.toSourceAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组'}).text,'genome');
+    assert.throws(()=>mapper.toSourceAnnotation({...highlight(0,[[100,690,110,710]]),text:'复'}),{code:'annotation_sentence'});
+    assert.equal(mapper.toSourceAnnotation({...highlight(0,[[90,690,120,710]]),text:'很复杂'}).text,'is complex');
+  });
+  await check('complete phrase units do not persist redundant target glyph metadata',()=>{
+    const value=selectionAlignment(),mapper=Native.createMapper(value,'mono'),saved=mapper.toSourceAnnotation({...highlight(0,[[60,690,90,710]]),text:'基因组'});
+    assert.equal(saved.position._askgptSelection,undefined);assert.equal(mapper.projectAnnotation(saved).text,'基因组');
+    const large=longSelectionAlignment(),longSaved=Native.createMapper(Native.validateAlignment(large.value,[0]),'mono').toSourceAnnotation({...highlight(0,large.full),text:large.value.pages[0].paragraphs[0].target.text});
+    assert.equal(longSaved.position._askgptSelection,undefined);assert(JSON.stringify(longSaved.position).length<=65000);
+  });
+  await check('thousands of translated glyphs with a partial final word fit native position storage and reopen exactly',()=>{
+    const {value,partial,text}=longSelectionAlignment(),mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono'),saved=mapper.toSourceAnnotation({...highlight(0,partial),text});
+    assert(JSON.stringify(saved.position).length<=65000);assert(saved.position._askgptSelection);assert.equal(saved.position._askgptSelection.parts[0].glyphKeys,undefined);
+    const glyphs=value.pages[0].paragraphs[0].sentences[0].target.glyphs.filter(g=>partial.some(r=>(g.rect[0]+g.rect[2])/2>=r[0]&&(g.rect[0]+g.rect[2])/2<=r[2]&&(g.rect[1]+g.rect[3])/2>=r[1]&&(g.rect[1]+g.rect[3])/2<=r[3])),keys=glyphs.map(g=>g.text+'|'+g.rect.map(n=>Math.round(n*10000)).join(','));
+    const hash=require('node:crypto').createHash('sha256').update(JSON.stringify(glyphs.map((g,i)=>[keys[i],g.text]))).digest('hex');assert.equal(saved.position._askgptSelection.parts[0].glyphSHA256,hash);
+    const oldPosition={...clone(saved.position),_askgptSelection:{version:1,sourceSHA256:value.sourceSHA256,canonical:{pageIndex:0,rects:clone(saved.position.rects)},text,parts:[{sourcePage:0,rects:partial,sourceRects:clone(saved.position.rects),sourceText:saved.text,identity:false,glyphKeys:keys,glyphText:text}]}};assert(JSON.stringify(oldPosition).length>65000);
+    const output=Native.createMapper(clone(value),'mono').projectAnnotation(clone(saved));assert.deepEqual(output.position.rects,partial);assert.equal(output.text,text);
+  });
+  await check('two physical pages with thousands of glyphs retain short partial bounds without oversize positions',()=>{
+    const {value,partial,text}=longSelectionAlignment([4,5]),mapper=Native.createMapper(Native.validateAlignment(value,[4,5]),'mono'),input={...highlight(0,partial),text:text+'\n'+text};input.position.nextPageRects=clone(partial);
+    const saved=mapper.toSourceAnnotation(input);assert(JSON.stringify(saved.position).length<=65000);const output=Native.createMapper(clone(value),'dual').projectAnnotation(clone(saved));
+    assert.deepEqual(output.position.rects,partial.map(r=>[r[0]+600,r[1],r[2]+600,r[3]]));assert.deepEqual(output.position.nextPageRects,output.position.rects);assert.equal(output.text,input.text);
+  });
+  await check('an extreme native glyph-by-glyph selection above Zotero capacity does not inherit oversized custom evidence',()=>{
+    const {value,partial,text}=longSelectionAlignment([0],300),row=value.pages[0].paragraphs[0].sentences[0],rects=row.target.glyphs.filter(g=>partial.some(r=>(g.rect[0]+g.rect[2])/2>=r[0]&&(g.rect[0]+g.rect[2])/2<=r[2]&&(g.rect[1]+g.rect[3])/2>=r[1]&&(g.rect[1]+g.rect[3])/2<=r[3])).map(g=>g.rect),input={...highlight(0,rects),text};
+    assert(JSON.stringify(input.position).length>65000);
+    const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono'),saved=mapper.toSourceAnnotation(input);assert.equal(saved.position._askgptSelection,undefined);assert(JSON.stringify(saved.position).length<=65000);assert(mapper.projectAnnotation(saved));
+  });
+  await check('saving partial Chinese retains its own exact selection after JSON persistence and a new mapper',()=>{
+    const value=selectionAlignment(),mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono');
+    const selected={...highlight(0,[[70,690,90,710]]),text:'因组',color:'#2ea8e5'},saved=mapper.toSourceAnnotation(selected);
+    assert.equal(saved.text,'genome');assert.deepEqual(saved.position.rects,[[94,690,130,710]]);
+    const reopened=JSON.parse(JSON.stringify(saved)),projected=Native.createMapper(clone(value),'mono').projectAnnotation(reopened);
+    assert.deepEqual(projected.position.rects,selected.position.rects);assert.equal(projected.text,'因组');assert.equal(projected.color,'#2ea8e5');
+    assert.equal(saved.position._askgptSelection.version,2);assert(!JSON.stringify(saved.comment).includes('_askgptSelection'));
+    const crypto=require('node:crypto'),hash=value=>crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'),metadata=saved.position._askgptSelection;
+    assert.equal(metadata.canonicalSHA256,hash({pageIndex:0,rects:saved.position.rects}));
+    const glyphs=value.pages[0].paragraphs[0].sentences[0].target.glyphs.slice(3,5);
+    assert.equal(metadata.parts[0].glyphSHA256,hash(glyphs.map(g=>[g.text+'|'+g.rect.map(n=>Math.round(n*10000)).join(','),g.text])));
+  });
+  await check('previous version-one selection metadata remains readable after compact evidence is introduced',()=>{
+    const value=selectionAlignment(),mapper=Native.createMapper(value,'mono'),saved=mapper.toSourceAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组'}),glyphs=value.pages[0].paragraphs[0].sentences[0].target.glyphs.slice(3,5);
+    saved.position._askgptSelection={version:1,sourceSHA256:value.sourceSHA256,canonical:{pageIndex:0,rects:clone(saved.position.rects)},text:'因组',parts:[{sourcePage:0,rects:[[70,690,90,710]],sourceRects:clone(saved.position.rects),sourceText:'genome',identity:false,glyphKeys:glyphs.map(g=>g.text+'|'+g.rect.map(n=>Math.round(n*10000)).join(',')),glyphText:'因组'}]};
+    const projected=Native.createMapper(clone(value),'mono').projectAnnotation(clone(saved));assert.equal(projected.text,'因组');assert.deepEqual(projected.position.rects,[[70,690,90,710]]);
+  });
+  await check('one Latin word may map a short Chinese clause without expanding the Chinese character selected by its author',()=>{
+    const value=selectionAlignment(),sentence=value.pages[0].paragraphs[0].sentences[0],word=sentence.phrases[1];
+    const gs=(text,w)=>Array.from(text).map((text,i)=>({text,line:0,rect:[40+i*w,690,40+(i+1)*w,710]}));
+    const part=(text,glyphs)=>({text,glyphs,rects:[[glyphs[0].rect[0],690,glyphs.at(-1).rect[2],710]]});
+    sentence.source=part('Agreed.',gs('Agreed.',6));sentence.target=part('我同意。',gs('我同意。',10));sentence.dualSource={rects:sentence.source.rects};sentence.dualTarget={rects:sentence.target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])};
+    word.source=part('Agreed',sentence.source.glyphs.slice(0,-1));word.target=part('我同意',sentence.target.glyphs.slice(0,-1));word.sourceTokenCount=1;word.targetTokenCount=3;word.dualSource={rects:word.source.rects};word.dualTarget={rects:word.target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])};sentence.phrases=[word];
+    const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono'),saved=mapper.toSourceAnnotation({...highlight(0,[[50,690,60,710]]),text:'同'});
+    assert.equal(saved.text,'Agreed');assert.deepEqual(saved.position.rects,[[40,690,76,710]]);assert.equal(mapper.projectAnnotation(saved).text,'同');assert.deepEqual(mapper.projectAnnotation(saved).position.rects,[[50,690,60,710]]);
+  });
+  await check('precise authored target selection survives mono and dual switches on two physical pages',()=>{
+    const value=selectionAlignment([4,5]),mono=Native.createMapper(Native.validateAlignment(value,[4,5]),'mono'),input={...highlight(0,[[70,690,90,710]]),text:'因组\n因组'};input.position.nextPageRects=[[70,690,90,710]];
+    const saved=mono.toSourceAnnotation(input),dual=Native.createMapper(clone(value),'dual'),projected=dual.projectAnnotation(JSON.parse(JSON.stringify(saved)));
+    assert.equal(saved.position.pageIndex,4);assert.deepEqual(saved.position.nextPageRects,[[94,690,130,710]]);
+    assert.deepEqual(projected.position.rects,[[670,690,690,710]]);assert.deepEqual(projected.position.nextPageRects,[[670,690,690,710]]);assert.equal(projected.text,input.text);
+    const fromDual=dual.toSourceAnnotation({...input,position:{pageIndex:0,rects:[[670,690,690,710]],nextPageRects:[[670,690,690,710]]}});
+    assert.deepEqual(mono.projectAnnotation(fromDual).position.rects,input.position.rects);assert.equal(mono.projectAnnotation(fromDual).text,input.text);
+  });
+  await check('authored target selection uses explicit affine coordinates for a rotated bilingual PDF',()=>{
+    const value=selectionAlignment(),page=value.pages[0],rotate=(r,offset)=>[r[1]+offset,600-r[2],r[3]+offset,600-r[0]];
+    page.source.rotation=90;page.mono.rotation=90;page.dual.mediaBox=[0,0,1600,600];page.dual.cropBox=[0,0,1600,600];page.sourceToDual=[0,-1,1,0,0,600];page.targetToDual=[0,-1,1,0,800,600];
+    const paragraph=page.paragraphs[0];for(const row of [paragraph,...paragraph.sentences,...paragraph.sentences.flatMap(s=>s.phrases)]){row.dualSource={rects:row.source.rects.map(r=>rotate(r,0))};row.dualTarget={rects:row.target.rects.map(r=>rotate(r,800))};}
+    const dual=Native.createMapper(Native.validateAlignment(value,[0]),'dual'),selected=[rotate([70,690,90,710],800)];
+    const saved=dual.toSourceAnnotation({...highlight(0,selected),text:'因组'});
+    assert.deepEqual(dual.projectAnnotation(JSON.parse(JSON.stringify(saved))).position.rects,selected);
+    assert.deepEqual(Native.createMapper(value,'mono').projectAnnotation(saved).position.rects,[[70,690,90,710]]);
+  });
+  await check('stale authored target selections are rejected when source identity, target glyphs or the semantic source mapping changes',()=>{
+    const value=selectionAlignment(),saved=Native.createMapper(value,'mono').toSourceAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组'});
+    const mutations=[v=>v.sourceSHA256='b'.repeat(64),v=>{const row=v.pages[0].paragraphs[0].sentences[0];[row.phrases[0].source,row.phrases[1].source]=[row.phrases[1].source,row.phrases[0].source];[row.phrases[0].dualSource,row.phrases[1].dualSource]=[row.phrases[1].dualSource,row.phrases[0].dualSource];},v=>{const row=v.pages[0].paragraphs[0].sentences[0];row.target.glyphs[3].text='异';row.target.text=row.target.text.replace('因','异');row.phrases[1].target.glyphs[1].text='异';row.phrases[1].target.text=row.phrases[1].target.text.replace('因','异');}];
+    for(const mutate of mutations){const changed=clone(value);mutate(changed);assert.equal(Native.createMapper(Native.validateAlignment(changed,[0]),'mono').projectAnnotation(clone(saved)),null);}
+    const moved=clone(saved);moved.position.rects=[[61,690,91,710]];assert.equal(Native.createMapper(value,'mono').projectAnnotation(moved),null);
+    const shifted=clone(value),paragraph=shifted.pages[0].paragraphs[0];
+    for(const row of [paragraph,...paragraph.sentences,...paragraph.sentences.flatMap(s=>s.phrases)])for(const side of ['target','dualTarget']){
+      row[side].rects=row[side].rects.map(r=>[r[0]+2,r[1],r[2]+2,r[3]]);for(const glyph of row[side].glyphs||[])if(glyph.rect)glyph.rect=[glyph.rect[0]+2,glyph.rect[1],glyph.rect[2]+2,glyph.rect[3]];
+    }
+    assert.equal(Native.createMapper(Native.validateAlignment(shifted,[0]),'mono').projectAnnotation(clone(saved)),null);
+  });
+  await check('stored target rectangles, excerpt text and glyph evidence cannot widen a persisted selection',()=>{
+    const value=selectionAlignment(),mapper=Native.createMapper(value,'mono'),saved=mapper.toSourceAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组'});
+    for(const mutate of [m=>m.text='整个句子',m=>m.parts[0].rects=[[60,690,90,710]],m=>m.parts[0].glyphSHA256='0'.repeat(64),m=>m.canonicalSHA256='0'.repeat(64)]){
+      const changed=clone(saved);mutate(changed.position._askgptSelection);assert.equal(mapper.projectAnnotation(changed),null);
+    }
+  });
+  await check('native color updates preserve authored target bounds while an original-side geometry edit invalidates them',async()=>{
+    const value=selectionAlignment(),f=await fixture();try{await f.show([0],'mono',value);const target=f.layer.nativeView;
+      const saved=target._options.onAddAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组',color:'#2ea8e5'},true);
+      assert.deepEqual(saved.position.rects,[[70,690,90,710]]);const id=f.writes.at(-1).value.id;
+      target._options.onUpdateAnnotations([{id,color:'#ff6666'}]);assert.equal(target._annotations[0].color,'#ff6666');assert.deepEqual(target._annotations[0].position.rects,[[70,690,90,710]]);
+      f.source._onUpdateAnnotations([{id,color:'#2ea8e5',position:clone(f.reader._state.annotations[0].position)}]);assert(f.reader._state.annotations[0].position._askgptSelection);assert.equal(target._annotations[0].color,'#2ea8e5');assert.deepEqual(target._annotations[0].position.rects,[[70,690,90,710]]);
+      const position={...clone(f.reader._state.annotations[0].position),rects:[[61,690,91,710]]};
+      f.source._onUpdateAnnotations([{id,position}]);assert.equal(f.reader._state.annotations[0].position._askgptSelection,undefined);assert.equal(target._annotations[0].text,'人类');
+    }finally{f.close();}
+  });
+  await check('moving an original-half annotation clears only its authored target metadata',async()=>{
+    const value=selectionAlignment(),f=await fixture();try{await f.show([0],'dual',value);const target=f.layer.nativeView;
+      target._options.onAddAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组',color:'#a28ae5'},true);const id=f.writes.at(-1).value.id;
+      f.source._onUpdateAnnotations([{id,position:{pageIndex:0,rects:[[61,690,91,710]]}}]);
+      assert.equal(f.reader._state.annotations[0].position._askgptSelection,undefined);assert.equal(f.reader._state.annotations[0].color,'#a28ae5');assert.equal(target._annotations.find(a=>a.id===id).text,'人类');
+    }finally{f.close();}
+  });
+  await check('authored selection evidence uses stable PDF glyph order before and after native page initialization',()=>{
+    const value=selectionAlignment(),glyphs=value.pages[0].paragraphs[0].sentences[0].target.glyphs;
+    const active={_pdfPages:{0:{chars:glyphs.slice().reverse().map(g=>({c:g.text,rect:g.rect}))}}};
+    const saved=Native.createMapper(value,'mono',null,active).toSourceAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组'});
+    const projected=Native.createMapper(clone(value),'mono').projectAnnotation(JSON.parse(JSON.stringify(saved)));
+    assert(projected);assert.deepEqual(projected.position.rects,[[70,690,90,710]]);assert.equal(projected.text,'因组');
+  });
+  await check('the actual native palette save chain persists exact target bounds for both highlight and underline colors',async()=>{
+    for(const type of ['highlight','underline']){const f=await fixture();try{await f.show([0],'mono',selectionAlignment());const target=f.layer.nativeView;
+      target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:{...highlight(0,[[70,690,90,710]]),text:'因组'}});
+      const popup=f.reader._state.primaryViewSelectionPopup;assert(popup.annotation.position._askgptSelection);
+      f.source._onAddAnnotation({...popup.annotation,type,color:'#5fb236'},true);
+      assert.equal(f.reader._state.annotations[0].type,type);assert.equal(target._annotations[0].color,'#5fb236');assert.equal(target._annotations[0].text,'因组');assert.deepEqual(target._annotations[0].position.rects,[[70,690,90,710]]);
+    }finally{f.close();}}
+  });
+  await check('precise projection preserves English word geometry, colors and exact original-half selection',()=>{
+    const value=Native.validateAlignment(phraseAlignment(),[0]),mapper=Native.createMapper(value,'dual'),source={...highlight(0,[[94,690,130,710]]),id:'WORD',text:'genome',color:'#2ea8e5'};
+    const projected=mapper.projectAnnotations([source]);assert.deepEqual(projected.map(a=>a.position.rects),[[[660,690,690,710]],[[94,690,130,710]]]);assert(projected.every(a=>a.color==='#2ea8e5'));assert.equal(projected[0].text,'基因组');
+    const exact={...source,position:{pageIndex:0,rects:[[98,694,110,708]]},text:'en'};assert.deepEqual(mapper.toSourceAnnotation(exact).position,exact.position);assert.equal(mapper.toSourceAnnotation(exact).text,'en');
+  });
+  await check('Chinese-to-English also permits partial Chinese glyphs only for a complete Latin word unit',()=>{
+    const value=phraseAlignment(),row=value.pages[0].paragraphs[0].sentences[0];
+    [row.source,row.target]=[row.target,row.source];[row.dualSource,row.dualTarget]=[{rects:row.source.rects},{rects:row.target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])}];
+    for(const unit of row.phrases){[unit.source,unit.target]=[unit.target,unit.source];[unit.sourceTokenCount,unit.targetTokenCount]=[unit.targetTokenCount,unit.sourceTokenCount];unit.dualSource={rects:unit.source.rects};unit.dualTarget={rects:unit.target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])};}
+    const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono');const projected=mapper.projectAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组',id:'PARTIAL'});assert.deepEqual(projected.position.rects,[[94,690,130,710]]);assert.equal(projected.text,'genome');assert.equal(mapper.projectAnnotation({...highlight(0,[[100,690,110,710]]),text:'复',id:'COARSE'}),null);
+  });
+  await check('unpaired meaningful glyphs reject the entire selection instead of saving only mapped words',()=>{
+    const value=phraseAlignment();value.pages[0].paragraphs[0].sentences[0].phrases.splice(0,1);const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono');
+    assert.throws(()=>mapper.toSourceAnnotation(highlight(0,[[40,690,90,710]])),{code:'annotation_sentence'});assert.equal(mapper.toSourceAnnotation(highlight(0,[[60,690,90,710]])).text,'genome');
+  });
+  await check('existing original marks project only verified word runs while new translated saves remain strict',()=>{
+    const value=selectionAlignment(),row=value.pages[0].paragraphs[0].sentences[0];row.phrases.splice(1,1);
+    const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono'),input={...highlight(0,clone(row.source.rects)),id:'PARTIAL',text:row.source.text,color:'#2ea8e5'},before=clone(input),known=row.phrases;
+    const projected=mapper.projectAnnotation(input);assert(projected);assert.equal(projected.id,input.id);assert.equal(projected.color,input.color);assert.deepEqual(projected.position.rects,known.flatMap(unit=>unit.target.rects));assert(!projected.text.includes('基因组'));assert.deepEqual(input,before);
+    assert.equal(mapper.projectAnnotation({...input,position:{pageIndex:0,rects:[[40,690,58,710]]}}),null,'an entirely unlinked original word still has no counterpart');
+    assert.throws(()=>mapper.toSourceAnnotation({...highlight(0,clone(row.target.rects)),text:row.target.text}),{code:'annotation_sentence'},'a new Chinese mark must never silently drop its unlinked words');
+  });
+  await check('partial projection skips an unextractable sentence and an incomplete multiword phrase without expanding either',()=>{
+    const value=alignment(),row=value.pages[0].paragraphs[0].sentences[1];row.phrases=[];delete row.source.glyphs;delete row.target.glyphs;
+    const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono'),projected=mapper.projectAnnotation({...highlight(0,[[40,690,250,710],[40,670,220,690]]),id:'MIXED'});
+    assert.deepEqual(projected.position.rects,value.pages[0].paragraphs[0].sentences[0].phrases[0].target.rects);
+    const words=phraseAlignment(),sentence=words.pages[0].paragraphs[0].sentences[0],human=sentence.phrases[0],complex=sentence.phrases[2],end=complex.source.rects[0],partial=[end[0]+18,end[1],end[2],end[3]],wordMapper=Native.createMapper(Native.validateAlignment(words,[0]),'mono');
+    const selected={...highlight(0,[...clone(human.source.rects),partial]),id:'WORD',type:'underline'},part=wordMapper.projectAnnotation(selected);assert.equal(part.type,'underline');assert.deepEqual(part.position.rects,human.target.rects);assert.equal(part.text,'人类');
+    assert.throws(()=>wordMapper.toSourceAnnotation({...highlight(0,[[40,690,60,710],[100,690,120,710]]),text:'人类复杂'}),{code:'annotation_sentence'});
+  });
+  await check('partial original projection never revives authored bounds from another document or a stale canonical binding',()=>{
+    const value=selectionAlignment(),saved=Native.createMapper(value,'mono').toSourceAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组'});
+    const other=clone(value);other.sourceSHA256='b'.repeat(64);other.pages[0].paragraphs[0].sentences[0].phrases.splice(0,1);assert.equal(Native.createMapper(other,'mono').projectAnnotation(clone(saved)),null);
+    const moved=clone(saved);moved.position.rects[0][0]+=1;assert.equal(Native.createMapper(value,'mono').projectAnnotation(moved),null);
+  });
+  await check('strict source readiness checks every selected word and both physical pages without mutating a mark',()=>{
+    const value=selectionAlignment([4,5]),mapper=Native.createMapper(Native.validateAlignment(value,[4,5]),'mono'),input={...highlight(4,[[61,690,130,710]]),text:'human genome'};input.position.nextPageRects=[[61,690,130,710]];const before=clone(input);
+    assert.equal(mapper.hasExactSourceSelection(input),true);assert.deepEqual(input,before);
+    value.pages[1].paragraphs[0].sentences[0].phrases.splice(1,1);const partial=Native.createMapper(Native.validateAlignment(value,[4,5]),'mono');assert.equal(partial.hasExactSourceSelection(input),false);assert(partial.projectAnnotation(input),'partial visibility must not be confused with complete readiness');
+    assert.equal(partial.hasExactSourceSelection({...input,position:{pageIndex:4,rects:[[61,690,130,710]]}}),true);
+    for(const bad of [null,{...input,type:'ink'},{...input,position:{pageIndex:3,rects:input.position.rects}},{...input,position:{pageIndex:4,rects:[]}}, {...input,position:{pageIndex:4,rects:input.position.rects,nextPageRects:[]}}])assert.equal(partial.hasExactSourceSelection(bad),false);
+    const source={_pdfPages:{4:{chars:[{c:'X',rect:[62,691,68,709]}]}}};assert.equal(Native.createMapper(value,'mono',source).hasExactSourceSelection({...input,position:{pageIndex:4,rects:[[61,690,91,710]]}}),false,'visible original glyph evidence remains strict');assert.deepEqual(input,before);
+  });
+  await check('a sentence with no reliable glyph extraction never disappears from a mixed selection',()=>{
+    const value=alignment(),second=value.pages[0].paragraphs[0].sentences[1];second.phrases=[];delete second.source.glyphs;delete second.target.glyphs;
+    const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono');assert.equal(mapper.toSourceAnnotation(highlight()).text,'Original first sentence.');assert.throws(()=>mapper.toSourceAnnotation(highlight(0,[[45,694,70,708],[190,694,220,708]])),{code:'annotation_sentence'});
+  });
+  await check('native PDF.js glyph evidence rejects a sidecar that omits selected visible text',()=>{
+    const value=Native.validateAlignment(phraseAlignment(),[0]),native={_pdfPages:{0:{chars:[{c:'X',rect:[61,691,69,709],inlineRect:[61,690,69,710]}]}}},mapper=Native.createMapper(value,'mono',null,native);
+    assert.throws(()=>mapper.toSourceAnnotation(highlight(0,[[60,690,90,710]])),{code:'annotation_sentence'});
+    native._pdfPages[0].chars=['基','因','组'].map((c,i)=>({c,rect:[60+i*10,692,70+i*10,708],inlineRect:[60+i*10,690,70+i*10,710]}));assert.equal(mapper.toSourceAnnotation(highlight(0,[[60,690,90,710]])).text,'genome');
+  });
+  await check('multiple selected phrase units keep separate English rectangles and original reading order',()=>{
+    const mapper=Native.createMapper(Native.validateAlignment(phraseAlignment(),[0]),'mono'),mapped=mapper.toSourceAnnotation(highlight(0,[[60,690,90,710],[40,690,60,710]]));
+    assert.equal(mapped.text,'human genome');assert.deepEqual(mapped.position.rects,[[61,690,91,710],[94,690,130,710]]);
+  });
+  await check('a translated word split across lines maps its real glyph runs without including a middle line',()=>{
+    const value=phraseAlignment(),sentence=value.pages[0].paragraphs[0].sentences[0],unit=sentence.phrases[1];
+    for(const glyph of sentence.target.glyphs.slice(3,5)){glyph.rect=[glyph.rect[0]-30,660,glyph.rect[2]-30,680];glyph.line=1;}
+    unit.target.glyphs=clone(sentence.target.glyphs.slice(2,5));unit.target.rects=[[60,690,70,710],[40,660,60,680]];unit.dualTarget.rects=unit.target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]]);sentence.target.rects=[[40,690,130,710],[40,660,60,680]];
+    const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono'),mapped=mapper.toSourceAnnotation(highlight(0,unit.target.rects));assert.equal(mapped.text,'genome');assert.deepEqual(mapped.position.rects,[[94,690,130,710]]);
+  });
+  await check('repeated English words and translated word order are disambiguated by exact glyph coordinates',()=>{
+    const value=phraseAlignment(),paragraph=value.pages[0].paragraphs[0];
+    const glyphs=(text,width)=>Array.from(text).map((text,i)=>({text,line:0,rect:[40+i*width,690,40+(i+1)*width,710]})),source={text:'cell cell',glyphs:glyphs('cell cell',6),rects:[[40,690,94,710]]},target={text:'乙甲',glyphs:glyphs('乙甲',10),rects:[[40,690,60,710]]},sentence={id:'repeat',method:'semantic-model',source,target,dualSource:{rects:source.rects},dualTarget:{rects:[[640,690,660,710]]},phrases:[]};
+    for(const [index,targetIndex] of [[0,1],[1,0]]){const sourceGlyphs=source.glyphs.slice(index*5,index*5+4),targetGlyphs=[target.glyphs[targetIndex]],a={text:'cell',glyphs:sourceGlyphs,rects:[[sourceGlyphs[0].rect[0],690,sourceGlyphs.at(-1).rect[2],710]]},b={text:targetGlyphs[0].text,glyphs:targetGlyphs,rects:[targetGlyphs[0].rect]};sentence.phrases.push({id:'w'+index,method:'semantic-phrase-model',source:a,target:b,dualSource:{rects:a.rects},dualTarget:{rects:b.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])},sourceTokenCount:1,targetTokenCount:1});}
+    Object.assign(paragraph,{source,target,dualSource:sentence.dualSource,dualTarget:sentence.dualTarget,sentences:[sentence]});const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono');assert.deepEqual(mapper.toSourceAnnotation(highlight(0,[[40,690,50,710]])).position.rects,[[70,690,94,710]]);assert.deepEqual(mapper.toSourceAnnotation(highlight(0,[[40,690,60,710]])).position.rects,[[40,690,64,710],[70,690,94,710]]);
+    assert.equal(mapper.projectAnnotation({...highlight(0,[[40,690,94,710]]),id:'BOTH'}).text,'乙甲');
+  });
+  await check('phrase provenance, complete glyph pools and nonoverlapping ownership are validated before use',()=>{
+    const changes=[v=>v.phraseAlignmentRevision='ordered-words',v=>v.phrasePages=[],v=>v.phrasePages=[0,0],v=>v.pages[0].paragraphs[0].sentences[0].source.glyphs.pop(),v=>v.pages[0].paragraphs[0].sentences[0].target.glyphs[0].rect=null,v=>v.pages[0].paragraphs[0].sentences[0].phrases[0].target.glyphs[0].rect[0]+=.01,v=>v.pages[0].paragraphs[0].sentences[0].phrases.push({...clone(v.pages[0].paragraphs[0].sentences[0].phrases[0]),id:'duplicate'}),v=>v.pages[0].paragraphs[0].sentences[0].phrases[0].target.rects=[[40,690,90,710]],v=>v.pages[0].paragraphs[0].sentences[0].phrases[0].dualTarget.rects[0][0]++];
+    for(const change of changes){const value=clone(phraseAlignment());change(value);assert.throws(()=>Native.validateAlignment(value,[0]),{code:'compatibility'});}
+    const empty=phraseAlignment();empty.pages[0].paragraphs[0].sentences[0].phrases=[];assert.doesNotThrow(()=>Native.validateAlignment(empty,[0]));assert.throws(()=>Native.createMapper(empty,'mono').toSourceAnnotation(highlight()),{code:'annotation_sentence'});
+  });
+  await check('sentence-only metadata cannot silently save a small Chinese selection as a sentence highlight',()=>{
+    const mapper=Native.createMapper(Native.validateAlignment((()=>{const v=alignment();delete v.phraseAlignmentRevision;delete v.phrasePages;for(const s of v.pages[0].paragraphs[0].sentences)delete s.phrases;return v;})(),[0]),'mono');assert.throws(()=>mapper.toSourceAnnotation(highlight()),{code:'annotation_sentence'});
+  });
+  await check('a selection spanning mapped and unmapped text is rejected on the same line and on separate lines',()=>{
+    const value=alignment();value.pages[0].paragraphs[0].sentences.splice(1);const mapper=Native.createMapper(Native.validateAlignment(value,[0]),'mono');
+    for(const rects of [[[150,694,220,708]],[[45,694,70,708],[190,694,220,708]],[[45,694,70,708],[45,654,70,668]]])assert.throws(()=>mapper.toSourceAnnotation(highlight(0,rects)),{code:'annotation_sentence'});
+    const dual=Native.createMapper(Native.validateAlignment(value,[0]),'dual');assert.throws(()=>dual.toSourceAnnotation(highlight(0,[[750,694,820,708]])),{code:'annotation_sentence'});
+  });
+  await check('reliable adjacent sentence rectangles cover a cross-sentence selection as a geometric union',()=>{
+    const mapper=Native.createMapper(Native.validateAlignment(alignment([4]),[4]),'mono');const result=mapper.toSourceAnnotation(highlight(0,[[45,689.5,70,710.5],[190,689.5,220,710.5]]));assert.equal(result.text,'Original first sentence.\nAnother sentence.');assert.deepEqual(result.position.rects,[[40,690,250,710],[40,670,220,690]]);
+    assert.throws(()=>mapper.toSourceAnnotation(highlight(0,[[150,687,220,710]])),{code:'annotation_sentence'},'native/glyph metric tolerance must stay bounded in PDF points');
+  });
+  await check('incomplete coverage preserves the native palette while explicit saves remain strict',async()=>{
+    const value=alignment();value.pages[0].paragraphs[0].sentences.splice(1);const f=await fixture();try{await f.show([0],'mono',value);const options=f.layer.nativeView._options,input=highlight(0,[[150,694,220,708]]);options.onSetSelectionPopup({rect:[1,2,3,4],annotation:input});assert.equal(f.popups.length,1);assert.deepEqual(f.layer.nativeView._selectionPopup.annotation,input);assert.throws(()=>f.reader._annotationManager.addAnnotation({...f.popups.at(-1).annotation,color:'#2ea8e5'}),{code:'annotation_sentence'});assert.equal(options.onAddAnnotation(input,true),null);assert.equal(f.writes.length,0);assert.equal(f.errors.length,0);assert.equal(f.reader._state.tool.type,'pointer');}finally{f.close();}
+  });
+  await check('a pending native palette saves exact glyphs after alignment arrives, using the user chosen mode and color',async()=>{
+    const f=await fixture();try{await f.show([4],'mono',legacyAlignment([4]));const target=f.layer.nativeView,input={...highlight(0,[[60,690,90,710]]),text:'基因组'};target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:input});const pending=clone(f.popups.at(-1).annotation);assert.equal(f.writes.length,0);assert(pending._askgptNativeSelection);assert.throws(()=>f.reader._annotationManager.addAnnotation({...pending,color:'#a28ae5',type:'underline'}),{code:'annotation_sentence'});assert.equal(f.writes.length,0);
+      const precise=selectionAlignment([4]);f.layer.updateAlignment(precise);const saved=f.reader._annotationManager.addAnnotation({...pending,color:'#a28ae5',type:'underline'});assert.equal(saved.position.pageIndex,4);assert.deepEqual(saved.position.rects,precise.pages[0].paragraphs[0].sentences[0].phrases[1].source.rects);assert.equal(saved.text,'genome');assert.equal(saved.type,'underline');assert.equal(saved.color,'#a28ae5');assert(!Object.hasOwn(saved,'_askgptNativeSelection'));assert.equal(target._annotations.at(-1).text,'基因组');assert.equal(f.writes.length,1);
+    }finally{f.close();}
+  });
+  await check('pending popup credentials reject stale or altered selections and never affect normal original annotations',async()=>{
+    const f=await fixture();try{await f.show([4],'mono',legacyAlignment([4]));const options=f.layer.nativeView._options;options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight()});const stale=clone(f.popups.at(-1).annotation);options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight(0,[[60,690,90,710]])});const pending=clone(f.popups.at(-1).annotation);f.layer.updateAlignment(alignment([4]));assert.throws(()=>f.reader._annotationManager.addAnnotation(stale),{code:'annotation_mapping'});pending.position.rects=[[45,694,70,708]];assert.throws(()=>f.reader._annotationManager.addAnnotation(pending),{code:'annotation_mapping'});assert.equal(f.writes.length,0);const original={...highlight(4,[[45,694,70,708]]),text:'Original unchanged'};assert.equal(f.reader._annotationManager.addAnnotation(original).text,original.text);assert.equal(f.writes.length,1);
+    }finally{f.close();}
+  });
+  await check('failed alignment retries only on a fresh selection while repositioning the same native popup stays quiet',async()=>{
+    const calls=[],f=await fixture({},()=>{},{align:(page,options)=>{calls.push({page,options});return calls.length===1?'failed':'started';}});try{await f.show([3],'mono',legacyAlignment([3]));await tick();assert.equal(calls.length,1);const target=f.layer.nativeView;for(let i=0;i<10;i++)target._options.onChangeViewStats({pageIndex:0});await tick();assert.equal(calls.length,1);const popup={rect:[1,2,3,4],annotation:highlight()};target._options.onSetSelectionPopup(popup);assert.equal(calls.length,2);assert.equal(calls[1].options.explicit,true);target._options.onSetSelectionPopup({...popup,rect:[5,6,7,8]});assert.equal(calls.length,2,'scrolling the native popup is not a new deliberate selection');target._options.onSetSelectionPopup(null);target._options.onSetSelectionPopup(popup);assert.equal(calls.length,3);assert.equal(f.writes.length,0);assert(target._selectionPopup,'the native palette remains available while words recover');
+    }finally{f.close();}
+  });
+  await check('only the active native pane and its actual current page own alignment scheduling',async()=>{
+    const pages=[],f=await fixture({},({source})=>{source._onChangeViewStats=()=>{};},{page:page=>pages.push(page)});try{await f.show([3,4],'dual');const target=f.layer.nativeView;pages.length=0;f.source._iframeWindow.PDFViewerApplication.pdfViewer.currentPageNumber=4;f.source._iframeWindow.emit('wheel',{deltaY:20});f.source._onChangeViewStats({pageIndex:4});assert.deepEqual(pages,[3],'delayed source stats cannot replace its actual physical page');target._iframeWindow.PDFViewerApplication.pdfViewer.currentPageNumber=2;target._options.onChangeViewStats({pageIndex:0});assert.deepEqual(pages,[3],'an inactive translated follower cannot steal pending-page priority');target._iframeWindow.emit('wheel',{deltaY:20});target._options.onChangeViewStats({pageIndex:0});assert.deepEqual(pages,[3,4],'the active translated pane uses currentPageNumber rather than delayed stats');assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('source and translated native selections pass exact current-page unit priorities without saving or losing their palettes',async()=>{
+    const value=selectionAlignment([4,8]),calls=[];value.phraseExtractedPages=[];for(const page of value.pages)page.paragraphs[0].sentences[0].phrases.splice(1,1);const f=await fixture({},()=>{},{align:(page,options)=>{calls.push({page,options});return 'started';}});try{
+      await f.show([4,8],'dual',value);const target=f.layer.nativeView;calls.length=0;f.source._iframeWindow.emit('pointerdown',{button:0});const sourcePopup={rect:[1,2,3,4],annotation:{...highlight(8,[[94,690,130,710]]),text:'genome'}};f.source._onSetSelectionPopup(sourcePopup);assert.deepEqual(calls,[{page:8,options:{explicit:true,units:['s0']}}]);assert(f.source._selectionPopup);assert.equal(f.writes.length,0);
+      calls.length=0;target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:{...highlight(1,[[60,690,90,710]]),text:'基因组'}});assert.deepEqual(calls,[{page:8,options:{explicit:true,units:['s0']}}]);assert(target._selectionPopup);assert.equal(f.writes.length,0);assert.throws(()=>f.reader._annotationManager.addAnnotation({...f.popups.at(-1).annotation,color:'#2ea8e5'}),{code:'annotation_sentence'});assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('exact mapping refusals distinguish missing links, unsupported glyphs and indivisible partial phrases',()=>{
+    const base=phraseAlignment(),missing=clone(base);delete missing.phraseAlignmentRevision;delete missing.phrasePages;for(const sentence of missing.pages[0].paragraphs[0].sentences)delete sentence.phrases;
+    assert.throws(()=>Native.createMapper(missing,'mono').toSourceAnnotation(highlight(0,[[60,690,90,710]])),{code:'annotation_sentence',mappingDetail:'no_phrases'});
+    const unowned=clone(base);unowned.pages[0].paragraphs[0].sentences[0].phrases.splice(1,1);assert.throws(()=>Native.createMapper(unowned,'mono').toSourceAnnotation(highlight(0,[[60,690,90,710]])),{code:'annotation_sentence',mappingDetail:'unowned_glyph'});
+    const native={_pdfPages:{0:{chars:[{c:'PRIVATE_UNMATCHED',rect:[61,691,69,709]}]}}};assert.throws(()=>Native.createMapper(base,'mono',null,native).toSourceAnnotation(highlight(0,[[60,690,90,710]])),{code:'annotation_sentence',mappingDetail:'native_glyph'});
+    assert.throws(()=>Native.createMapper(base,'mono').toSourceAnnotation(highlight(0,[[100,690,110,710]])),{code:'annotation_sentence',mappingDetail:'partial_phrase'});
+  });
+  await check('a fully selected verified synthetic phrase maps to its source unit and preserves the Chinese excerpt',()=>{
+    const mapper=Native.createMapper(Native.validateAlignment(alignment([4]),[4]),'mono');
+    const result=mapper.toSourceAnnotation(highlight());assert.equal(result.position.pageIndex,4);assert.deepEqual(result.position.rects,alignment().pages[0].paragraphs[0].sentences[0].source.rects);assert.equal(result.text,'Original first sentence.');assert.equal(result.comment,'译文摘录：第一句');assert.match(result.sortIndex,/^00004\|\d{6}\|\d{5}$/);
+  });
+  await check('the original half of bilingual PDF keeps exact selected coordinates and text',()=>{
+    const mapper=Native.createMapper(Native.validateAlignment(alignment([2]),[2]),'dual');
+    const input=highlight();input.text='Original';const result=mapper.toSourceAnnotation(input);assert.deepEqual(result.position,{pageIndex:2,rects:input.position.rects});assert.equal(result.text,'Original');assert.equal(result.comment,undefined);
+    const target=mapper.toSourceAnnotation(highlight(0,[[645,694,670,708]]));assert.deepEqual(target.position.rects,alignment().pages[0].paragraphs[0].sentences[0].source.rects);assert.equal(target.position.pageIndex,2);
+  });
+  await check('unknown Chinese text and a cross-column selection are rejected rather than guessed',()=>{
+    for(const [mode,rects] of [['mono',[[40,500,90,520]]],['dual',[[590,690,630,710]]]]){const mapper=Native.createMapper(Native.validateAlignment(alignment(),[0]),mode);assert.throws(()=>mapper.toSourceAnnotation(highlight(0,rects)),{code:mode==='mono'?'annotation_sentence':'compatibility'});}
+  });
+  await check('native translation preserves original view and canonical save path',async()=>{
+    const f=await fixture();try{await f.show([3]);const translated=f.layer.nativeView;assert(f.layer.visible);assert.notEqual(translated,f.source);assert.equal(f.source._iframeWindow.PDFViewerApplication.pdfDocument.source,true);assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'hidden');
+      const created=translated._options.onAddAnnotation(highlight(),true);assert.equal(f.writes.length,1);assert.equal(f.writes[0].value.position.pageIndex,3);assert.equal(f.writes[0].value.text,'Original first sentence.');assert.equal(created.position.pageIndex,0);assert.equal(created.text,'第一句。');assert.equal(translated._annotations[0].id,f.writes[0].value.id);
+    }finally{f.close();}
+  });
+  await check('transport ArrayBuffer becomes an owned typed byte view accepted by PDF.js in a separate iframe realm',async()=>{
+    const f=await fixture();try{await f.show();const value=f.layer.nativeView._options.data.buf;assert(ArrayBuffer.isView(value));assert.deepEqual([...value],[1,2,3]);const inner=vm.createContext({value,outerBuffer:new Uint8Array([1,2,3]).buffer});
+      const getData=vm.runInContext('(value)=>{if(value instanceof Uint8Array&&value.byteLength===value.buffer.byteLength)return value;if(value instanceof ArrayBuffer||ArrayBuffer.isView(value)||typeof value==="object"&&!isNaN(value?.length))return new Uint8Array(value);throw new Error("Invalid PDF binary data");}',inner);
+      assert.throws(()=>getData(inner.outerBuffer),/Invalid PDF binary data/,'the raw transport buffer must reproduce the native cross-iframe failure');assert.deepEqual(Array.from(getData(value)),[1,2,3]);
+    }finally{f.close();}
+  });
+  await check('Gecko-facing options, method hooks, mapped callbacks and annotation return values enter the reader realm',async()=>{
+    const owned=new WeakSet();let clones=0;
+    const cloneInto=(value,target,options)=>{assert(options.cloneFunctions&&options.wrapReflectors);clones++;const visited=new WeakMap();function transfer(value){if(value===null||!['object','function'].includes(typeof value))return value;if(value instanceof DOM.Element||value instanceof DOM.Window)return value;if(typeof value==='function'){const result=function(...args){return value.apply(this,args);};owned.add(result);return result;}if(typeof value.then==='function')throw new Error('Promises cannot be structured-cloned');if(visited.has(value))return visited.get(value);const result=Array.isArray(value)?[]:value instanceof Uint8Array?new Uint8Array(value):{};visited.set(value,result);owned.add(result);for(const key of Object.keys(value))result[key]=transfer(value[key]);return result;}return transfer(value);};
+    const f=await fixture({Components:{utils:{cloneInto}}});try{const add=f.source._onAddAnnotation;f.source._onAddAnnotation=(value,...args)=>{assert(owned.has(value));assert(owned.has(value.position));return add(value,...args);};const popup=f.source._onSetSelectionPopup;f.source._onSetSelectionPopup=value=>{assert(owned.has(value));assert(owned.has(value.annotation));return popup(value);};await f.show();const translated=f.layer.nativeView;assert(owned.has(translated._options));assert(owned.has(f.source.setAnnotations));const created=translated._options.onAddAnnotation(highlight(),true);assert(owned.has(created));assert(owned.has(created.position));translated._options.onSetSelectionPopup({rect:[0,0,30,20],annotation:highlight()});
+      const original=translated.setTool;translated.setTool=function(value){assert(owned.has(value));return original.call(this,value);};f.source.setTool({type:'underline'});
+      const result={total:1};translated._options.onSetFindState({result});result.annotation=highlight();const late=f.findStates.at(-1).result.annotation;assert(owned.has(late));assert.equal(late.text,'Original first sentence.');assert(clones>10);assert.equal(f.errors.length,0);
+    }finally{f.close();}
+  });
+  await check('hooks and find getters use exportFunction when cloned holder functions are invisible through an Xray',async()=>{
+    let exported=0;const cloneInto=value=>value&&Object.keys(value).length===1&&typeof value.value==='function'?new Proxy(value,{get(target,key){return key==='value'?undefined:Reflect.get(target,key);}}):value;
+    assert.equal(cloneInto({value:()=>{}}).value,undefined);
+    const f=await fixture({Components:{utils:{cloneInto,exportFunction(fn){exported++;return function(...args){return Reflect.apply(fn,this,args);};}}}});try{assert.equal(typeof f.source.setSelectedAnnotationIDs,'function');await f.show([4]);const target=f.layer.nativeView;target._options.onSelectAnnotations([],{});f.source.setTool({type:'highlight',color:'#ffd400'});assert.equal(target._tool.type,'highlight');const created=target._options.onAddAnnotation(highlight(),true);assert(created);assert.equal(f.writes.length,1);assert.equal(f.writes[0].value.position.pageIndex,4);const result={total:1};target._options.onSetFindState({result});result.annotation=highlight();assert.equal(f.findStates.at(-1).result.annotation.position.pageIndex,4);assert(exported>5);assert.equal(f.errors.length,0);}finally{f.close();}
+  });
+  await check('older Gecko function export fallback waives only its freshly cloned holder',async()=>{
+    const holders=new WeakMap(),waived=[];const cloneInto=value=>{if(value&&Object.keys(value).length===1&&typeof value.value==='function'){const opaque=new Proxy(value,{get(target,key){return key==='value'?undefined:Reflect.get(target,key);}});holders.set(opaque,value);return opaque;}return value;};
+    const f=await fixture({Components:{utils:{cloneInto,waiveXrays(value){assert(holders.has(value),'only owned function holders may be waived');waived.push(value);return holders.get(value);}}}});try{await f.show();assert.equal(typeof f.source.setSelectedAnnotationIDs,'function');f.layer.nativeView._options.onSelectAnnotations([],{});assert(waived.length>5);assert.equal(f.errors.length,0);}finally{f.close();}
+  });
+  await check('a non-callable exported hook fails safely and restores earlier source methods',async()=>{
+    let exports=0,source;await assert.rejects(fixture({Components:{utils:{cloneInto:value=>value,exportFunction(fn){return ++exports===3?undefined:fn;}}}},value=>{source=value.source;}),{code:'compatibility'});for(const name of ['setAnnotations','setSelectedAnnotationIDs','setTool']){assert.equal(typeof source[name],'function');assert.equal(Object.hasOwn(source,name),false);}assert.equal(source._options.container.children.length,1);assert.equal(source._iframe.ownerDocument.head.children.length,0);assert.equal(source._iframe.ownerDocument.body.allNodes().some(node=>node.className==='askgpt-native-menu'||node.className==='askgpt-native-controls'),false);
+  });
+  await check('native popup color choice carries canonical English coordinates',async()=>{
+    const f=await fixture();try{await f.show([4],'dual');f.layer.nativeView._options.onSetSelectionPopup({rect:[10,20,30,40],annotation:highlight(0,[[45,694,70,708]])});const popup=f.popups.at(-1);assert.deepEqual(popup.rect,[10,20,30,40]);assert.equal(popup.annotation.position.pageIndex,4);assert.equal(popup.annotation.text,'Original first sentence.');}finally{f.close();}
+  });
+  await check('dual native popups offset only their parent UI rectangle and keep raw iframe coordinates through scroll updates',async()=>{
+    const overlays=[],menus=[],f=await fixture({},({source})=>{
+      source._options.container.getBoundingClientRect=()=>({left:100,top:50});
+      source._onSetOverlayPopup=popup=>{overlays.push(popup);source.setOverlayPopup(popup);};source._onOpenViewContextMenu=params=>menus.push(params);source._onOpenAnnotationContextMenu=params=>menus.push(params);
+    });try{
+      const bytes=new Uint8Array([1,2,3]).buffer,data=alignment([4]);await f.layer.showOutput(bytes,[4],'mono',data);const target=f.layer.nativeView;
+      target._iframe.getBoundingClientRect=()=>({left:f.layer.body.style.getPropertyValue('left')==='50%'?500:100,top:f.layer.body.style.getPropertyValue('left')==='50%'?60:50});
+      const first={rect:[10,20,30,40],annotation:highlight()};target._options.onSetSelectionPopup(first);assert.deepEqual(f.popups.at(-1).rect,first.rect);assert.deepEqual(target._selectionPopup.rect,first.rect);
+      await f.layer.showOutput(bytes,[4],'dual',data);target._options.onSetSelectionPopup(first);assert.deepEqual(f.popups.at(-1).rect,[410,30,430,50]);assert.deepEqual(target._selectionPopup.rect,first.rect);
+      const scrolled={...first,rect:[20,70,40,90]};target._options.onSetSelectionPopup(scrolled);assert.deepEqual(f.popups.at(-1).rect,[420,80,440,100]);assert.deepEqual(target._selectionPopup.rect,scrolled.rect);
+      const saved=target._options.onAddAnnotation(highlight(),true);target._options.onSetAnnotationPopup({rect:[50,60,80,90],annotation:saved});assert.deepEqual(f.popups.at(-1).rect,[450,70,480,100]);assert.deepEqual(target._annotationPopup.rect,[50,60,80,90]);
+      const ref={live:'reference'},overlay={type:'reference',rect:[80,90,100,110],ref};target._options.onSetOverlayPopup(overlay);assert.deepEqual(overlays.at(-1).rect,[480,100,500,120]);assert.deepEqual(target._overlayPopup.rect,overlay.rect);assert.equal(target._overlayPopup.ref,ref,'overlay DOM/reference identity survives the coordinate bridge');
+      target._options.onOpenViewContextMenu({x:525,y:130});assert.deepEqual(menus.at(-1),{x:525,y:130});target._options.onOpenAnnotationContextMenu({ids:[saved.id],x:535,y:150,view:true});assert.equal(menus.at(-1).x,535);assert.equal(menus.at(-1).y,150,'native menus already include their iframe offset');
+      f.source._iframeWindow.emit('pointermove');const sourcePopup={rect:[15,25,35,45],annotation:clone(f.reader._state.annotations[0])};f.source._onSetSelectionPopup(sourcePopup);assert.deepEqual(f.popups.at(-1).rect,sourcePopup.rect);assert.deepEqual(f.source._selectionPopup.rect,sourcePopup.rect);assert.deepEqual(target._selectionPopup.rect,scrolled.rect);
+    }finally{f.close();}
+  });
+  await check('native popup setters retain raw translated selection while the parent receives canonical coordinates',async()=>{
+    const f=await fixture();try{await f.show([4],'dual');const target=f.layer.nativeView,input={rect:[10,20,30,40],annotation:highlight(0,[[45,694,70,708]])};target._options.onSetSelectionPopup(input);const parent=f.popups.at(-1);assert.equal(parent.annotation.position.pageIndex,4);assert.equal(parent.annotation.text,'Original first sentence.');assert.deepEqual(target._selectionPopup,input);assert.equal(f.source._selectionPopup,undefined,'the hidden original must not track the translated popup or re-anchor it during synchronized scrolling');
+      const moved={...target._selectionPopup,rect:[10,10,30,30]};target._options.onSetSelectionPopup(moved);assert.equal(f.popups.at(-1).annotation.text,'Original first sentence.');assert.deepEqual(target._selectionPopup,moved);assert.equal(f.writes.length,0);f.source.setSelectionPopup(null);assert.equal(target._selectionPopup,null);assert.equal(f.source._selectionPopup,undefined);
+    }finally{f.close();}
+  });
+  await check('native annotation popup and overlay setters follow the visible PDF without feeding it canonical source positions',async()=>{
+    const f=await fixture();try{f.reader._state.annotations=[{...highlight(4,[[40,690,250,710]]),id:'EXISTING',text:'Original'}];await f.show([4],'dual');const target=f.layer.nativeView,annotation=target._annotations.find(value=>value.id==='EXISTING'),input={rect:[1,2,3,4],annotation};target._options.onSetAnnotationPopup(input);assert.equal(f.popups.at(-1).annotation.position.pageIndex,4);assert.deepEqual(target._annotationPopup,input);f.source.setOverlayPopup({rect:[1,2,3,4],type:'link'});assert.equal(target._overlayPopup.type,'link');f.source.setAnnotationPopup(null);assert.equal(target._annotationPopup,null);assert.equal(f.source._annotationPopup,undefined);}finally{f.close();}
+  });
+  await check('all eight native popup colors and both explicit annotation modes save unchanged without changing the pointer tool',async()=>{
+    const colors=['#ffd400','#ff6666','#5fb236','#2ea8e5','#a28ae5','#e56eee','#f19837','#aaaaaa'],f=await fixture();try{await f.show([4]);const target=f.layer.nativeView;for(const type of ['highlight','underline'])for(const color of colors){target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight()});const popup=f.popups.at(-1),count=f.writes.length;f.source._onAddAnnotation({...popup.annotation,type,color});assert.equal(f.writes.length,count+1);assert.equal(f.writes.at(-1).value.type,type);assert.equal(f.writes.at(-1).value.color,color);assert.equal(f.writes.at(-1).value.position.pageIndex,4);assert.equal(target._annotations.at(-1).color,color);assert.equal(f.reader._state.tool.type,'pointer');}}finally{f.close();}
+  });
+  await check('deep-cloned native tool colors follow in-place toolbar edits and remain correct after pointer-to-keyboard annotation',async()=>{
+    function cloneInto(value){if(value===null||typeof value!=='object'||value instanceof DOM.Element||value instanceof DOM.Window)return value;if(value instanceof Uint8Array)return new Uint8Array(value);if(Array.isArray(value))return value.map(cloneInto);return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,cloneInto(item)]));}
+    let originalSetTool;const f=await fixture({Components:{utils:{cloneInto,exportFunction:value=>value}}},({source,reader})=>{reader._tools={pointer:{type:'pointer'},highlight:{type:'highlight',color:'#ffd400'},underline:{type:'underline',color:'#ffd400'}};source._tools=reader._tools;source._options.tools=reader._tools;reader._state.tool=reader._tools.pointer;source._tool=reader._state.tool;reader.setTool=originalSetTool=params=>{const previous=reader._state.tool,tool=params.type&&previous.type!==params.type?reader._tools[params.type]:previous;Object.assign(tool,params);reader._state.tool=tool;if(tool!==previous)source.setTool(tool);};});try{await f.show([4]);const target=f.layer.nativeView;assert.notEqual(target._tools,f.reader._tools);for(const [type,color] of [['highlight','#2ea8e5'],['underline','#a28ae5']]){f.reader.setTool({type});f.reader.setTool({color});assert.equal(target._tool.color,color,'official Reader mutates the same tool object, so its primaryView setter need not fire');assert.equal(target._tools[type].color,color);assert.equal(target._options.tools[type].color,color);f.reader.setTool({type:'pointer'});assert.equal(target._tool.type,'pointer');target._options.onAddAnnotation({...highlight(),type,color:target._tools[type].color});assert.equal(f.writes.at(-1).value.color,color);assert.equal(f.writes.at(-1).value.type,type);}f.close();assert.equal(f.reader.setTool,originalSetTool);}finally{f.close();}
+  });
+  await check('an unmapped new selection replaces the old native palette without retaining its save target',async()=>{
+    const value=alignment();value.pages[0].paragraphs[0].sentences.splice(1);const f=await fixture();try{await f.show([0],'mono',value);const target=f.layer.nativeView;target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight()});assert(target._selectionPopup);target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight(0,[[150,694,220,708]])});assert.equal(f.reader._state.primaryViewSelectionPopup.annotation.text,'第一句');assert.deepEqual(target._selectionPopup.annotation.position.rects,[[150,694,220,708]]);assert.throws(()=>f.reader._annotationManager.addAnnotation(f.reader._state.primaryViewSelectionPopup.annotation),{code:'annotation_sentence'});assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('sentence rejection reports only fixed reasons and numeric counts for live diagnosis',async()=>{
+    const reports=[],value=alignment();value.pages[0].paragraphs[0].sentences.splice(1);const f=await fixture({reportDiagnostic:(stage,error)=>reports.push({stage,error})});try{await f.show([0],'mono',value);const target=f.layer.nativeView;for(const [rects,detail,matched,uncovered] of [[[[45,500,70,515]],'unmatched',0,1],[[[150,694,220,708]],'coverage',1,1]]){target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight(0,rects)});const report=reports.at(-1);assert.equal(report.stage,'nativeSelection');assert.equal(report.error.code,'annotation_sentence');assert.equal(report.error.mappingDetail,detail);assert.deepEqual(report.error.mappingNumbers,{outputPage:0,sourcePage:0,selectionRects:1,matchedSentences:matched,uncoveredRects:uncovered});assert(!JSON.stringify(report.error).includes('第一句'));}assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('the additional native PDFView initializes physical page labels and updates them locally',async()=>{
+    const f=await fixture();try{f.source._options.pageLabels=[];f.source._pageLabels=['i','ii','1','2','3'];f.reader._state.pageLabels=f.source._pageLabels;const original=f.reader._state.pageLabels;await f.show([3,4]);const target=f.layer.nativeView;assert.equal(target._getPageLabel(0),'2');assert.equal(target._getPageLabel(1),'3');target._options.onSetPageLabels(['1','2']);assert.deepEqual(target._pageLabels,['2','3']);assert.equal(f.reader._state.pageLabels,original);assert.deepEqual(f.reader._state.pageLabels,['i','ii','1','2','3']);assert(target.calls.some(call=>call[0]==='pageLabels'));}finally{f.close();}
+  });
+  await check('translation defaults to selection and native popup buttons, without inheriting or restoring stale automatic highlighting',async()=>{
+    for(const type of ['highlight','underline']){const f=await fixture({},({source,reader})=>{reader._state.tool={type,color:'#ffd400'};source._tool=reader._state.tool;});try{assert.equal(f.reader._state.tool.type,'pointer');await f.show();const target=f.layer.nativeView;assert.equal(target._tool.type,'pointer');target._options.onSetSelectionPopup({rect:[10,20,30,40],annotation:highlight()});assert.equal(f.writes.length,0,'selecting alone must not create a saved annotation');assert.equal(f.popups.length,1);f.source._onAddAnnotation({...f.popups[0].annotation,color:'#ffd400'},true);assert.equal(f.writes.length,1,'the explicit native popup choice is the save action');f.reader.setTool({type:'highlight',color:'#ffd400'});assert.equal(target._tool.type,'highlight','an explicit user tool choice still works');f.layer.restoreOriginal();assert.equal(f.reader._state.tool.type,'pointer');assert.equal(f.reader._state.annotations.length,1,'leaving translation must preserve user annotations');}finally{f.close();}}
+  });
+  await check('a deliberate original drawing tool is restored while translated reading always starts as pointer',async()=>{
+    const f=await fixture({},({source,reader})=>{reader._state.tool={type:'ink',color:'#000000',size:2};source._tool=reader._state.tool;});try{await f.show();assert.equal(f.layer.nativeView._tool.type,'pointer');assert.equal(f.reader._state.tool.type,'pointer');f.layer.restoreOriginal();assert.equal(f.reader._state.tool.type,'ink');assert.equal(f.source._tool.type,'ink');}finally{f.close();}
+  });
+  await check('legacy paragraph metadata never paints a small original highlight across an entire translated paragraph',async()=>{
+    const old=legacyAlignment();const f=await fixture();try{f.reader._state.annotations=[{...highlight(0,[[40,690,250,710]]),id:'USERMARK',text:'Original words'}];await f.show([0],'mono',old);assert.equal(f.layer.nativeView._annotations.length,0);assert.equal(f.reader._state.annotations.length,1);f.layer.nativeView._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight()});assert.equal(f.popups.length,1);assert.equal(f.writes.length,0);await f.show([0],'dual',old);assert.deepEqual(f.layer.nativeView._annotations,[]);assert.deepEqual(f.reader._state.annotations[0].position.rects,[[40,690,250,710]]);assert.equal(f.reader._state.annotations[0].id,'USERMARK');}finally{f.close();}
+  });
+  await check('sentence geometry maps a selected second sentence without selecting the first or using text-length ratios',()=>{
+    const mapper=Native.createMapper(Native.validateAlignment(alignment([6]),[6]),'mono');const result=mapper.toSourceAnnotation({...highlight(0,[[190,694,220,708]]),text:'另一句'});assert.equal(result.text,'Another sentence.');assert.deepEqual(result.position,{pageIndex:6,rects:[[40,670,220,690]]});const projected=mapper.projectAnnotation({...highlight(6,[[40,670,220,690]]),id:'SECOND'});assert.deepEqual(projected.position.rects,[[190,690,220,710]]);
+    const invalid=alignment();invalid.pages[0].paragraphs[0].sentences[1].source.rects=[[0,0,0,1]];assert.throws(()=>Native.validateAlignment(invalid,[0]),{code:'compatibility'});
+  });
+  await check('a sentence alignment upgrade updates projections in place without rebuilding the PDF, scrolling or saving',async()=>{
+    const old=legacyAlignment();const f=await fixture();try{f.reader._state.annotations=[{...highlight(0,[[40,690,250,710]]),id:'USERMARK'}];await f.show([0],'mono',old);const target=f.layer.nativeView,scroll=target._iframeWindow.document.getElementById('viewerContainer');scroll.scrollTop=123;assert.equal(target._annotations.length,0);const precise=alignment();precise.sentencePages=[0];assert.equal(f.layer.updateAlignment(precise),true);assert.equal(f.layer.nativeView,target);assert.equal(f.views.length,1);assert.equal(scroll.scrollTop,123);assert.equal(target._annotations.length,1);assert.deepEqual(target._annotations[0].position.rects,[[45,690,70,710]]);assert.equal(f.writes.length,0);target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight()});assert.equal(f.popups.at(-1).annotation.text,'Original first sentence.');f.close();assert.equal(f.layer.updateAlignment(precise),false);}finally{f.close();}
+  });
+  await check('mounted projection cache reuses verified results but invalidates native character identities and annotation colors with private copies',async()=>{
+    const value=selectionAlignment(),counter={reads:0},sourcePages=trackedGlyphPages(value,'source',counter),targetPages=trackedGlyphPages(value,'target',counter),annotation={...highlight(0,[[94,690,130,710]]),text:'genome',id:'CACHEWORD',color:'#2ea8e5'};
+    const f=await fixture({},({source,reader})=>{source._pdfPages=sourcePages;reader._state.annotations=[clone(annotation)];const Base=source.constructor;source.constructor=class extends Base{constructor(options){super(options);this._pdfPages=targetPages;}};});try{
+      await f.show([0],'mono',value);const target=f.layer.nativeView;assert.equal(target._annotations.length,1);counter.reads=0;f.layer.updateAlignment(clone(value));assert.equal(counter.reads,0,'unchanged verified native glyphs and page metadata use the cache');target._annotations[0].text='MUTATED';target._annotations[0].position.rects[0][0]=999;f.layer.updateAlignment(clone(value));assert.equal(counter.reads,0);assert.equal(target._annotations[0].text,'基因组');assert.deepEqual(target._annotations[0].position.rects,[[60,690,90,710]],'objects passed to native setters cannot corrupt private cached geometry');
+      f.source._pdfPages[0].chars=trackedGlyphPages(value,'source',counter)[0].chars;f.layer.updateAlignment(clone(value));assert(counter.reads>0,'a new original glyph array must be checked again');counter.reads=0;target._pdfPages[0].chars=trackedGlyphPages(value,'target',counter)[0].chars;f.layer.updateAlignment(clone(value));assert(counter.reads>0,'a new translated glyph array must invalidate even identical sidecar geometry');counter.reads=0;f.reader._state.annotations[0].color='#a28ae5';f.layer.updateAlignment(clone(value));assert(counter.reads>0);assert.equal(target._annotations[0].color,'#a28ae5');assert.equal(f.reader._state.annotations[0].position.rects[0][0],94);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('native glyph evidence arriving after an initial fallback forces rechecking and an unprojectable result is never cached',async()=>{
+    const value=selectionAlignment(),annotation={...highlight(0,[[94,690,130,710]]),text:'genome',id:'LATEGLYPH'},counter={reads:0},f=await fixture({},({reader})=>{reader._state.annotations=[clone(annotation)];});try{
+      await f.show([0],'mono',value);const target=f.layer.nativeView;assert.equal(target._annotations.length,1);const word=value.pages[0].paragraphs[0].sentences[0].phrases[1].source.glyphs,chars=word.map(g=>({c:'X',rect:clone(g.rect)}));f.source._pdfPages[0]={chars};target._pdfPages=trackedGlyphPages(value,'target',counter);f.layer.updateAlignment(clone(value));assert.equal(target._annotations.length,0,'a pre-initialization fallback cannot conceal contradictory native evidence');for(let i=0;i<chars.length;i++)chars[i].c=word[i].text;f.layer.updateAlignment(clone(value));assert.equal(target._annotations.length,1,'null was not cached: identical array identity and length may recover when native text becomes valid');assert.deepEqual(target._annotations[0].position.rects,[[60,690,90,710]]);assert.deepEqual(f.reader._state.annotations,[annotation]);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('a semantic correction on the second physical page invalidates a cached cross-page projection',async()=>{
+    const value=selectionAlignment([4,5]),counter={reads:0},sourcePages=trackedGlyphPages(value,'source',counter),targetPages=trackedGlyphPages(value,'target',counter),annotation={...highlight(4,[[94,690,130,710]]),text:'genome\ngenome',id:'TWOPAGE'};annotation.position.nextPageRects=[[94,690,130,710]];
+    const f=await fixture({},({source,reader})=>{source._pdfPages=sourcePages;reader._state.annotations=[clone(annotation)];const Base=source.constructor;source.constructor=class extends Base{constructor(options){super(options);this._pdfPages=targetPages;}};});try{
+      await f.show([4,5],'mono',value);const target=f.layer.nativeView;assert.deepEqual(target._annotations[0].position.nextPageRects,[[60,690,90,710]]);counter.reads=0;f.layer.updateAlignment(clone(value));assert.equal(counter.reads,0);const corrected=clone(value),row=corrected.pages[1].paragraphs[0].sentences[0],[human,genome]=row.phrases;for(const key of ['target','dualTarget','targetTokenCount'])[human[key],genome[key]]=[genome[key],human[key]];f.layer.updateAlignment(corrected);assert(counter.reads>0);assert.deepEqual(target._annotations[0].position.rects,[[60,690,90,710]]);assert.deepEqual(target._annotations[0].position.nextPageRects,[[40,690,60,710]]);assert.deepEqual(f.reader._state.annotations,[annotation]);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('background sentence alignment starts once per physical page and skips pages already cached precisely',async()=>{
+    const calls=[],old=legacyAlignment([3,4]);const f=await fixture({},()=>{},{align:physical=>calls.push(physical)});try{await f.show([3,4],'mono',old);await tick();assert.deepEqual(calls,[3]);const options=f.layer.nativeView._options;options.onChangeViewStats({pageIndex:0,pagesCount:2});options.onChangeViewStats({pageIndex:1,pagesCount:2});options.onChangeViewStats({pageIndex:1,pagesCount:2});await tick();assert.deepEqual(calls,[3,4]);const precise=alignment([3,4]);precise.sentencePages=[3,4];f.layer.updateAlignment(precise);options.onChangeViewStats({pageIndex:1,pagesCount:2});await tick();assert.deepEqual(calls,[3,4]);assert.equal(f.views.length,1);}finally{f.close();}
+    const cachedCalls=[],cached=alignment([5]);cached.sentencePages=[5];const ready=await fixture({},()=>{},{align:physical=>cachedCalls.push(physical)});try{await ready.show([5],'mono',cached);await tick();ready.layer.nativeView._options.onChangeViewStats({pageIndex:0,pagesCount:1});await tick();assert.deepEqual(cachedCalls,[]);}finally{ready.close();}
+  });
+  await check('page focus notifies the controller even for cached or already-requested pages without adding saves or clearing selection',async()=>{
+    const pages=[],aligned=[],f=await fixture({},()=>{},{page:physical=>pages.push(physical),align:physical=>aligned.push(physical)});try{await f.show([5,6]);await tick();assert.deepEqual(pages,[5]);assert.deepEqual(aligned,[]);const target=f.layer.nativeView,selection=[{fixture:'keep selection'}];target._selectionRanges=selection;target._options.onChangeViewStats({pageIndex:1,pagesCount:2});target._options.onChangeViewStats({pageIndex:1,pagesCount:2});await tick();assert.deepEqual(pages,[5,6,6]);assert.deepEqual(aligned,[],'cached pages still report focus but never request another alignment');assert.equal(target._selectionRanges,selection);assert.equal(f.writes.length,0);target._options.onChangeViewStats({pageIndex:9,pagesCount:2});assert.deepEqual(pages,[5,6,6]);}finally{f.close();}
+    const pendingPages=[],pendingAlign=[],pending=await fixture({},()=>{},{page:physical=>pendingPages.push(physical),align:physical=>pendingAlign.push(physical)});try{await pending.show([3],'mono',legacyAlignment([3]));pending.layer.nativeView._options.onChangeViewStats({pageIndex:0,pagesCount:1});await tick();assert.deepEqual(pendingPages,[3,3]);assert.deepEqual(pendingAlign,[3],'repeated view stats notify focus while the native align request remains deduplicated');}finally{pending.close();}
+  });
+  await check('automatic annotation preparation and failure remain in the compact accessible toolbar indicator',async()=>{
+    const f=await fixture();try{await f.show();const status=f.layer.header.children.find(node=>node.className==='askgpt-native-status'),slot=f.layer.header.children.find(node=>node.className==='askgpt-native-annotation-state'),indicator=slot.children.find(node=>node.className==='askgpt-native-annotation-indicator'),hint=slot.children.find(node=>node.className==='askgpt-native-annotation-hint');for(const state of ['preparing','failed',null]){f.layer.setAnnotationStatus(state);assert.equal(status.hidden,true,'background annotation readiness must never cover PDF text');assert.equal(hint.hidden,true);assert.equal(indicator.getAttribute('data-state'),state||'ready');assert.equal(indicator.getAttribute('aria-busy'),String(state==='preparing'));assert.equal(indicator.getAttribute('aria-label'),indicator.getAttribute('title'));assert(indicator.getAttribute('title'));}assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('unmapped pointer selection stays quiet and only an explicit save attempt shows a small local hint',async()=>{
+    const f=await fixture();try{await f.show([0],'mono',legacyAlignment());f.layer.setAnnotationStatus('preparing');const status=f.layer.header.children.find(node=>node.className==='askgpt-native-status'),slot=f.layer.header.children.find(node=>node.className==='askgpt-native-annotation-state'),hint=slot.children.find(node=>node.className==='askgpt-native-annotation-hint'),options=f.layer.nativeView._options;options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight()});assert.equal(hint.hidden,true,'selecting text is not an annotation save request');assert.equal(status.hidden,true);assert.equal(f.popups.length,1);options.onAddAnnotation(highlight(),true);assert.equal(hint.hidden,false);assert.match(hint.textContent,/准备中/);assert.equal(status.hidden,true);assert.equal(f.writes.length,0);f.layer.restoreOriginal();assert.equal(hint.hidden,true);}finally{f.close();}
+  });
+  await check('a background alignment refresh preserves the open native palette and the live text selection',async()=>{
+    const f=await fixture();try{await f.show();const target=f.layer.nativeView;target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:highlight()});const popup=target._selectionPopup,parentPopup=f.reader._state.primaryViewSelectionPopup,selection=[{fixture:'live native selection'}],calls=target.calls.filter(value=>value[0]==='selectionPopup').length;target._selectionRanges=selection;f.layer.setAnnotationStatus('preparing');f.layer.updateAlignment(alignment());assert.equal(target._selectionPopup,popup);assert.equal(f.reader._state.primaryViewSelectionPopup,parentPopup);assert.equal(target._selectionRanges,selection);assert.equal(target.calls.filter(value=>value[0]==='selectionPopup').length,calls);assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('existing annotations project both halves with one canonical item and no new save',async()=>{
+    const f=await fixture();try{f.reader._state.annotations=[{...highlight(2,[[40,690,250,710]]),id:'EXISTING',text:'Original',readOnly:true}];await f.show([2],'dual');const projected=f.layer.nativeView._annotations;assert.equal(projected.length,1);assert.deepEqual(projected.map(a=>a.id),['EXISTING']);assert.equal(projected[0].readOnly,true);assert.deepEqual(f.reader._state.annotations[0].position.rects,[[40,690,250,710]]);assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('native color edits, deletion and source undo use canonical IDs on both halves',async()=>{
+    const f=await fixture();try{f.reader._state.annotations=[{...highlight(0,[[40,690,250,710]]),id:'EXISTING',text:'Original'}];await f.show([0],'dual');const translated=f.layer.nativeView;
+      translated._options.onUpdateAnnotations([{id:'EXISTING__askgptOriginal',color:'#ff0000'}]);assert.deepEqual(f.updates[0],[{id:'EXISTING',color:'#ff0000'}]);assert(translated._annotations.every(a=>a.color==='#ff0000'));
+      translated._options.onDeleteAnnotations(['EXISTING__askgptOriginal','EXISTING']);assert.deepEqual(f.deletions,[['EXISTING']]);assert.equal(translated._annotations.length,0);
+      f.source.setAnnotations([{...highlight(0,[[40,690,250,710]]),id:'EXISTING'}]);assert.equal(translated._annotations.length,1);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('tools and search redirect to the visible native translation, without changing source zoom or search',async()=>{
+    const f=await fixture();try{await f.show();const translated=f.layer.nativeView;f.source.setTool({type:'underline',color:'#00ff00'});assert.equal(translated._tool.type,'underline');f.source.setFindState({query:'第一句',active:true});f.source.findNext();f.source.zoomIn();f.source.navigateToNextPage();f.source.focus();assert.equal(translated.findState.query,'第一句');for(const method of ['findNext','zoomIn','next','focus'])assert(translated.calls.some(call=>call[0]===method));assert(!f.source.calls.some(call=>['find','findNext','zoomIn','next','focus'].includes(call[0])));}finally{f.close();}
+  });
+  await check('foreign selection arrays and callable hooks with hidden prototype methods still select, forward tools and add Chinese annotations',async()=>{
+    const foreignArray=values=>new Proxy(values,{get(target,key,receiver){if(['map','flatMap','some','filter','find'].includes(key))return undefined;return Reflect.get(target,key,receiver);}});
+    const hiddenApply=fn=>new Proxy(fn,{get(target,key,receiver){if(key==='apply')return undefined;return Reflect.get(target,key,receiver);}});
+    const f=await fixture({},({source})=>{source.setTool=hiddenApply(source.setTool);source.setSelectedAnnotationIDs=hiddenApply(source.setSelectedAnnotationIDs);source.setAnnotations=hiddenApply(source.setAnnotations);source._onAddAnnotation=hiddenApply(source._onAddAnnotation);});try{await f.show([3],'dual');const translated=f.layer.nativeView,event={shiftKey:false,ctrlKey:false,marker:'native event'};let observedEvent;f.source._onSelectAnnotations=(ids,value)=>{observedEvent=value;f.source.setSelectedAnnotationIDs(foreignArray(ids));};translated._options.onSelectAnnotations(foreignArray([]),event);assert.equal(observedEvent,event,'native event reflectors must stay intact');f.source.setTool({type:'highlight',color:'#ffd400'});assert.equal(translated._tool.type,'highlight');const created=translated._options.onAddAnnotation(highlight(0,[[45,694,70,708]]),true);assert(created);assert.equal(f.writes.length,1);assert.equal(f.writes[0].value.position.pageIndex,3);assert.equal(f.writes[0].value.comment,'译文摘录：第一句');f.reader._state.annotations=foreignArray(f.reader._state.annotations);translated._options.onSelectAnnotations(foreignArray([created.id]),event);assert.deepEqual(translated.selected,[created.id]);assert.equal(f.errors.length,0);}finally{f.close();}
+  });
+  await check('late native find-result annotations still map to the original physical paragraph',async()=>{
+    const f=await fixture();try{await f.show([5]);const result={total:1,index:0};f.layer.nativeView._options.onSetFindState({result});result.annotation=highlight();const parent=f.findStates.at(-1);assert.equal(parent.result.annotation.position.pageIndex,5);assert.equal(parent.result.annotation.text,'Original first sentence.');}finally{f.close();}
+  });
+  await check('native search defines its late annotation accessor only on its freshly owned waived result',async()=>{
+    const wrappers=new WeakMap(),owned=new WeakSet(),waived=[];
+    const cloneInto=value=>{
+      const seen=new WeakMap();
+      function transfer(value){
+        if(value===null||!['object','function'].includes(typeof value))return value;
+        if(value instanceof DOM.Element||value instanceof DOM.Window)return value;
+        if(typeof value==='function')return function(...args){return Reflect.apply(value,this,args);};
+        if(value instanceof Uint8Array)return new Uint8Array(value);
+        if(seen.has(value))return seen.get(value);
+        const raw=Array.isArray(value)?[]:{},wrapped=new Proxy(raw,{
+          defineProperty(target,key,descriptor){if(descriptor.get||descriptor.set)throw new Error('Permission denied to define property '+String(key));return Reflect.defineProperty(target,key,descriptor);},
+          set(target,key,item){return Reflect.set(target,key,item,target);}
+        });
+        wrappers.set(wrapped,raw);owned.add(raw);seen.set(value,wrapped);
+        for(const key of Object.keys(value))raw[key]=transfer(value[key]);return wrapped;
+      }
+      return transfer(value);
+    };
+    const utils={cloneInto,exportFunction:value=>function(...args){return Reflect.apply(value,this,args);},waiveXrays(value){assert(wrappers.has(value),'never waive native input, a window or an unknown object');const raw=wrappers.get(value);waived.push(raw);return raw;}};
+    const f=await fixture({Components:{utils}});try{
+      await f.show([5]);const result={total:1,index:0,snippets:['第一句。']},params={query:'第一句',result};
+      f.layer.nativeView._options.onSetFindState(params);
+      assert.equal(f.errors.length,0,'a normal native search result must not fail on a Gecko Xray accessor');
+      assert.equal(f.findStates.length,1);const parent=f.findStates.at(-1);
+      assert.equal(parent.query,'第一句');assert.equal(parent.result.total,1);assert.equal(parent.result.annotation,undefined);
+      assert.notEqual(parent.result,result);assert(!Object.hasOwn(result,'annotation'),'the native result remains untouched');
+      await tick();result.annotation=highlight();
+      assert.equal(parent.result.annotation.position.pageIndex,5);assert.equal(parent.result.annotation.text,'Original first sentence.');
+      assert.equal(waived.length,1);assert(owned.has(waived[0]));assert.equal(waived[0].total,1);
+      f.layer.nativeView._options.onSetFindState({query:'',result:null});assert.equal(f.findStates.at(-1).result,null);assert.equal(waived.length,1);
+      f.close();assert.equal(parent.result.annotation,undefined,'retired callbacks must not read a different document mapper');
+    }finally{f.close();}
+  });
+  await check('a search result remains readable while its late annotation has no precise source mapping',async()=>{
+    const f=await fixture();try{
+      await f.show([5],'mono',legacyAlignment([5]));const result={total:3,index:0};f.layer.nativeView._options.onSetFindState({query:'第一句',result});result.annotation=highlight();
+      const parent=f.findStates.at(-1);assert.equal(parent.result.total,3);assert.doesNotThrow(()=>assert.equal(parent.result.annotation,undefined));
+      f.source.findNext();assert(f.layer.nativeView.calls.some(call=>call[0]==='findNext'));
+      assert.equal(f.errors.length,0);assert.equal(f.writes.length,0);
+      assert.equal(f.layer.nativeView._options.onAddAnnotation(highlight()),null,'search never grants permission to save an unmapped selection');assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('callback failures identify a fixed subsystem without logging text or coordinates',async()=>{
+    const reported=[],f=await fixture({reportDiagnostic:(stage,error)=>reported.push({stage,name:error?.name})});try{await f.show();f.source._onChangeViewState=()=>{throw new TypeError('fixture state failure');};f.source._onSetFindState=()=>{throw new TypeError('fixture search failure');};f.source._onAddAnnotation=()=>{throw new TypeError('fixture annotation failure');};const options=f.layer.nativeView._options;options.onChangeViewState({pageIndex:0,left:50,top:700});options.onSetFindState({query:'private fixture text'});options.onAddAnnotation(highlight());assert.deepEqual(reported.filter(item=>item.name==='TypeError').map(item=>item.stage),['nativeState','nativeSearch','nativeAnnotation']);assert(reported.every(item=>Object.keys(item).every(key=>['stage','name'].includes(key))));}finally{f.close();}
+  });
+  await check('plain translated text copies immediately before mapping and retains Chinese text after mapping',async()=>{
+    const f=await fixture();try{await f.show([4],'mono',legacyAlignment([4]));const copied=[],transfer={setData:(type,text)=>copied.push({type,text})},target=f.layer.nativeView,input={...highlight(0,[[60,690,90,710]]),text:'基因组'};target._options.onSetDataTransferAnnotations(transfer,input,true);assert.deepEqual(copied,[{type:'text/plain',text:'基因组'}]);assert.equal(f.writes.length,0);
+      let mapped;f.source._onSetDataTransferAnnotations=(_transfer,annotation)=>{mapped=annotation;};f.layer.updateAlignment(selectionAlignment([4]));target._options.onSetDataTransferAnnotations(transfer,input,true);assert.equal(mapped.text,'基因组');assert.equal(mapped.position.pageIndex,4);assert.deepEqual(mapped.position.rects,selectionAlignment([4]).pages[0].paragraphs[0].sentences[0].phrases[1].source.rects);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('Add to Note cannot export pending translated coordinates and works with exact source coordinates after upgrade',async()=>{
+    const notes=[],f=await fixture({},({reader})=>{reader._onAddToNote=values=>notes.push(clone(values));});try{await f.show([4],'mono',legacyAlignment([4]));f.layer.nativeView._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:{...highlight(0,[[60,690,90,710]]),text:'基因组'}});const pending=clone(f.popups.at(-1).annotation);assert.throws(()=>f.reader._onAddToNote([pending]),{code:'annotation_sentence'});assert.equal(notes.length,0);f.layer.updateAlignment(selectionAlignment([4]));f.reader._onAddToNote([pending]);assert.equal(notes.length,1);assert.equal(notes[0][0].position.pageIndex,4);assert.equal(notes[0][0].text,'genome');assert.equal(notes[0][0]._askgptNativeSelection,undefined);assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('native exceptions use fixed diagnostic kinds and a local stack fallback while preserving the original UI error',async()=>{
+    const reported=[],f=await fixture({reportDiagnostic:(stage,error)=>reported.push({stage,error})});try{await f.show();const options=f.layer.nativeView._options;
+      for(const [message,kind] of [['fixture confidential selected passage is not a function','notFunction'],['cannot access property x of undefined - fixture confidential selected passage','missingProperty'],['Permission denied for fixture confidential selected passage','permission'],['fixture confidential selected passage','other']]){const error=new TypeError(message);error.stack='native content frame without a module location';f.source._onAddAnnotation=()=>{throw error;};options.onAddAnnotation(highlight());const diagnostic=reported.at(-1);assert.equal(diagnostic.stage,'nativeAnnotation');assert.equal(diagnostic.error.errorDetail,kind);assert.match(diagnostic.error.stack,/pdf-native-view\.js:\d+/);assert(!JSON.stringify(diagnostic).includes('fixture confidential'));assert.equal(f.errors.at(-1),error,'the UI failure must still receive the original error');assert(!Object.hasOwn(diagnostic.error,'message'));}
+    }finally{f.close();}
+  });
+  await check('diagnostics preserve native source locations and identify only an allowlisted failing property',async()=>{
+    const reported=[],f=await fixture({reportDiagnostic:(stage,error)=>reported.push({stage,error})});try{await f.show();for(const property of ['apply','map','flatMap','some','cloneInto']){const error=new TypeError('original.'+property+' is not a function');error.stack='nativeCallback@resource://zotero/reader/reader.js:74876:12';f.source._onSelectAnnotations=()=>{throw error;};f.layer.nativeView._options.onSelectAnnotations([],{});const diagnostic=reported.at(-1);assert.equal(diagnostic.stage,'nativeSelection');assert.equal(diagnostic.error.errorDetail,'notFunction');assert.equal(diagnostic.error.errorProperty,property);assert.match(diagnostic.error.stack,/reader\.js:74876/);assert.match(diagnostic.error.stack,/pdf-native-view\.js:\d+/);} }finally{f.close();}
+  });
+  await check('translated reading position persists physical source page and source zoom, then survives exit',async()=>{
+    const f=await fixture();try{await f.show([4],'dual');f.layer.nativeView._options.onChangeViewState({pageIndex:0,scale:53,top:700,left:60,scrollMode:0,spreadMode:0});const saved=f.states.find(value=>value.pageIndex===4);assert.equal(saved.scale,125);assert.equal(saved.left,60);assert.equal(saved.top,700);f.layer.restoreOriginal();assert.equal(f.reader._state.primaryViewState.pageIndex,4);assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');}finally{f.close();}
+  });
+  await check('native drawing and note coordinates map through the explicit page affine transform',()=>{
+    const mapper=Native.createMapper(Native.validateAlignment(alignment([7]),[7]),'dual');
+    const note=mapper.toSourceAnnotation({type:'note',color:'#ffd400',position:{pageIndex:0,rects:[[700,400,720,420]]}});assert.deepEqual(note.position,{pageIndex:7,rects:[[100,400,120,420]]});
+    const ink=mapper.toSourceAnnotation({type:'ink',color:'#ffd400',position:{pageIndex:0,width:2,paths:[[710,410,730,430]]}});assert.deepEqual(ink.position.paths,[[110,410,130,430]]);assert.equal(ink.position.pageIndex,7);
+    const unsafe=alignment();unsafe.pages[0].mono.cropBox=[0,0,500,800];const bad=Native.createMapper(unsafe,'mono');assert.throws(()=>bad.toSourceAnnotation({type:'note',position:{pageIndex:0,rects:[[100,400,120,420]]}}),{code:'compatibility'});
+  });
+  await check('note anchors follow the paired paragraph and ink on reflowed text is never guessed',()=>{
+    const data=alignment(),paragraph=data.pages[0].paragraphs[0];paragraph.target.rects=[[40,500,300,520]];paragraph.dualTarget.rects=[[640,500,900,520]];const mapper=Native.createMapper(data,'mono');
+    const note=mapper.toSourceAnnotation({type:'note',position:{pageIndex:0,rects:[[40,500,60,520]]}});assert(note.position.rects[0][1]>650);assert.equal(note.position.rects[0][2]-note.position.rects[0][0],20);
+    assert.throws(()=>mapper.toSourceAnnotation({type:'ink',position:{pageIndex:0,width:2,paths:[[45,505,80,515]]}}),{code:'annotation_mapping'});
+    const ink=mapper.toSourceAnnotation({type:'ink',position:{pageIndex:0,width:2,paths:[[45,300,80,315]]}});assert.deepEqual(ink.position.paths,[[45,300,80,315]]);
+  });
+  await check('rotated bilingual geometry follows the sidecar affine matrix for spatial notes',()=>{
+    const value=alignment([2]),page=value.pages[0];page.source.rotation=90;page.mono.rotation=90;page.dual.mediaBox=[0,0,1600,600];page.dual.cropBox=[0,0,1600,600];page.sourceToDual=[0,-1,1,0,0,600];page.targetToDual=[0,-1,1,0,800,600];for(const sentence of page.paragraphs[0].sentences)delete sentence.phrases;const mapper=Native.createMapper(Native.validateAlignment(value,[2]),'dual');
+    const note=mapper.toSourceAnnotation({type:'text',position:{pageIndex:0,rects:[[1000,400,1020,420]],fontSize:12,rotation:0}});assert.deepEqual(note.position.rects,[[180,200,200,220]]);assert.equal(note.position.rotation,90);assert.equal(note.position.fontSize,12);
+  });
+  await check('Command-wheel pans smoothly while Control+Shift-wheel remains the native PDF.js gesture',async()=>{
+    const f=await fixture();try{await f.show();const target=f.layer.nativeView._iframeWindow,scroll=target.document.getElementById('viewerContainer');const input=values=>target.emit('wheel',{deltaX:0,deltaY:0,deltaMode:0,metaKey:false,ctrlKey:false,...values});
+      assert(input({metaKey:true,deltaY:100}).defaultPrevented);await f.flush();assert(scroll.scrollLeft>0&&scroll.scrollLeft<100);for(let i=0;i<30;i++)await f.flush();assert.equal(scroll.scrollLeft,100);assert.equal(scroll.scrollTop,20);
+      assert(!input({ctrlKey:true,shiftKey:true,deltaY:-20}).defaultPrevented);assert(!input({deltaY:20}).defaultPrevented);assert(!input({metaKey:true,ctrlKey:true,deltaY:20}).defaultPrevented);f.layer.restoreOriginal();await f.flush();assert.equal(scroll.scrollLeft,100);assert.equal(target.listenerCount(),0);
+    }finally{f.close();}
+  });
+  await check('translation shortcuts retain the local document on original mode and Escape releases the session',async()=>{
+    const f=await fixture();try{await f.show();const target=f.layer.nativeView._iframeWindow;assert(target.emit('keydown',{altKey:true,shiftKey:true,code:'KeyX'}).defaultPrevented);assert.equal(f.layer.visible,false);assert.equal(f.exits(),0);assert.equal(f.layer.nativeView.destroyed,undefined);await f.show();const active=f.layer.nativeView._iframeWindow;assert(active.emit('keydown',{key:'Escape'}).defaultPrevented);assert.equal(f.exits(),1);f.layer.restoreOriginal();active.emit('keydown',{key:'Escape'});assert.equal(f.exits(),1);}finally{f.close();}
+  });
+  await check('callbacks from a retired native view cannot save or change progress in the next mode',async()=>{
+    const f=await fixture();try{await f.show([0]);const old=f.layer.nativeView._options;await f.show([1]);assert.equal(old.onAddAnnotation(highlight(),true),null);old.onChangeViewState({pageIndex:0,top:700,left:50});old.onDeleteAnnotations(['ANY']);assert.equal(f.writes.length,0);assert.equal(f.states.length,0);assert.equal(f.deletions.length,0);}finally{f.close();}
+  });
+  await check('embedded highlights are lazy read-only projections, deduplicated against Zotero items',async()=>{
+    const f=await fixture();try{let reads=0;f.source._iframeWindow.PDFViewerApplication.pdfDocument.getPage=async physical=>{assert.equal(physical,1);reads++;return {getAnnotations:async()=>[{subtype:'Highlight',rect:[45,694,70,708],color:[255,212,0],contentsObj:{str:'Embedded note'}},{subtype:'Link',rect:[0,0,20,20]}]};};await f.show([0],'dual');await tick();await tick();const projected=f.layer.nativeView._annotations;assert.equal(reads,1);assert.equal(projected.length,0,'partial embedded marks stay visible in the native original without guessing a translated phrase');assert(projected.every(annotation=>annotation.readOnly));assert.equal(f.writes.length,0);f.layer.nativeView._options.onDeleteAnnotations(projected.map(a=>a.id));assert.equal(f.deletions.length,0);
+      f.reader._state.annotations=[{...highlight(0,[[40,690,250,710]]),id:'IMPORTED',readOnly:true}];f.source.setAnnotations(f.reader._state.annotations);assert.equal(f.layer.nativeView._annotations.length,1,'verified source mark projects without manufacturing an unmapped embedded mark');assert.equal(f.layer.nativeView._annotations.filter(a=>a.id.startsWith('IMPORTED')).length,1);
+    }finally{f.close();}
+  });
+  await check('embedded annotations read the narrow PDFPageProxy through Gecko Xrays, without waiving a Window or document',async()=>{
+    const opaquePage={},opaqueResult={},values=[{subtype:'Highlight',rect:[45,694,70,708],color:[255,212,0],contentsObj:{str:'Embedded'}}],page={getAnnotations:async options=>{assert.equal(options.intent,'display');return opaqueResult;}},waived=[];
+    const f=await fixture({Components:{utils:{waiveXrays(value){waived.push(value);if(value===opaquePage)return page;if(value===opaqueResult)return values;throw new Error('Unexpected broad Xray waiver');}}}});try{f.source._iframeWindow.PDFViewerApplication.pdfDocument.getPage=async()=>opaquePage;await f.show();await tick();await tick();assert.deepEqual(waived,[opaquePage,opaqueResult]);assert.equal(f.layer.nativeView._annotations.length,0);assert.equal(f.writes.length,0);assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('an unavailable embedded annotation interface reports a visible failure instead of silently dropping highlights',async()=>{
+    const diagnostics=[],f=await fixture({reportDiagnostic:(stage,error)=>diagnostics.push({stage,code:error?.code})});try{f.source._iframeWindow.PDFViewerApplication.pdfDocument.getPage=async()=>({getAnnotations:async()=>undefined});await f.show();await tick();await tick();const status=f.layer.header.children.find(node=>node.className==='askgpt-native-status');assert.equal(status.hidden,false);assert.match(status.textContent,/标注未载入/);assert(diagnostics.some(value=>value.stage==='nativeEmbedded'&&value.code==='compatibility'));assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('missing alignment keeps original visible and creates no replacement native view',async()=>{
+    const f=await fixture();try{await assert.rejects(f.show([0],'mono',null),{code:'compatibility'});assert.equal(f.layer.visible,false);assert.equal(f.views.length,0);assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('closing during native PDF initialization cannot revive the retired view',async()=>{
+    const f=await fixture();const release=f.hold(),pending=f.show();await tick();f.close();release();await pending;assert.equal(f.layer.visible,false);assert(f.views[0].destroyed);assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');
+  });
+  await check('native PDF initialization remains visible behind the original so its first animation frame can run',async()=>{
+    const f=await fixture();try{f.sourceFrame.style.setProperty('z-index','7','important');const release=f.hold(),pending=f.show();await tick();assert.equal(f.layer.visible,false);assert.equal(f.layer.host.style.getPropertyValue('visibility'),'visible','a hidden ancestor would suspend PDF.js animationStarted');assert.equal(f.layer.host.style.getPropertyValue('z-index'),'0');assert.equal(f.sourceFrame.style.getPropertyValue('z-index'),'1');assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');release();await pending;assert.equal(f.layer.host.style.getPropertyValue('z-index'),'0','the reader React selection/annotation/find popups use z-index:1 and must remain above the PDF host');assert(f.layer.visible);f.layer.dispose();assert.equal(f.sourceFrame.style.getPropertyValue('z-index'),'','mount-time stacking state must be restored');assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');}finally{f.close();}
+  });
+  await check('disposal removes all method hooks and leaves another reader independent',async()=>{
+    const first=await fixture(),second=await fixture();try{await first.show([0]);await second.show([3]);first.close();assert(!Object.hasOwn(first.source,'setFindState'));first.source.setFindState({query:'English'});assert.equal(first.source.findState.query,'English');second.layer.nativeView._options.onAddAnnotation(highlight(),true);assert.equal(first.writes.length,0);assert.equal(second.writes[0].value.position.pageIndex,3);assert(second.layer.visible);}finally{first.close();second.close();}
+  });
+  await check('continuous viewport positions never use paragraph reflow or a missing-page fallback',async()=>{
+    const data=alignment([2,5]),mapper=Native.createMapper(data,'mono');let last=null;
+    for(let y=665;y<=715;y+=.25){const state=mapper.toOutputViewportState({pageIndex:5,left:150,top:y});assert.equal(state.top,y);if(last!==null)assert.equal(state.top-last,.25);last=state.top;assert.deepEqual(mapper.toSourceViewportState(state),{pageIndex:5,left:150,top:y});}
+    assert.equal(mapper.toOutputViewportState({pageIndex:4,left:150,top:700}),null);
+    assert.equal(mapper.toSourceViewportState({pageIndex:3,left:150,top:700}),null);
+  });
+  await check('legacy false-full cached pages request missing-block repair and selection priority without automatic saves',async()=>{
+    const requests=[],f=await fixture({},()=>{},{align:(page,options)=>{requests.push({page,options});return 'pending';}});
+    try{
+      const data=selectionAlignment(),original=data.pages[0].paragraphs[0],missing={id:'p0_missing',source:{text:'Unmapped record.',rects:[[40,590,240,610]]},target:{text:'未映射记录。',rects:[[40,590,240,610]]},dualSource:{rects:[[40,590,240,610]]},dualTarget:{rects:[[640,590,840,610]]}};
+      data.pages[0].paragraphs.push(missing);assert.deepEqual(data.phraseExtractedPages,[0]);
+      await f.layer.showOutput(new Uint8Array([1,2,3]).buffer,[0],'dual',data);
+      assert(requests.some(value=>value.page===0&&value.options.explicit===false),'cached false-ready flags must not suppress the initial repair');
+      f.source._iframeWindow.emit('pointerdown',{});const annotation={type:'highlight',color:'#2ea8e5',text:'Unmapped',position:{pageIndex:0,rects:[[50,594,110,608]]}};
+      assert.equal(Native.createMapper(data,'mono').hasExactSourceSelection(annotation),false);
+      f.source._onSetSelectionPopup({rect:[10,20,100,40],annotation});
+      assert(requests.some(value=>value.page===0&&value.options.explicit===true&&JSON.stringify(value.options.units)==='["p0_missing"]'),'selecting the missing block must prioritize only its actual cached ID');
+      assert.equal(f.writes.length,0);assert.equal(f.layer.nativeView._options.data.buf.byteLength,3);assert.equal(original.sentences.length,1,'reliable cached anchors are retained');
+    }finally{f.close();}
+    const ready=[],complete=await fixture({},()=>{},{align:(page,options)=>{ready.push({page,options});return 'pending';}});
+    try{await complete.layer.showOutput(new Uint8Array([1,2,3]).buffer,[0],'dual',selectionAlignment());assert.deepEqual(ready,[],'a truly complete cache must not start another upgrade');assert.equal(complete.writes.length,0);}finally{complete.close();}
+  });
+  process.stdout.write(checks+' native PDF bridge tests passed\n');
+})().catch(error=>{process.stderr.write(error.stack+'\n');process.exitCode=1;});

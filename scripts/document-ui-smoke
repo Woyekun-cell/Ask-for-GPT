@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Compile the document reader UI and run synthetic, local-only regressions.
+
+Requires current debug Core objects from scripts/test. No model, network,
+clipboard, external application, permission, installation, or signing operations.
+"""
+import json
+import pathlib
+import platform
+import subprocess
+import sys
+import tempfile
+
+
+def main() -> int:
+    root = pathlib.Path(__file__).resolve().parent.parent
+    architecture = "arm64" if platform.machine() == "arm64" else "x86_64"
+    debug = root / ".build/sdk26" / f"{architecture}-apple-macosx/debug"
+    core_sources = sorted((root / "Sources/AskGPTCore").glob("*.swift"))
+    objects = [debug / "AskGPTCore.build" / f"{source.name}.o" for source in core_sources]
+    if not (debug / "Modules/AskGPTCore.swiftmodule").is_file() or not all(p.is_file() for p in objects):
+        raise RuntimeError("debug AskGPTCore is missing; run scripts/test first")
+    if any(source.stat().st_mtime > obj.stat().st_mtime for source, obj in zip(core_sources, objects)):
+        raise RuntimeError("debug AskGPTCore is stale; rerun scripts/test first")
+    sdk = pathlib.Path("/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk")
+    if not sdk.is_dir():
+        sdk = pathlib.Path(subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip())
+    work = root / "work/document-ui-smoke"
+    work.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="run-", dir=work) as temporary:
+        binary = pathlib.Path(temporary) / "document-ui-smoke"
+        sources = [root / "Sources/AskGPT" / name for name in
+                   ("DocumentReadingStore.swift", "DocumentReadingView.swift", "GlassStyle.swift")]
+        subprocess.run(["/usr/bin/swiftc", "-parse-as-library", "-swift-version", "5",
+                        "-module-name", "DocumentReadingUISmoke", "-sdk", str(sdk),
+                        "-module-cache-path", str(work / "module-cache"), "-I", str(debug / "Modules"),
+                        *map(str, sources), str(root / "scripts/document-ui-smoke.swift"),
+                        *map(str, objects), "-o", str(binary)], check=True, timeout=180)
+        result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=35)
+        sys.stdout.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        if result.returncode:
+            return result.returncode
+        report = json.loads(result.stdout)
+        if report.get("status") != "PASS" or not report.get("checks"):
+            raise RuntimeError("document probe did not confirm passing checks")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        print(f"DOCUMENT_UI_SMOKE_FAILED: {error}", file=sys.stderr)
+        sys.exit(1)

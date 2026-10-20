@@ -1,0 +1,260 @@
+{
+  "schemaVersion": 1,
+  "split": "clean",
+  "frozenOn": "2026-10-17",
+  "policy": "Frozen before live evaluation. Self-authored public synthetic cases. Holdout is evaluation-only and must not be reused to tune this policy or counted as calibration. No model-weight training or expert certification.",
+  "cases": [
+    {
+      "id": "clean-01",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "clean",
+        "negation",
+        "numbers",
+        "terminology"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "PaEprs1a expression did not differ between F-L and NC-L (P = 0.27; n = 6).",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": [
+            "PaEprs1a"
+          ]
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 74
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [],
+        "acceptableTexts": [
+          "PaEprs1a expression did not differ between F-L and NC-L (P = 0.27; n = 6)."
+        ],
+        "preserveLiterals": [
+          "PaEprs1a",
+          "did not",
+          "between F-L and NC-L",
+          "P = 0.27",
+          "n = 6"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "clean-02",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "clean",
+        "default-terminology"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "RNA-seq and LC-MS/MS data were analyzed separately using BH-FDR correction.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 75
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [],
+        "acceptableTexts": [
+          "RNA-seq and LC-MS/MS data were analyzed separately using BH-FDR correction."
+        ],
+        "preserveLiterals": [
+          "RNA-seq",
+          "LC-MS/MS",
+          "BH-FDR"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "clean-03",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "clean",
+        "numbers",
+        "units"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "The concentration was 5 mg/L, and the estimated effect was -0.25 (95% CI, -0.60 to 0.10).",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 89
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [],
+        "acceptableTexts": [
+          "The concentration was 5 mg/L, and the estimated effect was -0.25 (95% CI, -0.60 to 0.10)."
+        ],
+        "preserveLiterals": [
+          "5 mg/L",
+          "-0.25",
+          "95% CI",
+          "-0.60 to 0.10"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "clean-04",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "clean",
+        "comparison-direction",
+        "evidence-strength"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "The treated group had lower survival than the control group, although the evidence was inconclusive.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 100
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [],
+        "acceptableTexts": [
+          "The treated group had lower survival than the control group, although the evidence was inconclusive."
+        ],
+        "preserveLiterals": [
+          "lower survival than the control group",
+          "inconclusive"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "clean-05",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "clean",
+        "en-US"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "The color and behavior of the samples were recorded.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 52
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [],
+        "acceptableTexts": [
+          "The color and behavior of the samples were recorded."
+        ],
+        "preserveLiterals": [],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "clean-06",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "clean",
+        "en-GB"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "The colour and behaviour of the samples were recorded.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-GB",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 54
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [],
+        "acceptableTexts": [
+          "The colour and behaviour of the samples were recorded."
+        ],
+        "preserveLiterals": [],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    }
+  ]
+}

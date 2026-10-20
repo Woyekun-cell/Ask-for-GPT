@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+task_root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$task_root"
+task_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+if [[ ! -d "$task_sdk" ]]; then task_sdk="$(xcrun --sdk macosx --show-sdk-path)"; fi
+swift test --build-system native --sdk "$task_sdk" --scratch-path .build/sdk26 --disable-xctest \
+  -Xswiftc -F -Xswiftc /Library/Developer/CommandLineTools/Library/Developer/Frameworks \
+  -Xswiftc -plugin-path -Xswiftc /Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing \
+  -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks "$@"

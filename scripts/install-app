@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+"""Install only a package that satisfies this Mac's pinned signing identity.
+
+Quit the installed app in its UI first. --migrate-signing is required exactly
+when moving an existing package from its old identity to the pinned identity.
+This script never modifies Accessibility records or trust settings.
+"""
+import argparse
+import atexit
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--migrate-signing', action='store_true')
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parent.parent
+    lock = root / '.build/AppPackage.noindex/.package-lock'
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock.mkdir()
+    except FileExistsError:
+        raise SystemExit('Another Ask for GPT package build or installation is in progress.')
+    atexit.register(lock.rmdir)
+    source = root / '.build/AppPackage.noindex/Ask for GPT.app'
+    destination = Path.home() / 'Applications/Ask for GPT.app'
+    signing = root / 'scripts/app-signing'
+    if source.is_symlink() or destination.is_symlink():
+        raise SystemExit('App bundle paths must not be symlinks.')
+
+    def verify(path):
+        return subprocess.run(['python3', str(signing), 'verify', str(path)],
+                              capture_output=True, text=True)
+
+    result = verify(source)
+    if result.returncode:
+        raise SystemExit('Package rejected: it does not satisfy the pinned signing identity.')
+    processes = subprocess.check_output(['/bin/ps', '-axo', 'comm='], text=True).splitlines()
+    if any(line.strip() == str(destination / 'Contents/MacOS/AskGPT') for line in processes):
+        raise SystemExit('Quit Ask for GPT in its UI before installing.')
+    if destination.exists() and verify(destination).returncode and not args.migrate_signing:
+        raise SystemExit('Installed identity differs. Review the migration before using --migrate-signing.')
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.askgpt-install-', dir=destination.parent) as temporary:
+        stage = Path(temporary) / destination.name
+        backup = Path(temporary) / 'previous.bundle-backup'
+        subprocess.run(['/usr/bin/ditto', str(source), str(stage)], check=True)
+        if verify(stage).returncode:
+            raise SystemExit('Staged package verification failed; installed app was not changed.')
+        had_previous = destination.exists()
+        if had_previous:
+            os.replace(destination, backup)
+        try:
+            os.replace(stage, destination)
+            if verify(destination).returncode:
+                raise RuntimeError('Installed package verification failed')
+        except BaseException:
+            if destination.exists():
+                os.replace(destination, Path(temporary) / 'failed.app')
+            if had_previous:
+                os.replace(backup, destination)
+            raise
+    print(str(destination))
+
+
+if __name__ == '__main__':
+    main()

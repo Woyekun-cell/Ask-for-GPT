@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Compile the current UI sources and exercise only this probe's own windows.
+
+Run scripts/test first to produce the debug AskGPTCore module and object files.
+Uses unique UserDefaults/Easydict domains and synthetic Chinese text. It never
+calls ReaderStore.connect(), starts a CLI/model request, or registers hotkeys.
+The probe may briefly show its own windows. Other applications are untouched.
+"""
+import pathlib
+import json
+import platform
+import subprocess
+import sys
+import tempfile
+
+
+def main() -> int:
+    root = pathlib.Path(__file__).resolve().parent.parent
+    if sys.platform != "darwin":
+        raise RuntimeError("ui-smoke requires macOS/AppKit")
+    architecture = "arm64" if platform.machine() == "arm64" else "x86_64"
+    debug = root / ".build/sdk26" / f"{architecture}-apple-macosx/debug"
+    module = debug / "Modules/AskGPTCore.swiftmodule"
+    core_sources = sorted((root / "Sources/AskGPTCore").glob("*.swift"))
+    objects = [debug / "AskGPTCore.build" / f"{source.name}.o" for source in core_sources]
+    if not module.is_file() or not all(path.is_file() for path in objects):
+        raise RuntimeError("debug AskGPTCore is missing; run scripts/test first")
+    if any(source.stat().st_mtime > obj.stat().st_mtime for source, obj in zip(core_sources, objects)):
+        raise RuntimeError("debug AskGPTCore is stale; rerun scripts/test before ui-smoke")
+    sdk = pathlib.Path("/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk")
+    if not sdk.is_dir():
+        sdk = pathlib.Path(subprocess.check_output(
+            ["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip())
+    work = root / "work/ui-smoke"
+    work.mkdir(parents=True, exist_ok=True)
+    sources = [root / "Sources/AskGPT" / name for name in (
+        "ReaderStore.swift", "PanelController.swift", "Views.swift", "GlassStyle.swift")]
+    with tempfile.TemporaryDirectory(prefix="run-", dir=work) as temporary:
+        binary = pathlib.Path(temporary) / "ui-smoke"
+        subprocess.run([
+            "/usr/bin/swiftc", "-parse-as-library", "-swift-version", "5",
+            "-module-name", "AskGPTUISmoke", "-sdk", str(sdk),
+            "-module-cache-path", str(work / "module-cache"),
+            "-I", str(debug / "Modules"),
+            *map(str, sources), str(root / "scripts/ui-smoke.swift"),
+            *map(str, objects), "-o", str(binary)], check=True, timeout=180)
+        result = subprocess.run([str(binary), temporary], timeout=35, capture_output=True, text=True)
+        sys.stdout.write(result.stdout)
+        sys.stderr.write(result.stderr)
+        if result.returncode != 0:
+            return result.returncode
+        try:
+            report = json.loads(result.stdout)
+        except (ValueError, TypeError) as error:
+            raise RuntimeError("probe exited without a valid JSON result") from error
+        if report.get("status") not in {"PASS", "PASS_WITH_UNVERIFIED"} or not report.get("checks"):
+            raise RuntimeError("probe did not confirm any passing checks")
+        return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        print(f"UI_SMOKE_FAILED: {error}", file=sys.stderr)
+        sys.exit(1)

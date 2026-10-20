@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+"""Prepare separate localhost TLS files. Never installs trust or accesses Signing."""
+import argparse
+import hashlib
+import os
+from pathlib import Path
+import secrets
+import shutil
+import stat
+import subprocess
+import tempfile
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--output', type=Path, default=Path.home() / 'Library/Application Support/AskGPTReader/WritingTLS')
+args = parser.parse_args()
+output = args.output.expanduser().absolute()
+
+def private_directory(path):
+    if path.is_symlink():
+        raise SystemExit('Refusing symbolic-link directory')
+    path.mkdir(parents=True, mode=0o700, exist_ok=True)
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise SystemExit('TLS directory must be owned by the current user')
+    os.chmod(path, 0o700)
+
+def run(arguments):
+    result = subprocess.run(['/usr/bin/openssl', *arguments], capture_output=True)
+    if result.returncode:
+        # OpenSSL errors can contain input paths; never relay private input or credentials.
+        raise SystemExit('Local TLS preparation failed')
+    return result.stdout
+
+if output.exists() or output.is_symlink():
+    raise SystemExit('Output already exists; refusing to replace existing TLS material')
+private_directory(output.parent)
+work = Path(tempfile.mkdtemp(prefix='.writing-tls-', dir=output.parent))
+try:
+    os.chmod(work, 0o700)
+    (work / 'password.txt').write_text(secrets.token_hex(32), encoding='ascii')
+    (work / 'localhost.cnf').write_text('''[req]
+distinguished_name=dn
+x509_extensions=extensions
+prompt=no
+[dn]
+CN=localhost
+O=AskGPT Local Writing
+[extensions]
+basicConstraints=critical,CA:FALSE
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=serverAuth
+subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1
+''', encoding='ascii')
+    for item in work.iterdir():
+        os.chmod(item, 0o600)
+    run(['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '365',
+         '-config', str(work / 'localhost.cnf'), '-keyout', str(work / 'localhost-key.pem'),
+         '-out', str(work / 'localhost-cert.pem')])
+    run(['pkcs12', '-export', '-name', 'AskGPT Writing localhost TLS',
+         '-inkey', str(work / 'localhost-key.pem'), '-in', str(work / 'localhost-cert.pem'),
+         '-out', str(work / 'identity.p12'), '-passout', 'file:' + str(work / 'password.txt')])
+    certificate = run(['x509', '-in', str(work / 'localhost-cert.pem'), '-outform', 'DER'])
+    (work / 'localhost-cert.der').write_bytes(certificate)
+    fingerprint = hashlib.sha256(certificate).hexdigest()
+    (work / 'certificate-info.txt').write_text(
+        'Purpose: standalone localhost HTTPS writing bridge; serverAuth only\n'
+        'Names: DNS localhost; IP 127.0.0.1; IP ::1\n'
+        'CA: false; validity: 365 days\nSHA256 DER: ' + fingerprint + '\n'
+        'No trust installed. Signing identity and keychain were not accessed.\n', encoding='ascii')
+    for item in work.iterdir():
+        os.chmod(item, 0o600)
+    os.rename(work, output)
+    print('Prepared localhost TLS files: ' + str(output))
+    print('SHA256 DER: ' + fingerprint)
+    print('No certificate trust installed; no keychain or Signing changes made.')
+finally:
+    if work.exists():
+        shutil.rmtree(work)

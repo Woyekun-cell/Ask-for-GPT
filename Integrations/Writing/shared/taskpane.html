@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://appsforoffice.microsoft.com; style-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>写作</title>
+  <link rel="stylesheet" href="./taskpane.css">
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js" defer></script>
+  <script type="module" src="./taskpane.js"></script>
+  <script type="module" src="../word/native-document-service.js"></script>
+</head>
+<body>
+  <main id="writing-taskpane" aria-label="写作助手">
+    <header class="topbar">
+      <h1>写作</h1>
+      <div class="window-actions"><button id="pause" type="button" title="暂停检查">暂停</button><button id="close" class="icon-button" type="button" aria-label="关闭检查" title="关闭检查">×</button></div>
+    </header>
+    <div class="check-actions" aria-label="检查与润色">
+      <button id="check-selection" type="button" title="检查选句的拼写">检查选句</button>
+      <button id="check-polish" class="primary" type="button" title="用 GPT 润色选句">润色</button>
+    </div>
+    <div class="scope-row"><span id="scope-label">可见页</span><label class="auto-label"><span>实时拼写</span><input id="auto-check" type="checkbox" role="switch" checked></label></div>
+    <details class="settings">
+      <summary aria-label="写作设置">设置</summary>
+      <div class="settings-fields">
+        <label>拼写<select id="spelling-variant"><option value="en-US">美式英语</option><option value="en-GB">英式英语</option></select></label>
+        <label>润色<select id="writing-style"><option value="minimal">最小修改</option><option value="clarity">清晰表达</option></select></label>
+        <label>标注色<select id="mark-palette"><option value="amber">琥珀橙</option><option value="rose">玫瑰</option><option value="ocean">海蓝</option><option value="mint">薄荷</option></select></label>
+        <p id="palette-note" class="settings-note"></p>
+        <button id="check-context" type="button">上下文润色</button>
+        <span id="dictionary-count"></span>
+        <p id="capability-message" hidden></p>
+      </div>
+    </details>
+    <div class="result-bar"><span id="status" role="status" aria-live="polite">尚未检查</span><nav aria-label="建议导航"><span id="issue-count"></span><button id="previous" class="icon-button" type="button" aria-label="上一个建议" title="上一个建议（Alt+↑）">↑</button><button id="next" class="icon-button" type="button" aria-label="下一个建议" title="下一个建议（Alt+↓）">↓</button></nav></div>
+    <p id="error" role="alert" hidden></p>
+    <section id="issue-list" aria-label="修改建议"></section>
+  </main>
+</body>
+</html>

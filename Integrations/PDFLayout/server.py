@@ -1,0 +1,944 @@
+#!/usr/bin/env python3
+"""Authenticated, bounded loopback PDF service. It never accepts input paths."""
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass, field
+import fcntl
+import hashlib
+import hmac
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import importlib.metadata
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import threading
+import time
+from types import SimpleNamespace
+import uuid
+
+from layout_common import (BABELDOC_VERSION, MAX_OUTPUT_BYTES, MAX_PDF_BYTES, PORT,
+    ProtocolFailure, atomic_json, load_connection, parse_pages, private_directory)
+from gpt_batch import ERROR_DETAILS
+from alignment import MAX_ALIGNMENT_BYTES, subset_alignment, validate_alignment
+
+JOB_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})(?:/(mono\.pdf|dual\.pdf|alignment\.json))?")
+ALIGNMENT_UPGRADE_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/alignment-upgrade")
+MAX_CACHE_BYTES = 768 * 1024 * 1024
+MAX_INACTIVE_JOBS = 64
+MAX_JOB_AGE = 7 * 24 * 60 * 60
+# These bounds apply only to unfinished/failed/cancelled working directories.
+# Completed translations are permanent local results, not disposable cache.
+# Retain old completed files, but do not serve flat-fragment model results as
+# paragraph-isolated translations: real-paper QA found cross-paragraph content.
+TRANSLATION_REVISION = "pdf-layout-gpt-v7-context-paragraph"
+CACHE_SCHEMA = 1
+PROCESS_GROUP_GRACE = 3.5
+MAX_RUNNING_JOBS = 2
+MAX_CONCURRENT_UPLOADS = 2
+
+
+def _finish_owned_group(process, *, grace=PROCESS_GROUP_GRACE):
+    """Only use with this service's Popen(start_new_session=True) workers.
+
+    The leader can exit before its Swift helper finishes closing an independent
+    Foundation CLI group. Waiting for the leader alone is not a cleanup grace.
+    """
+    try: os.killpg(process.pid, signal.SIGTERM)
+    except (ProcessLookupError, PermissionError): return
+    deadline = time.monotonic() + max(0, grace)
+    while time.monotonic() < deadline:
+        try: os.killpg(process.pid, 0)
+        except (ProcessLookupError, PermissionError): return
+        time.sleep(.025)
+    try: os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError): pass
+
+
+def _cache_key(source_sha, pages, page_count, source, target, revision):
+    # Content/range identity is shared by every reader; paths and reader IDs are absent.
+    value = [CACHE_SCHEMA, BABELDOC_VERSION, revision, source_sha,
+             page_count, pages, source, target]
+    return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
+
+
+def _signature(info):
+    return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
+            info.st_ctime_ns, info.st_mode, info.st_uid, info.st_nlink)
+
+
+def _alignment_path(directory, metadata):
+    name=metadata.get("alignmentFile","alignment.json")
+    if name!="alignment.json" and (not isinstance(name,str) or not re.fullmatch(r"alignment-[0-9a-f]{64}\.json",name)):
+        raise ValueError("unsafe_alignment_path")
+    return Path(directory)/name
+
+
+def _private_file(path, maximum, *, checksum=False, repair_mode=False):
+    """Read only an owned regular file, without following links or loading a PDF into RAM."""
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or info.st_nlink != 1 or not 4 < info.st_size <= maximum):
+            raise ValueError("unsafe_cache_file")
+        if repair_mode:
+            os.fchmod(handle.fileno(), 0o600)
+            info = os.fstat(handle.fileno())
+        if stat.S_IMODE(info.st_mode) != 0o600:
+            raise ValueError("unsafe_cache_file")
+        if not checksum:
+            data = handle.read(maximum + 1)
+            if _signature(os.fstat(handle.fileno())) != _signature(info):
+                raise ValueError("changed_cache_file")
+            return _signature(info), data
+        if handle.read(5) != b"%PDF-":
+            raise ValueError("invalid_cached_pdf")
+        handle.seek(0)
+        digest = hashlib.file_digest(handle, "sha256").hexdigest()
+        if _signature(os.fstat(handle.fileno())) != _signature(info):
+            raise ValueError("changed_cache_file")
+        return _signature(info), digest
+
+
+def _output_signature(path, maximum=MAX_OUTPUT_BYTES):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as handle:
+        info = os.fstat(handle.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
+                or not 4 < info.st_size <= maximum):
+            raise ValueError("unsafe_cache_file")
+        return _signature(info)
+
+
+def _has_completed_record(directory):
+    """Retain a completed result even across incompatible layout revisions.
+
+    This is a deletion guard, never a cache-hit validator. Actual reuse still
+    checks the source/range/languages/revision, PDF digests and private files in
+    _load_completed/_cached_job. A damaged old result must not be silently
+    removed merely because its age or the temporary-work budget was exceeded.
+    """
+    try:
+        _, raw = _private_file(Path(directory) / "cache.json", 64 * 1024)
+        value = json.loads(raw)
+        if (not isinstance(value, dict) or value.get("state") != "complete"
+                or type(value.get("schema")) is not int or value["schema"] < 1
+                or not isinstance(value.get("sourceSHA256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", value["sourceSHA256"])
+                or not isinstance(value.get("outputs"), dict)):
+            return False
+        for kind in ("mono", "dual"):
+            output = value["outputs"].get(kind)
+            if (not isinstance(output, dict) or not isinstance(output.get("sha256"), str)
+                    or not re.fullmatch(r"[0-9a-f]{64}", output["sha256"])
+                    or type(output.get("bytes")) is not int or not 4 < output["bytes"] <= MAX_OUTPUT_BYTES):
+                return False
+        return True
+    except (OSError, ValueError, TypeError, KeyError): return False
+
+
+def _job_progress(directory, total):
+    fallback = {"stage": "preparing"}
+    try:
+        _, raw = _private_file(Path(directory) / "progress.json", 4096)
+        value = json.loads(raw)
+        if not isinstance(value, dict): return fallback
+        if set(value) == {"stage"} and value["stage"] in {"preparing", "layout"}:
+            return {"stage": value["stage"]}
+        if (set(value) == {"stage", "completed", "total"} and value["stage"] == "translating"
+                and type(value["completed"]) is int and type(value["total"]) is int
+                and 1 <= value["total"] == total <= 2000
+                and 0 <= value["completed"] <= value["total"]):
+            return {"stage": "translating", "completed": value["completed"], "total": value["total"]}
+    except (OSError, ValueError, TypeError, KeyError): pass
+    return fallback
+
+
+@dataclass
+class Job:
+    id: str
+    directory: Path
+    state: str = "running"
+    source_pages: list[int] | None = None
+    page_count: int = 0
+    error: str | None = None
+    process: subprocess.Popen | None = None
+    cache_info: dict | None = None
+    output_signatures: dict = field(default_factory=dict)
+    error_detail: str | None = None
+    failed_page: int | None = None
+
+    def public(self):
+        result = {"id": self.id, "state": self.state,
+                  "sourcePages": self.source_pages or [], "pageCount": self.page_count}
+        if self.error: result["error"] = self.error
+        if self.state == "failed":
+            if self.error == "batch_invalid" and isinstance(self.error_detail, str) and self.error_detail in ERROR_DETAILS:
+                result["errorDetail"] = self.error_detail
+            if (type(self.failed_page) is int and 1 <= self.failed_page <= 2000
+                    and self.failed_page <= self.page_count and self.failed_page - 1 in (self.source_pages or [])):
+                result["failedPage"] = self.failed_page
+        if self.state == "running": result["progress"] = _job_progress(self.directory, len(self.source_pages or []))
+        if self.state == "complete": result["alignmentAvailable"] = "alignment" in self.output_signatures
+        return result
+
+
+class JobManager:
+    def __init__(self, cache_root: Path, translator: Path, *, worker_script: Path | None = None,
+                 ready_override: bool | None = None, translation_revision: str = TRANSLATION_REVISION):
+        self.cache_root = private_directory(cache_root)
+        self.jobs_root = private_directory(self.cache_root / "jobs")
+        self.translator = Path(translator)
+        self.worker_script = worker_script or Path(__file__).with_name("worker.py")
+        self.alignment_required = worker_script is None
+        self.ready_override = ready_override
+        self.translation_revision = translation_revision
+        self.lock = threading.RLock()
+        self.upload_slots = threading.BoundedSemaphore(MAX_CONCURRENT_UPLOADS)
+        self.jobs: dict[str, Job] = {}
+        self.completed: dict[str, str] = {}
+        self.permanent: set[str] = set()
+        self.active: set[str] = set()
+        self.stopping = False
+        from sentence_service import SentenceUpgradeService
+        self.sentence_upgrades = SentenceUpgradeService(self)
+        self._load_completed()
+        self.prune()
+
+    def _load_completed(self):
+        for directory in self.jobs_root.iterdir():
+            if not re.fullmatch(r"[0-9a-f]{32}", directory.name): continue
+            try:
+                info = directory.lstat()
+                if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                        or stat.S_IMODE(info.st_mode) != 0o700): continue
+                _, raw = _private_file(directory / "cache.json", 64 * 1024)
+                value = json.loads(raw)
+                pages, count = value["sourcePages"], value["pageCount"]
+                if (value.get("schema") != CACHE_SCHEMA or value.get("state") != "complete"
+                        or value.get("revision") != self.translation_revision
+                        or value.get("babeldoc") != BABELDOC_VERSION
+                        or type(count) is not int or not 1 <= count <= 2000
+                        or not isinstance(pages, list) or not pages
+                        or any(type(page) is not int or not 0 <= page < count for page in pages)
+                        or pages != sorted(set(pages))
+                        or (value["source"], value["target"]) not in {("en", "zh-Hans"), ("zh-Hans", "en")}
+                        or not isinstance(value["sourceSHA256"], str)
+                        or not re.fullmatch(r"[0-9a-f]{64}", value["sourceSHA256"])):
+                    continue
+                # A production reader must not get stuck reopening an old PDF
+                # whose metadata cannot prove its annotation correspondence.
+                # prune still retains these completed files permanently.
+                if self.alignment_required and "alignment" not in value: continue
+                key = _cache_key(value["sourceSHA256"], pages, count,
+                                 value["source"], value["target"], self.translation_revision)
+                if key != value["cacheKey"]: continue
+                signatures = {}
+                for kind in ("mono", "dual"):
+                    signature, digest = _private_file(directory / (kind + ".pdf"), MAX_OUTPUT_BYTES, checksum=True)
+                    if value["outputs"][kind] != {"sha256": digest, "bytes": signature[2]}:
+                        raise ValueError("changed_cache_file")
+                    signatures[kind] = signature
+                if "alignment" in value:
+                    signature, raw = _private_file(_alignment_path(directory,value), MAX_ALIGNMENT_BYTES)
+                    if value["alignment"] != {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": signature[2]}:
+                        raise ValueError("changed_cache_file")
+                    validate_alignment(json.loads(raw), pages, count, value["sourceSHA256"])
+                    signatures["alignment"] = signature
+                job = Job(directory.name, directory, state="complete", source_pages=pages,
+                          page_count=count, cache_info=value, output_signatures=signatures)
+                self.jobs[job.id] = job
+                self.completed[key] = job.id
+                self.permanent.add(job.id)
+            except (OSError, ValueError, TypeError, KeyError):
+                continue
+
+    def _cached_job(self, key):
+        identity = self.completed.get(key)
+        job = self.jobs.get(identity)
+        if not job or job.state != "complete":
+            self.completed.pop(key, None)
+            return None
+        try:
+            info = job.directory.lstat()
+            if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                    or stat.S_IMODE(info.st_mode) != 0o700): raise ValueError()
+            for kind in ("mono", "dual"):
+                # The full digest was checked at completion/restart. Changed inode,
+                # size, mtime or ctime invalidates the hit without rereading 900 MiB.
+                if _output_signature(job.directory / (kind + ".pdf")) != job.output_signatures[kind]:
+                    raise ValueError()
+            if "alignment" in job.output_signatures:
+                signature = _output_signature(_alignment_path(job.directory,job.cache_info), MAX_ALIGNMENT_BYTES)
+                if signature != job.output_signatures["alignment"]: raise ValueError()
+            return job
+        except (OSError, ValueError, KeyError):
+            self.completed.pop(key, None)
+            return None
+
+    def _discard_placeholder(self, job):
+        self._clean_intermediates(job)
+        job.directory.rmdir()
+        self.jobs.pop(job.id, None)
+        self._release_active(job)
+
+    def _release_active(self, job):
+        self.active.discard(job.id)
+
+    def _store_completed(self, job):
+        if not job.cache_info: return
+        outputs, signatures = {}, {}
+        for kind in ("mono", "dual"):
+            signature, digest = _private_file(job.directory / (kind + ".pdf"),
+                MAX_OUTPUT_BYTES, checksum=True, repair_mode=True)
+            outputs[kind] = {"sha256": digest, "bytes": signature[2]}
+            signatures[kind] = signature
+        value = {**job.cache_info, "schema": CACHE_SCHEMA, "state": "complete", "outputs": outputs}
+        value.pop("alignment", None)
+        alignment_path = job.directory / "alignment.json"
+        if alignment_path.exists() or alignment_path.is_symlink():
+            signature, raw = _private_file(alignment_path, MAX_ALIGNMENT_BYTES)
+            validate_alignment(json.loads(raw), job.source_pages, job.page_count, job.cache_info["sourceSHA256"])
+            value["alignment"] = {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": signature[2]}
+            signatures["alignment"] = signature
+        atomic_json(job.directory / "cache.json", value)
+        job.cache_info, job.output_signatures = value, signatures
+        self.completed[value["cacheKey"]] = job.id
+        self.permanent.add(job.id)
+
+    def read_alignment(self,job):
+        with self.lock:
+            if job.state!="complete" or "alignment" not in job.output_signatures:
+                raise ProtocolFailure("alignment_unavailable")
+            signature,raw=_private_file(_alignment_path(job.directory,job.cache_info),MAX_ALIGNMENT_BYTES)
+            if signature!=job.output_signatures["alignment"]: raise ProtocolFailure("alignment_unavailable")
+            return validate_alignment(json.loads(raw),job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
+
+    def publish_alignment(self,job,value):
+        """One atomic metadata pointer commits a generation; PDF bytes stay put."""
+        with self.lock:
+            if self._cached_job(job.cache_info["cacheKey"]) is not job: raise ProtocolFailure("alignment_unavailable")
+            validate_alignment(value,job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
+            raw=json.dumps(value,ensure_ascii=False,separators=(",",":")).encode()
+            if len(raw)>MAX_ALIGNMENT_BYTES: raise ProtocolFailure("alignment_invalid")
+            digest=hashlib.sha256(raw).hexdigest();name="alignment-"+digest+".json"
+            path=job.directory/name
+            atomic_json(path,value)
+            signature,saved=_private_file(path,MAX_ALIGNMENT_BYTES)
+            metadata={**job.cache_info,"alignmentFile":name,
+                "alignment":{"sha256":hashlib.sha256(saved).hexdigest(),"bytes":signature[2]}}
+            previous=job.cache_info.get("alignmentFile")
+            atomic_json(job.directory/"cache.json",metadata)
+            job.cache_info=metadata;job.output_signatures["alignment"]=signature
+            if previous and previous!=name:
+                old=_alignment_path(job.directory,{"alignmentFile":previous})
+                try: old.unlink(missing_ok=True)
+                except OSError: pass
+
+    def _extract_cached_pages(self, whole, job, selected):
+        """Copy PDF page objects through verified descriptors; never rasterize."""
+        import pymupdf
+        for kind in ("mono", "dual"):
+            path = whole.directory / (kind + ".pdf")
+            expected = whole.output_signatures[kind]
+            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(descriptor, "rb") as handle:
+                if _signature(os.fstat(handle.fileno())) != expected:
+                    raise ValueError("changed_cache_file")
+                # MuPDF opens this already-owned descriptor, not a path that
+                # could have been replaced between signature check and open.
+                with pymupdf.open("/dev/fd/" + str(handle.fileno())) as source, pymupdf.open() as output:
+                    if source.needs_pass or not source.is_pdf or len(source) != whole.page_count:
+                        raise ValueError("invalid_cached_page_mapping")
+                    geometry = []
+                    for index, physical in enumerate(selected):
+                        page = source[physical]
+                        geometry.append((page.mediabox, page.cropbox, page.rotation))
+                        output.insert_pdf(source, from_page=physical, to_page=physical,
+                                          final=int(index == len(selected) - 1))
+                    destination = job.directory / (kind + ".pdf")
+                    target = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                    with os.fdopen(target, "wb") as saved:
+                        # PyMuPDF treats a named file object's .name as a path.
+                        # A nameless bounded stream keeps writes on this FD.
+                        sink = SimpleNamespace(write=saved.write, seek=saved.seek,
+                                               tell=saved.tell, truncate=saved.truncate)
+                        output.save(sink, garbage=3, deflate=True)
+                        saved.flush()
+                        os.fsync(saved.fileno())
+                if (_signature(os.fstat(handle.fileno())) != expected
+                        or _output_signature(path) != expected):
+                    raise ValueError("changed_cache_file")
+            target = os.open(destination, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(target, "rb") as saved, pymupdf.open("/dev/fd/" + str(saved.fileno())) as output:
+                if len(output) != len(selected): raise ValueError("invalid_cached_page_mapping")
+                for index, expected_geometry in enumerate(geometry):
+                    page = output[index]
+                    if (page.mediabox, page.cropbox, page.rotation) != expected_geometry:
+                        raise ValueError("invalid_cached_page_geometry")
+        # A change to either complete source while copying the other invalidates
+        # the pair. Never publish one mode from a different cache generation.
+        for kind in ("mono", "dual"):
+            if _output_signature(whole.directory / (kind + ".pdf")) != whole.output_signatures[kind]:
+                raise ValueError("changed_cache_file")
+        if "alignment" in whole.output_signatures:
+            signature, raw = _private_file(_alignment_path(whole.directory,whole.cache_info), MAX_ALIGNMENT_BYTES)
+            if signature != whole.output_signatures["alignment"]: raise ValueError("changed_cache_file")
+            value = validate_alignment(json.loads(raw), whole.source_pages, whole.page_count,
+                                       whole.cache_info["sourceSHA256"])
+            value = subset_alignment(value, selected)
+            validate_alignment(value, selected, job.page_count, job.cache_info["sourceSHA256"])
+            atomic_json(job.directory / "alignment.json", value)
+
+    def _derive_completed_range(self, job):
+        info = job.cache_info
+        all_pages = list(range(job.page_count))
+        if not info or job.source_pages == all_pages: return False
+        key = _cache_key(info["sourceSHA256"], all_pages, job.page_count,
+                         info["source"], info["target"], self.translation_revision)
+        whole = self._cached_job(key)
+        if whole is None: return False
+        expected = {**info, "cacheKey": key, "sourcePages": all_pages}
+        if (whole.state != "complete" or whole.page_count != job.page_count or whole.source_pages != all_pages
+                or not whole.cache_info or any(whole.cache_info.get(name) != value for name, value in expected.items())):
+            return False
+        try:
+            self._extract_cached_pages(whole, job, job.source_pages)
+            self._store_completed(job)
+            job.state = "complete"
+            atomic_json(job.directory / "state.json", job.public())
+            os.utime(whole.directory, None)
+        except Exception:
+            # This optional fast path must not make a usable source fail, or
+            # expose a partial/tampered cached output. Continue via the worker.
+            if self.completed.get(info["cacheKey"]) == job.id:
+                self.completed.pop(info["cacheKey"], None)
+            for name in ("mono.pdf", "dual.pdf", "alignment.json", "cache.json", "state.json"):
+                try: (job.directory / name).unlink(missing_ok=True)
+                except OSError: pass
+            job.cache_info, job.output_signatures, job.state = info, {}, "running"
+            return False
+        self._clean_intermediates(job)
+        self._release_active(job)
+        try: self.prune(preserve=job.id)
+        except OSError: pass
+        return True
+
+    def _clean_intermediates(self, job):
+        for name in ["input.pdf", "outputs", "work", "request.json", "result.json", "progress.json", "progress.tmp"]:
+            path = job.directory / name
+            try:
+                if path.is_symlink(): path.unlink()
+                elif path.is_dir(): shutil.rmtree(path)
+                else: path.unlink(missing_ok=True)
+            except OSError: pass
+
+    def prune(self, preserve=None):
+        """Bound temporary UUID jobs; keep all completed translations forever."""
+        with self.lock:
+            entries = []
+            for path in self.jobs_root.iterdir():
+                if not re.fullmatch(r"[0-9a-f]{32}", path.name): continue
+                info = path.lstat()
+                if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                        or path.name in self.active or path.name == preserve): continue
+                # Older revisions are intentionally not eligible for today's
+                # layout/annotation mapping, but their completed PDFs remain
+                # the user's saved results. Never treat them as temporary work.
+                if path.name in self.permanent or _has_completed_record(path):
+                    self.permanent.add(path.name)
+                    continue
+                size = sum(child.stat().st_size for child in path.rglob("*")
+                           if not child.is_symlink() and child.is_file())
+                entries.append((info.st_mtime, size, path))
+            entries.sort(reverse=True)
+            total, count = 0, 0
+            for modified, size, path in entries:
+                if time.time() - modified > MAX_JOB_AGE or count >= MAX_INACTIVE_JOBS or total + size > MAX_CACHE_BYTES:
+                    shutil.rmtree(path)
+                    removed = self.jobs.pop(path.name, None)
+                    if removed and removed.cache_info:
+                        key = removed.cache_info["cacheKey"]
+                        if self.completed.get(key) == removed.id: self.completed.pop(key, None)
+                else:
+                    count += 1
+                    total += size
+
+    def ready(self):
+        if self.ready_override is not None: return self.ready_override
+        try:
+            if (importlib.metadata.version("BabelDOC") != BABELDOC_VERSION
+                    or not self.translator.is_file() or not os.access(self.translator, os.X_OK)):
+                return False
+            marker = self.cache_root / "assets-ready.json"
+            if marker.is_symlink() or marker.stat().st_size > 256 * 1024: return False
+            value = json.loads(marker.read_text())
+            assets = self.cache_root / "engine-home" / ".cache" / "babeldoc"
+            if value.get("babeldoc") != BABELDOC_VERSION or not value.get("files"): return False
+            for item in value["files"]:
+                relative = Path(item["name"])
+                if relative.is_absolute() or ".." in relative.parts: return False
+                path = assets / relative
+                if path.is_symlink() or not path.is_file() or path.stat().st_size != item["bytes"]:
+                    return False
+            return True
+        except (OSError, ValueError, TypeError, KeyError, importlib.metadata.PackageNotFoundError):
+            return False
+
+    def begin(self) -> Job:
+        with self.lock:
+            if self.stopping: raise ProtocolFailure("service_stopping")
+            self.prune()
+            identity = uuid.uuid4().hex
+            job = Job(identity, private_directory(self.jobs_root / identity))
+            self.jobs[identity] = job
+            self.active.add(identity)
+            return job
+
+    def abandon(self, job: Job):
+        # Delivery of 202 can fail after spawn. The client then has no job ID,
+        # so its lost upload must terminate rather than release a live worker.
+        with self.lock:
+            # A completed cache hit discards its upload placeholder. Losing
+            # that response must not invalidate the original reusable output.
+            if self.jobs.get(job.id) is not job: return
+            # Cached and derived results are already independently verified.
+            # Losing their HTTP reply must not invalidate reusable output.
+            if job.state in {"complete", "failed", "cancelled"}: return
+        if job.process is not None:
+            self.cancel(job)
+            return
+        with self.lock:
+            self._clean_intermediates(job)
+            job.state = "failed"
+            job.error = "invalid_pdf"
+            self._release_active(job)
+            self.prune()
+
+    def submit(self, job: Job, pages: str, source: str, target: str):
+        import pymupdf
+        try:
+            # PyMuPDF is process-safe, but its library calls are not thread-safe.
+            # Uploads overlap; metadata validation and cache extraction share
+            # this lock. Actual layout/translation stays in independent workers.
+            with self.lock, pymupdf.open(job.directory / "input.pdf") as document:
+                if document.needs_pass or not document.is_pdf:
+                    raise ProtocolFailure("pdf_encrypted_or_invalid")
+                page_count = len(document)
+                selected = parse_pages(pages, page_count)
+            with self.lock:
+                if self.stopping or job.state != "running" or self.jobs.get(job.id) is not job:
+                    raise ProtocolFailure("service_stopping")
+                job.page_count, job.source_pages = page_count, selected
+                _, source_sha = _private_file(job.directory / "input.pdf", MAX_PDF_BYTES, checksum=True)
+                key = _cache_key(source_sha, selected, page_count, source, target, self.translation_revision)
+                cached = self._cached_job(key)
+                if cached is not None:
+                    self._discard_placeholder(job)
+                    os.utime(cached.directory, None)
+                    return cached.public()
+                job.cache_info = {"cacheKey": key, "sourceSHA256": source_sha,
+                    "sourcePages": selected, "pageCount": page_count, "source": source,
+                    "target": target, "revision": self.translation_revision, "babeldoc": BABELDOC_VERSION}
+                if self._derive_completed_range(job): return job.public()
+                # Each BabelDOC process loads its own model and helper. Keep
+                # two independent papers concurrent without unbounded models.
+                if sum(other.process is not None and other.process.poll() is None
+                        for other in self.jobs.values()) >= MAX_RUNNING_JOBS:
+                    raise ProtocolFailure("job_conflict")
+                atomic_json(job.directory / "request.json", {"sourcePages": selected,
+                    "pageCount": page_count, "source": source, "target": target})
+                job.process = subprocess.Popen([sys.executable, str(self.worker_script),
+                    "--job-dir", str(job.directory), "--cache-root", str(self.cache_root),
+                    "--translator", str(self.translator)], stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                    env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1",
+                         "ASKGPT_PDF_OFFLINE": "1"})
+                thread = threading.Thread(target=self._monitor, args=(job,), daemon=True)
+                thread.start()
+                return job.public()
+        except ProtocolFailure:
+            self.abandon(job)
+            raise
+        except Exception:
+            self.abandon(job)
+            raise ProtocolFailure("invalid_pdf") from None
+
+    def _monitor(self, job: Job):
+        process = job.process
+        code = process.wait()
+        if process.stdin:
+            process.stdin.close()
+        with self.lock:
+            # cancel() owns the one group grace once it marks this state.
+            # Do not race its final signal against an already reaped group.
+            if job.state == "cancelled": return
+        # Only Popen(start_new_session=True) processes created above enter here.
+        # Their group may outlive its leader after a helper/GPT timeout, even when
+        # the worker exits normally. Never derive a process/group ID from a request.
+        _finish_owned_group(process)
+        with self.lock:
+            if job.state == "cancelled": return
+            try:
+                result_file = job.directory / "result.json"
+                if result_file.is_symlink() or result_file.stat().st_size > 8192:
+                    raise ValueError()
+                result = json.loads(result_file.read_text())
+                complete = code == 0 and result.get("state") == "complete"
+                for kind in ["mono", "dual"]:
+                    path = job.directory / (kind + ".pdf")
+                    complete = complete and not path.is_symlink() and path.is_file() and 4 < path.stat().st_size <= MAX_OUTPUT_BYTES
+                if complete and self.alignment_required:
+                    path = job.directory / "alignment.json"
+                    complete = not path.is_symlink() and path.is_file()
+                if complete: self._store_completed(job)
+                self._clean_intermediates(job)
+                job.state = "complete" if complete else "failed"
+                if not complete:
+                    allowed = {"translation_timeout", "translation_failed", "formula_placeholder_mismatch",
+                        "empty_translation", "runtime_missing", "layout_failed", "invalid_output",
+                        "scanned_pdf_unsupported", "pdf_worker_network_disabled", "batch_limit",
+                        "batch_invalid", "gpt_unavailable"}
+                    error = result.get("error", "layout_failed")
+                    job.error = error if isinstance(error, str) and error in allowed else "layout_failed"
+                    detail = result.get("errorDetail")
+                    job.error_detail = detail if (job.error == "batch_invalid" and isinstance(detail, str)
+                        and detail in ERROR_DETAILS) else None
+                    page = result.get("failedPage")
+                    job.failed_page = page if (type(page) is int and 1 <= page <= min(2000, job.page_count)
+                        and page - 1 in (job.source_pages or [])) else None
+            except (OSError, ValueError, TypeError):
+                self._clean_intermediates(job)
+                job.state, job.error = "failed", "layout_failed"
+                job.error_detail, job.failed_page = None, None
+            self._release_active(job)
+            atomic_json(job.directory / "state.json", job.public())
+            self.prune()
+
+    def get(self, identity):
+        with self.lock:
+            job = self.jobs.get(identity)
+            if not job: raise ProtocolFailure("job_not_found")
+            return job
+
+    def cancel(self, job):
+        with self.lock:
+            if job.state in {"complete", "failed", "cancelled"}: return job.public()
+            job.state = "cancelled"
+            process = job.process
+        if process:
+            deadline = time.monotonic() + PROCESS_GROUP_GRACE
+            try: os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError: pass
+            try: process.wait(timeout=PROCESS_GROUP_GRACE)
+            except subprocess.TimeoutExpired: pass
+            # The worker may exit before a hung/TERM-ignoring native descendant.
+            # A group can outlive its leader, so do not rely on wait(parent).
+            _finish_owned_group(process, grace=deadline - time.monotonic())
+            process.wait(timeout=2)
+        with self.lock:
+            self._clean_intermediates(job)
+            self._release_active(job)
+            atomic_json(job.directory / "state.json", job.public())
+            self.prune()
+            return job.public()
+
+    def shutdown(self):
+        with self.lock:
+            self.stopping = True
+        self.sentence_upgrades.shutdown()
+        with self.lock: jobs = list(self.jobs.values())
+        for job in jobs:
+            if job.state == "running": self.cancel(job)
+
+
+class PDFHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = False
+
+    def handle_error(self, request, client_address):
+        # Default HTTPServer tracebacks can echo request data and filesystem paths.
+        pass
+
+
+def create_server(manager: JobManager, token: str, *, port: int = PORT, extension_origin: str | None = None):
+    if extension_origin is not None and not re.fullmatch(r"chrome-extension://[a-p]{32}", extension_origin):
+        raise ProtocolFailure("invalid_configuration")
+    cors_headers = {"authorization", "content-type", "x-askgpt-pages", "x-askgpt-source", "x-askgpt-target", "x-askgpt-units"}
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+        server_version = "AskGPTPDF/1"
+        sys_version = ""
+
+        def log_message(self, *args): pass
+
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(15)
+
+        def valid_host_origin(self, *, require_origin=False):
+            origins = self.headers.get_all("Origin") or []
+            return (self.headers.get_all("Host") == [f"127.0.0.1:{self.server.server_address[1]}"]
+                    and ((not origins and not require_origin)
+                         or (extension_origin is not None and origins == [extension_origin])))
+
+        def end_headers(self):
+            if self.valid_host_origin(require_origin=True):
+                self.send_header("Access-Control-Allow-Origin", extension_origin)
+                self.send_header("Vary", "Origin")
+            super().end_headers()
+
+        def handle_expect_100(self):
+            # Authentication must precede even an informational upload response.
+            if not self.authorize(): return False
+            self.send_response_only(100)
+            self.end_headers()
+            return True
+
+        def reply(self, status, value=None, *, pdf=None):
+            data = pdf if pdf is not None else json.dumps(value or {}, separators=(",", ":")).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/pdf" if pdf is not None else "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(data)
+            self.close_connection = True
+
+        def authorize(self):
+            if not self.valid_host_origin():
+                self.reply(403, {"error": "invalid_origin_or_host"})
+                return False
+            auth = self.headers.get_all("Authorization") or []
+            if len(auth) != 1 or not hmac.compare_digest(auth[0].encode("utf-8"), ("Bearer " + token).encode()):
+                self.reply(401, {"error": "unauthorized"})
+                return False
+            return True
+
+        def do_GET(self):
+            if not self.authorize(): return
+            if self.path == "/v1/pdf/health":
+                return self.reply(200, {"status": "ready" if manager.ready() else "runtime_missing",
+                                       "protocolVersion": 1})
+            upgrade=ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path)
+            if upgrade:
+                try: return self.reply(200,manager.sentence_upgrades.status(manager.get(upgrade[1])))
+                except ProtocolFailure: return self.reply(404,{"error":"job_not_found"})
+            match = JOB_ROUTE.fullmatch(self.path)
+            if not match: return self.reply(404, {"error": "not_found"})
+            try:
+                job = manager.get(match[1])
+                if not match[2]: return self.reply(200, job.public())
+                if job.state != "complete": return self.reply(409, {"error": "job_not_complete"})
+                if match[2] == "alignment.json":
+                    try: return self.reply(200,manager.read_alignment(job))
+                    except ProtocolFailure: return self.reply(404,{"error":"alignment_unavailable"})
+                path = job.directory / match[2]
+                descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                with os.fdopen(descriptor, "rb") as handle:
+                    info = os.fstat(handle.fileno())
+                    if not stat.S_ISREG(info.st_mode): raise OSError()
+                    if info.st_size > MAX_OUTPUT_BYTES:
+                        return self.reply(413, {"error": "output_too_large"})
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/pdf")
+                    self.send_header("Content-Length", str(info.st_size))
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    shutil.copyfileobj(handle, self.wfile, length=64 * 1024)
+                    self.close_connection = True
+                    return
+            except ProtocolFailure: return self.reply(404, {"error": "job_not_found"})
+            except (OSError, ValueError, TypeError, KeyError):
+                return self.reply(404, {"error": "output_unavailable"})
+
+        def do_POST(self):
+            if not self.authorize(): return
+            upgrade=ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path)
+            if upgrade: return self.post_alignment_upgrade(upgrade[1])
+            if self.path != "/v1/pdf/jobs": return self.reply(404, {"error": "not_found"})
+            if not manager.ready(): return self.reply(503, {"error": "runtime_missing"})
+            if self.headers.get("Transfer-Encoding") is not None:
+                return self.reply(400, {"error": "unsupported_transfer_encoding"})
+            lengths = self.headers.get_all("Content-Length") or []
+            if len(lengths) != 1 or not lengths[0].isdigit():
+                return self.reply(411, {"error": "content_length_required"})
+            length = int(lengths[0])
+            if length > MAX_PDF_BYTES: return self.reply(413, {"error": "pdf_too_large"})
+            if length < 5: return self.reply(400, {"error": "invalid_pdf"})
+            if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/pdf":
+                return self.reply(415, {"error": "pdf_content_type_required"})
+            source, target = self.headers.get("X-AskGPT-Source"), self.headers.get("X-AskGPT-Target")
+            if (source, target) not in {("en", "zh-Hans"), ("zh-Hans", "en")}:
+                return self.reply(400, {"error": "invalid_language_pair"})
+            pages = self.headers.get("X-AskGPT-Pages", "all")
+            if not manager.upload_slots.acquire(blocking=False):
+                return self.reply(409, {"error": "job_conflict"})
+            job = None
+            try:
+                job = manager.begin()
+                descriptor = os.open(job.directory / "input.pdf",
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(descriptor, "wb") as output:
+                    remaining = length
+                    while remaining:
+                        data = self.rfile.read(min(64 * 1024, remaining))
+                        if not data: raise ProtocolFailure("incomplete_upload")
+                        output.write(data)
+                        remaining -= len(data)
+                with (job.directory / "input.pdf").open("rb") as pdf:
+                    if pdf.read(5) != b"%PDF-": raise ProtocolFailure("invalid_pdf")
+                return self.reply(202, manager.submit(job, pages, source, target))
+            except ProtocolFailure as error:
+                if job: manager.abandon(job)
+                code = str(error)
+                return self.reply(409 if code == "job_conflict" else 400, {"error": code})
+            except (OSError, TimeoutError):
+                if job: manager.abandon(job)
+                return self.reply(400, {"error": "incomplete_upload"})
+            finally:
+                manager.upload_slots.release()
+
+        def post_alignment_upgrade(self,identity):
+            try: parent=manager.get(identity)
+            except ProtocolFailure: return self.reply(404,{"error":"job_not_found"})
+            if parent.state!="complete": return self.reply(409,{"error":"job_not_complete"})
+            if self.headers.get("Transfer-Encoding") is not None:
+                return self.reply(400,{"error":"unsupported_transfer_encoding"})
+            lengths=self.headers.get_all("Content-Length") or []
+            if len(lengths)!=1 or not lengths[0].isdigit(): return self.reply(411,{"error":"content_length_required"})
+            length=int(lengths[0])
+            types=self.headers.get_all("Content-Type") or []
+            if len(types)!=1:return self.reply(400,{"error":"invalid_content_type"})
+            content_type=types[0].split(";",1)[0].strip().lower()
+            unit_headers=self.headers.get_all("X-AskGPT-Units") or []
+            if len(unit_headers)>1:return self.reply(400,{"error":"invalid_units"})
+            if content_type=="application/json":
+                if not 1<=length<=2048 or unit_headers:return self.reply(400,{"error":"invalid_units"})
+                try:
+                    def unique_object(pairs):
+                        result=dict(pairs)
+                        if len(result)!=len(pairs):raise ValueError("duplicate_field")
+                        return result
+                    raw=self.rfile.read(length)
+                    if len(raw)!=length:raise ValueError("incomplete_priority")
+                    value=json.loads(raw,object_pairs_hook=unique_object)
+                    if not isinstance(value,dict) or set(value)!={"page","units"}:raise ValueError("invalid_priority")
+                    return self.reply(200,manager.sentence_upgrades.prioritize(parent,value["page"],value["units"]))
+                except (ProtocolFailure,OSError,TimeoutError,ValueError,TypeError,KeyError):
+                    return self.reply(400,{"error":"invalid_units"})
+            if not 5<=length<=MAX_PDF_BYTES: return self.reply(413,{"error":"pdf_too_large"})
+            if content_type!="application/pdf":
+                return self.reply(415,{"error":"pdf_content_type_required"})
+            priority_units=None
+            try:
+                selected=parse_pages(self.headers.get("X-AskGPT-Pages","all"),parent.page_count)
+                if any(x not in parent.source_pages for x in selected): raise ProtocolFailure("invalid_pages")
+                if unit_headers:
+                    if len(selected)!=1 or len(unit_headers[0])>1024:raise ProtocolFailure("invalid_units")
+                    priority_units=manager.sentence_upgrades.validate_priority_units(parent,selected[0],json.loads(unit_headers[0]))
+            except (ProtocolFailure,ValueError,TypeError): return self.reply(400,{"error":"invalid_pages"})
+            if not manager.upload_slots.acquire(blocking=False): return self.reply(409,{"error":"alignment_conflict"})
+            temporary=None
+            try:
+                temporary=manager.begin()
+                descriptor=os.open(temporary.directory/"input.pdf",os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+                with os.fdopen(descriptor,"wb") as output:
+                    remaining=length
+                    while remaining:
+                        chunk=self.rfile.read(min(65536,remaining))
+                        if not chunk: raise ProtocolFailure("incomplete_upload")
+                        output.write(chunk);remaining-=len(chunk)
+                _,digest=_private_file(temporary.directory/"input.pdf",MAX_PDF_BYTES,checksum=True)
+                if digest!=parent.cache_info["sourceSHA256"]: raise ProtocolFailure("source_changed")
+                result=manager.sentence_upgrades.submit(parent,temporary,selected,priority_units)
+                temporary=None
+                return self.reply(202,result)
+            except ProtocolFailure as error:
+                return self.reply(409 if str(error)=="alignment_conflict" else 400,{"error":str(error)})
+            except (OSError,ValueError,TypeError,KeyError): return self.reply(400,{"error":"alignment_invalid"})
+            finally:
+                if temporary is not None:
+                    with manager.lock: manager._discard_placeholder(temporary)
+                manager.upload_slots.release()
+
+        def do_DELETE(self):
+            if not self.authorize(): return
+            match = JOB_ROUTE.fullmatch(self.path)
+            if not match or match[2]: return self.reply(404, {"error": "not_found"})
+            try: return self.reply(200, manager.cancel(manager.get(match[1])))
+            except ProtocolFailure: return self.reply(404, {"error": "job_not_found"})
+
+        def do_OPTIONS(self):
+            if not self.valid_host_origin(require_origin=True):
+                return self.reply(403, {"error": "invalid_origin_or_host"})
+            if (self.path not in {"/v1/pdf/jobs", "/v1/pdf/health"} and not JOB_ROUTE.fullmatch(self.path)
+                    and not ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path)):
+                return self.reply(404, {"error": "not_found"})
+            methods = self.headers.get_all("Access-Control-Request-Method") or []
+            requested = self.headers.get_all("Access-Control-Request-Headers") or []
+            names = {name.strip().lower() for name in requested[0].split(",")} if len(requested) == 1 else set()
+            if (len(methods) != 1 or methods[0] not in {"GET", "POST", "DELETE"}
+                    or "authorization" not in names or not names.issubset(cors_headers)):
+                return self.reply(403, {"error": "invalid_preflight"})
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE")
+            self.send_header("Access-Control-Allow-Headers", ", ".join(sorted(cors_headers)))
+            if self.headers.get("Access-Control-Request-Private-Network") == "true":
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.close_connection = True
+
+        def do_PUT(self):
+            if self.authorize(): self.reply(405, {"error": "method_not_allowed"})
+
+        do_PATCH = do_PUT
+        do_HEAD = do_PUT
+
+    return PDFHTTPServer(("127.0.0.1", port), Handler)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--translator", required=True, type=Path)
+    parser.add_argument("--cache-root", required=True, type=Path)
+    args = parser.parse_args()
+    os.umask(0o077)
+    try:
+        root = private_directory(args.cache_root)
+        lock_file = os.open(root / "server.lock", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        manager = JobManager(args.cache_root, args.translator)
+        token, extension_origin = load_connection(args.config)
+        service = create_server(manager, token, extension_origin=extension_origin)
+    except Exception:
+        print("pdf_service_start_failed", file=sys.stderr)
+        return 1
+    def stop(signum, frame):
+        threading.Thread(target=service.shutdown, daemon=True).start()
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    try: service.serve_forever(poll_interval=.2)
+    finally:
+        manager.shutdown()
+        service.server_close()
+    return 0
+
+
+if __name__ == "__main__": raise SystemExit(main())

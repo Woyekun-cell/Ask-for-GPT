@@ -1,0 +1,74 @@
+#!/bin/bash
+set -euo pipefail
+task_root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$task_root"
+mkdir -p "$task_root/.build/AppPackage.noindex"
+task_package_lock="$task_root/.build/AppPackage.noindex/.package-lock"
+if ! mkdir "$task_package_lock" 2>/dev/null; then
+    printf 'Another Ask for GPT package build or installation is in progress.\n' >&2
+    exit 1
+fi
+trap 'rmdir "$task_package_lock"' EXIT
+# The installed 27 SDK requires SwiftUIMacros absent from CommandLineTools.
+# The installed 26.5 SDK provides the compatible property-wrapper interfaces.
+task_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+if [[ ! -d "$task_sdk" ]]; then task_sdk="$(xcrun --sdk macosx --show-sdk-path)"; fi
+swift build --build-system native --sdk "$task_sdk" --scratch-path .build/sdk26 -c release
+task_binary_dir="$(swift build --build-system native --sdk "$task_sdk" --scratch-path .build/sdk26 -c release --show-bin-path)"
+task_app="$task_root/.build/AppPackage.noindex/Ask for GPT.app"
+mkdir -p "$task_app/Contents/MacOS" "$task_app/Contents/Resources"
+cp "$task_binary_dir/AskGPT" "$task_app/Contents/MacOS/AskGPT"
+cp "$task_binary_dir/AskGPTTranslate" "$task_app/Contents/MacOS/AskGPTTranslate"
+task_icon="$task_root/Resources/AppIcon.icns"
+if [[ ! -f "$task_icon" ]]; then
+    printf 'Missing application icon: %s\n' "$task_icon" >&2
+    exit 1
+fi
+cp "$task_icon" "$task_app/Contents/Resources/AppIcon.icns"
+python3 scripts/package-dictionary "$task_app/Contents/Resources/Dictionary"
+python3 - "$task_app" <<'PY'
+import os,plistlib,re,sys
+from pathlib import Path
+app=Path(sys.argv[1])
+version_pattern=r'[1-9][0-9]{0,3}(?:\.[0-9]{1,2}){0,2}'
+previous=[]
+for candidate in [app, Path.home()/'Applications/Ask for GPT.app']:
+ try:
+  saved=plistlib.loads((candidate/'Contents/Info.plist').read_bytes())
+  number=saved.get('CFBundleVersion','')
+  if saved.get('CFBundleIdentifier')=='local.askgpt.reader' and re.fullmatch(version_pattern,number):
+   parts=[int(x) for x in number.split('.')]+[0,0]
+   previous.append(parts[0]*10000+parts[1]*100+parts[2])
+ except (OSError,ValueError,TypeError):
+  pass
+next_number=max(previous)+1 if previous else 10000
+automatic_version=f'{next_number//10000}.{next_number//100%100}.{next_number%100}'
+info={
+ 'CFBundleIdentifier':'local.askgpt.reader',
+ 'CFBundleName':'Ask for GPT',
+ 'CFBundleDisplayName':'Ask for GPT',
+ 'CFBundleExecutable':'AskGPT',
+ 'CFBundleIconFile':'AppIcon.icns',
+ 'CFBundlePackageType':'APPL',
+ 'CFBundleShortVersionString':'0.1.0',
+ 'CFBundleVersion':os.environ.get('ASKGPT_BUILD_NUMBER') or automatic_version,
+ 'LSMinimumSystemVersion':'13.0',
+ 'LSUIElement':True,
+ 'NSHighResolutionCapable':True,
+ 'NSPrincipalClass':'NSApplication',
+ 'NSAccessibilityUsageDescription':'读取你主动选择的文字，用于翻译和提问。'
+}
+if not re.fullmatch(version_pattern, info['CFBundleVersion']):
+    raise SystemExit('ASKGPT_BUILD_NUMBER must use a positive 1-4 digit major and optional 1-2 digit minor/patch')
+(app/'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+PY
+python3 scripts/package-inline-integrations "$task_app/Contents/Resources/InlineIntegrations"
+python3 scripts/package-pdf-layout "$task_app/Contents/Resources/PDFLayout"
+python3 scripts/package-writing-integrations "$task_app/Contents/Resources/Integrations/Writing"
+mkdir -p "$task_app/Contents/Resources/Writing"
+# Only bundled policy resources enter the package. TLS identity and runtime token stay private.
+rm -rf "$task_app/Contents/Resources/Writing/skill"
+cp -R Resources/Writing/skill "$task_app/Contents/Resources/Writing/skill"
+python3 scripts/app-signing sign "$task_app"
+codesign --verify --strict --verbose=2 "$task_app"
+printf '%s\n' "$task_app"

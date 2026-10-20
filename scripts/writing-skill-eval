@@ -1,0 +1,222 @@
+#!/usr/bin/env node
+'use strict';
+// Offline by default. Live mode reuses the production WritingService in a temporary CLI process.
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const os = require('node:os');
+const {spawnSync, spawn} = require('node:child_process');
+const ROOT = path.resolve(__dirname, '..');
+const FROZEN_HASHES = {
+  calibration:'eaa3683f7839ed9b61edc1c120727c8980456572acd456d9ade74a54593726e2',
+  holdout:'03ddcc0bb9bc2f5e97af396b76b2228362ecb7dfbb70f6bdb15a27fbc156e96f',
+  clean:'e65c6a7b406438ee4498cded7fdda29bab9dfd066d835c02fdaa3de622534c39'
+};
+const LIMITATIONS = [
+  'Synthetic expectations are reviewable author judgments, not expert certification or model training.',
+  'Accepted-result structure, UTF-16 anchoring and literal checks do not prove semantic equivalence.',
+  'A small selected sample is not a complete holdout result, a quality improvement claim, or a latency guarantee.',
+  'This script does not test HTTPS, TLS system trust, Word/WPS GUI, formatting, installation or user acceptance.'
+];
+const sha256 = data => crypto.createHash('sha256').update(data).digest('hex');
+const check = (ok, message) => { if (!ok) throw new Error(message); };
+const equal = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+const exactKeys = (value,keys) => value && typeof value === 'object' && !Array.isArray(value) && equal(Object.keys(value).sort(), [...keys].sort());
+const allCases = suites => Object.values(suites).flatMap(s=>s.cases);
+const overlaps = (a,b) => a.start < b.start+b.length && b.start < a.start+a.length;
+function boundaries(text) {
+  const result=new Set([0,text.length]);
+  for (const part of new Intl.Segmenter('en',{granularity:'grapheme'}).segment(text)) result.add(part.index);
+  return result;
+}
+function validRange(range,text) {
+  return range && Number.isSafeInteger(range.start) && Number.isSafeInteger(range.length) && range.start>=0 && range.length>=0 &&
+    range.start+range.length<=text.length && boundaries(text).has(range.start) && boundaries(text).has(range.start+range.length);
+}
+const containsRange = (outer,inner) => inner.start>=outer.start && inner.start+inner.length<=outer.start+outer.length;
+function suiteManifest(root) {
+  return Object.fromEntries(Object.keys(FROZEN_HASHES).map(name=>[name,sha256(fs.readFileSync(path.join(root,'Integrations/Writing/tests/fixtures',name+'.json')))]));
+}
+function policyManifest(root) {
+  const directory=path.join(root,'Resources/Writing/skill'); const names=['SKILL.md','profile.json','terminology.json'];
+  const resources=names.map(name=>fs.readFileSync(path.join(directory,name)));
+  const bytes=Buffer.concat(resources.flatMap(data=>[Buffer.from(data.length+':'),data]));
+  const version=JSON.parse(resources[1]).version;
+  return {version,hash:sha256(bytes),resourceHashes:Object.fromEntries(names.map((name,i)=>[name,sha256(resources[i])]))};
+}
+function loadSuites(root) {
+  check(equal(suiteManifest(root),FROZEN_HASHES),'Frozen fixture hashes changed; create a new reviewed suite version instead of silently retuning holdout.');
+  const suites=Object.fromEntries(Object.keys(FROZEN_HASHES).map(name=>[name,JSON.parse(fs.readFileSync(path.join(root,'Integrations/Writing/tests/fixtures',name+'.json'),'utf8'))]));
+  validateSuites(suites); return suites;
+}
+function validateSuites(suites) {
+  const ids=new Set(),texts=new Set();
+  for (const [name,count] of [['calibration',12],['holdout',12],['clean',6]]) {
+    const suite=suites[name]; check(suite?.schemaVersion===1 && suite.split===name && suite.cases?.length===count, 'Invalid '+name+' suite');
+    for (const item of suite.cases) {
+      check(typeof item.id==='string' && !ids.has(item.id),'Duplicate or invalid fixture ID'); ids.add(item.id);
+      const {input,expected}=item; const text=input.rawText;
+      check(typeof text==='string' && text.length>0 && !texts.has(text),'Duplicate or empty fixture text across splits'); texts.add(text);
+      check(item.source.includes('synthetic') && ['spelling','polish'].includes(item.mode),'Only declared synthetic fixtures are allowed');
+      check(['en-US','en-GB'].includes(input.profile.spellingVariant) && ['minimal','clarity'].includes(input.profile.style),'Invalid fixture profile');
+      check(validRange(input.targetRange,text) && input.targetRange.length>0,'Invalid target grapheme range');
+      for (const span of input.protectedRanges) check(validRange(span,text),'Invalid protected grapheme range');
+      for (const issue of expected.issues) {
+        check(validRange(issue.range,text) && text.slice(issue.range.start,issue.range.start+issue.range.length)===issue.anchorText,'Invalid expected anchor');
+        check(containsRange(input.targetRange,issue.range),'Expected anchor outside target');
+        check(!input.protectedRanges.some(p=>overlaps(p,issue.range)),'Expected anchor touches protected text');
+        check(issue.categories.length>0 && issue.categories.every(c=>['grammar','spelling','expression','context'].includes(c)),'Invalid expected category');
+        check(!issue.reviewOnly || issue.categories.includes('context'),'Review-only must be context');
+      }
+      check(name!=='clean' || expected.issues.length===0,'Clean cases cannot have expected issues');
+      check(Array.isArray(expected.acceptableTexts) && expected.acceptableTexts.length>0,'Missing independently authored acceptable text');
+      for (const literal of expected.preserveLiterals) check(text.includes(literal),'Missing invariant literal');
+      for (const acceptable of expected.acceptableTexts) {
+        check(expected.preserveLiterals.every(literal=>literalCount(acceptable,literal)===literalCount(text,literal)),'Expected text changes invariant literal');
+        check(equal(numericTokens(acceptable),numericTokens(text)),'Expected text changes numbers');
+      }
+    }
+  }
+}
+const literalCount = (text,literal) => { let count=0,at=0; while ((at=text.indexOf(literal,at))>=0) { count++; at+=literal.length || 1; } return count; };
+const numericTokens = text => text.match(/[-+]?\d+(?:\.\d+)?(?:%|[eE][-+]?\d+)?/g) || [];
+function structureProblems(item,record,policy) {
+  const result=record.result; const errors=[];
+  if (!exactKeys(result,['requestID','snapshotHash','skillVersion','status','issues'])) return ['Invalid result envelope'];
+  if (typeof result.requestID!=='string' || !result.requestID || (record.requestID && result.requestID!==record.requestID)) errors.push('Request identity mismatch');
+  if (result.snapshotHash!==sha256(item.input.rawText)) errors.push('Snapshot hash mismatch');
+  if (typeof result.skillVersion!=='string' || (policy && result.skillVersion!==(item.mode==='spelling'?'local-1':policy.version))) errors.push('Skill version mismatch');
+  if (result.status!=='completed') errors.push('Check did not complete');
+  if (!Array.isArray(result.issues)) return [...errors,'Issues is not an array'];
+  const ids=new Set(); const text=item.input.rawText; const ranges=[];
+  for (const issue of result.issues) {
+    if (!exactKeys(issue,['id','category','original','replacement','reason','range','requiresAuthorConfirmation'])) { errors.push('Invalid issue fields'); continue; }
+    if (typeof issue.id!=='string' || !issue.id || ids.has(issue.id)) errors.push('Invalid issue identity'); ids.add(issue.id);
+    if (!['spelling','grammar','expression','context'].includes(issue.category) || ![issue.original,issue.replacement,issue.reason].every(s=>typeof s==='string') || !issue.original || !issue.reason?.trim() || issue.requiresAuthorConfirmation!==true) errors.push('Invalid issue structure');
+    if (!exactKeys(issue.range,['start','length']) || !validRange(issue.range,text) || issue.range.length===0 || text.slice(issue.range.start,issue.range.start+issue.range.length)!==issue.original) { errors.push('Invalid literal UTF16 anchor'); continue; }
+    if (!containsRange(item.input.targetRange,issue.range) || item.input.protectedRanges.some(p=>overlaps(p,issue.range))) errors.push('Issue outside target or in protected text');
+    if (ranges.some(r=>overlaps(r,issue.range))) errors.push('Overlapping issue anchors'); ranges.push(issue.range);
+    if (issue.original===issue.replacement && issue.category!=='context') errors.push('Unexpected no-op');
+    const edited=text.slice(0,issue.range.start)+issue.replacement+text.slice(issue.range.start+issue.range.length);
+    if (!boundaries(edited).has(issue.range.start) || !boundaries(edited).has(issue.range.start+issue.replacement.length)) errors.push('Replacement splits grapheme');
+  }
+  return errors;
+}
+function scoreCase(item,record,policy) {
+  const errors=structureProblems(item,record,policy);
+  if (errors.length) return {id:item.id,mode:item.mode,pass:false,structureValid:false,errors,detected:0,expected:item.expected.issues.length,falsePositives:null,elapsedSeconds:record.elapsedSeconds ?? null};
+  const issues=record.result.issues; const expected=item.expected;
+  const matches=(actual,wanted)=> overlaps(actual.range,wanted.range) && wanted.categories.includes(actual.category) &&
+    (!wanted.reviewOnly || (actual.category==='context' && actual.original===actual.replacement && /[?？]|哪|是否|指代|请确认|能否/.test(actual.reason)));
+  const detected=expected.issues.filter(w=>issues.some(a=>matches(a,w))).length;
+  const falsePositives=issues.filter(a=>!expected.issues.some(w=>matches(a,w))).length;
+  let edited=item.input.rawText;
+  for (const issue of [...issues].sort((a,b)=>b.range.start-a.range.start)) edited=edited.slice(0,issue.range.start)+issue.replacement+edited.slice(issue.range.start+issue.range.length);
+  const changedLiterals=expected.preserveLiterals.filter(literal=>literalCount(edited,literal)!==literalCount(item.input.rawText,literal));
+  const introducedEvidenceTerms=expected.forbiddenNewLiterals.filter(term=>literalCount(edited.toLowerCase(),term)>literalCount(item.input.rawText.toLowerCase(),term));
+  const numericTokensPreserved=equal(numericTokens(edited),numericTokens(item.input.rawText));
+  const fidelity={pass:!changedLiterals.length && !introducedEvidenceTerms.length && numericTokensPreserved,changedLiterals,introducedEvidenceTerms,numericTokensPreserved,
+    scope:'Exact declared literals and numeric tokens only; author semantic review is still required.'};
+  const acceptableText=expected.acceptableTexts.includes(edited);
+  return {id:item.id,mode:item.mode,pass:detected===expected.issues.length && falsePositives===0 && acceptableText && fidelity.pass,
+    structureValid:true,detected,expected:expected.issues.length,falsePositives,acceptableText,fidelity,elapsedSeconds:record.elapsedSeconds,
+    authorReview:'NOT_PERFORMED: accepted text here means matching a frozen synthetic expectation.'};
+}
+function validateRun(run,suites,manifest,policy) {
+  check(run.schemaVersion===1 && equal(run.fixtureHashes,manifest) && equal(run.policy,policy),'Result provenance does not match frozen fixtures and current bundled policy');
+  check(Array.isArray(run.records) && run.records.length>0,'Result records missing');
+  const items=new Map(allCases(suites).map(c=>[c.id,c])); const seen=new Set();
+  for (const record of run.records) {
+    check(items.has(record.id) && !seen.has(record.id),'Unknown or duplicate result fixture ID'); seen.add(record.id);
+    check(record.mode===items.get(record.id).mode && typeof record.requestID==='string' && record.requestID && Number.isFinite(record.elapsedSeconds) && record.elapsedSeconds>=0,'Invalid result metadata');
+  }
+}
+function summarize(run,suites) {
+  const items=new Map(allCases(suites).map(c=>[c.id,c]));
+  const scores=run.records.map(record=>({...scoreCase(items.get(record.id),record,run.policy),split:record.id.startsWith('cal-')?'calibration':record.id.startsWith('hold-')?'holdout':'clean'}));
+  return {evaluated:scores.length,passed:scores.filter(s=>s.pass).length,structurePassed:scores.filter(s=>s.structureValid).length,
+    expectedIssues:scores.reduce((n,s)=>n+s.expected,0),detected:scores.reduce((n,s)=>n+s.detected,0),
+    falsePositives:scores.some(s=>s.falsePositives===null)?null:scores.reduce((n,s)=>n+s.falsePositives,0),
+    fidelityPassed:scores.filter(s=>s.fidelity?.pass).length,scores,
+    completeSuites:Object.fromEntries(Object.entries(suites).map(([name,suite])=>[name,suite.cases.every(c=>scores.some(s=>s.id===c.id))]))};
+}
+function compileHelper(root) {
+  check(process.platform==='darwin','Live native spelling requires macOS');
+  const build=path.join(root,'.build/sdk26',process.arch==='arm64'?'arm64-apple-macosx':'x86_64-apple-macosx','debug');
+  const directory=path.join(build,'AskGPTCore.build');
+  const source=path.join(root,'Sources/AskGPTCore');
+  const sources=fs.readdirSync(source).filter(name=>name.endsWith('.swift'));
+  for (const name of sources) {
+    const object=path.join(directory,name+'.o');
+    check(fs.existsSync(object) && fs.statSync(object).mtimeMs>=fs.statSync(path.join(source,name)).mtimeMs,'Core objects missing or stale: '+name+'. Run scripts/test with the shared Swift build slot first.');
+  }
+  const objects=fs.readdirSync(directory).filter(name=>name.endsWith('.o')).map(name=>path.join(directory,name));
+  const runtime=path.join(root,'work/writing-assistant/evaluation/.runtime'); fs.mkdirSync(runtime,{recursive:true});
+  const helper=path.join(runtime,'writing-eval-helper');
+  let sdk='/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk';
+  if (!fs.existsSync(sdk)) { const detected=spawnSync('xcrun',['--sdk','macosx','--show-sdk-path'],{encoding:'utf8'}); check(detected.status===0,'macOS SDK unavailable'); sdk=detected.stdout.trim(); }
+  const args=['-parse-as-library','-sdk',sdk,'-I',path.join(build,'Modules'),path.join(root,'scripts/writing-eval.swift'),...objects,'-o',helper];
+  const built=spawnSync('swiftc',args,{cwd:root,encoding:'utf8',timeout:120000});
+  check(built.status===0,'Evaluation helper compile failed: '+String(built.stderr||'').slice(0,2000));
+  return {helper,build,sdk,helperHash:sha256(fs.readFileSync(path.join(root,'scripts/writing-eval.swift'))),
+    coreSourceHashes:Object.fromEntries(sources.map(name=>[name,sha256(fs.readFileSync(path.join(source,name)))]))};
+}
+function invokeHelper(helper,job) {
+  return new Promise((resolve,reject)=>{
+    const process=spawn(helper,[],{cwd:ROOT,stdio:['pipe','pipe','pipe']}); let output='',errors='';
+    const timer=setTimeout(()=>{ process.kill('SIGTERM'); reject(new Error('Live helper exceeded 180 seconds; request not counted as completed')); },180000);
+    process.stdout.on('data',data=>{ output+=data; if (output.length>1000000) process.kill('SIGTERM'); });
+    process.stderr.on('data',data=>{ errors+=data; if (errors.length<4096) global.process.stderr.write(data); });
+    process.on('error',error=>{clearTimeout(timer); reject(error);});
+    process.on('close',code=>{clearTimeout(timer); try {check(code===0,'Live helper failed; no completed result claimed'); resolve(JSON.parse(output));} catch(error) {reject(error);} });
+    process.stdin.end(JSON.stringify(job));
+  });
+}
+function writeOutput(file,value) {
+  const absolute=path.resolve(file); fs.mkdirSync(path.dirname(absolute),{recursive:true});
+  fs.writeFileSync(absolute,JSON.stringify(value,null,2)+'\n',{flag:'wx',mode:0o600});
+}
+function versionProbe(executable,args) {
+  const probe=spawnSync(executable,args,{encoding:'utf8',timeout:10000});
+  return probe.status===0 ? String(probe.stdout).trim().split('\n').slice(0,3).join('\n') : 'UNAVAILABLE';
+}
+async function main(args=process.argv.slice(2)) {
+  const options={};
+  for (let i=0;i<args.length;i++) {
+    const arg=args[i];
+    if (['--live','--validate','--help'].includes(arg)) options[arg.slice(2)]=true;
+    else if (['--ids','--output','--results'].includes(arg)) {check(i+1<args.length,'Missing value for '+arg);options[arg.slice(2)]=args[++i];}
+    else throw new Error('Unknown option: '+arg);
+  }
+  if (options.help) { console.log('writing-skill-eval [--validate] [--output file]\nwriting-skill-eval --live --ids cal-01,hold-01,clean-01 --output new-file.json\nwriting-skill-eval --results saved-live.json [--output new-report.json]\nDefault validates 30 frozen public synthetic fixtures without running native spelling or a model. Live: explicit IDs, maximum six; existing ChatGPT-authenticated Codex CLI; no API-key fallback. Never overwrites evidence.'); return; }
+  check(!(options.live && options.results),'Choose live or saved results');
+  const suites=loadSuites(ROOT), fixtureHashes=suiteManifest(ROOT),policy=policyManifest(ROOT);
+  let report;
+  if (options.live) {
+    check(options.ids && options.output,'Live requires explicit fixture IDs (--ids) and --output');
+    const ids=options.ids.split(','); const cases=allCases(suites).filter(c=>ids.includes(c.id));
+    check(ids.length<=6 && ids.length>0 && new Set(ids).size===ids.length && cases.length===ids.length,'Live fixture IDs must be known, unique and limited to six (6).');
+    check(!fs.existsSync(path.resolve(options.output)),'Output exists; choose a new evidence path');
+    const compiled=compileHelper(ROOT); process.stderr.write('WRITING_EVAL_HELPER_READY\n'); const startedAt=new Date().toISOString();
+    const records=await invokeHelper(compiled.helper,{repository:ROOT,runID:crypto.randomUUID(),cases});
+    report={schemaVersion:1,mode:'live',transport:'in-process production WritingService; no listener or app registration',startedAt,finishedAt:new Date().toISOString(),fixtureHashes,policy,
+      modelCalls:cases.filter(c=>c.mode==='polish').length,nativeSpellingCalls:cases.filter(c=>c.mode==='spelling').length,
+      environment:{node:process.version,platform:os.platform(),release:os.release(),architecture:process.arch,sdk:compiled.sdk,
+        configuredCliPath:'/opt/homebrew/bin/codex',cliVersion:versionProbe('/opt/homebrew/bin/codex',['--version']),
+        configuredModel:'gpt-6.1-sol',configuredReasoningEffort:'low',swiftCompilerVersion:versionProbe('swiftc',['--version']),
+        helperSourceHash:compiled.helperHash,coreSourceHashes:compiled.coreSourceHashes},
+      records,limitations:LIMITATIONS};
+    validateRun(report,suites,fixtureHashes,policy); report.summary=summarize(report,suites);
+  } else if (options.results) {
+    const original=JSON.parse(fs.readFileSync(path.resolve(options.results),'utf8'));validateRun(original,suites,fixtureHashes,policy);
+    report={schemaVersion:1,mode:'replay',modelCalls:0,nativeSpellingCalls:0,sourceHash:sha256(fs.readFileSync(path.resolve(options.results))),fixtureHashes,policy,summary:summarize(original,suites),limitations:LIMITATIONS};
+  } else {
+    check(!options.ids,'--ids requires --live');
+    report={schemaVersion:1,mode:'validate',cases:allCases(suites).length,fixtureHashes,policy,modelCalls:0,nativeSpellingCalls:0,limitations:LIMITATIONS};
+  }
+  if (options.output) writeOutput(options.output,report);
+  console.log(JSON.stringify(report,null,2));
+  if (report.summary && report.summary.passed!==report.summary.evaluated) process.exitCode=1;
+}
+module.exports={main,sha256,loadSuites,validateSuites,suiteManifest,policyManifest,scoreCase,validateRun,summarize};
+if (require.main===module) main().catch(error=>{console.error('WRITING_EVAL_FAILED: '+error.message);process.exitCode=1;});

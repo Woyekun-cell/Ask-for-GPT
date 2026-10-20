@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2006/01/customui">
+  <ribbon startFromScratch="false">
+    <tabs><tab id="AskGPTWritingTab" label="润色"><group id="AskGPTWritingGroup" label="写作检查">
+      <button id="AskGPTWritingOpen" label="打开写作助手" onAction="AskGPTWritingOpen" />
+    </group></tab></tabs>
+  </ribbon>
+</customUI>

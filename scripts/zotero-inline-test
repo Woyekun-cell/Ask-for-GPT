@@ -1,0 +1,41 @@
+#!/bin/bash
+set -euo pipefail
+task_root="$(cd "$(dirname "$0")/.." && pwd)"
+node "$task_root/Integrations/Zotero/tests/inline-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/sidebar-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-gestures-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-progress-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-background-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-alignment-transport-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-pane-gestures-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-reading-tools-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-selection-link-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-figure-navigation-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-figure-panel-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-scroll-sync-tests.cjs"
+node "$task_root/Integrations/Zotero/tests/pdf-native-view-tests.cjs"
+for task_script in "$task_root/Integrations/Zotero/content/pdf-scroll-sync.js" "$task_root/Integrations/Zotero/content/pdf-figure-navigation.js" "$task_root/Integrations/Zotero/content/pdf-figure-panel.js" "$task_root/Integrations/Zotero/bootstrap.js" "$task_root/Integrations/Zotero/content/inline-core.js" "$task_root/Integrations/Zotero/content/pdf-layout.js" "$task_root/Integrations/Zotero/content/pdf-native-view.js" "$task_root/Integrations/Zotero/content/pdf-pane-gestures.js" "$task_root/Integrations/Zotero/content/pdf-reading-tools.js" "$task_root/Integrations/Zotero/content/pdf-selection-link.js" "$task_root/Integrations/Zotero/content/inline.js" "$task_root/Integrations/Zotero/content/sidebar.js"; do
+  node --check "$task_script"
+done
+if [[ "${1:-}" == "--package" ]]; then
+  python3 - "$task_root" <<'PY'
+import hashlib,json,pathlib,sys,zipfile
+root=pathlib.Path(sys.argv[1]); source=root/'Integrations/Zotero'
+manifest=json.loads((source/'manifest.json').read_text())
+destination=root/'work/inline-integration/AskGPTInline.xpi'
+destination.parent.mkdir(parents=True,exist_ok=True)
+with zipfile.ZipFile(destination,'w',zipfile.ZIP_DEFLATED) as archive:
+    for file in sorted(source.rglob('*')):
+        if file.is_file() and not file.is_symlink() and 'tests' not in file.relative_to(source).parts and file.suffix in {'.json','.js','.css','.svg','.ftl'}:
+            archive.write(file,str(file.relative_to(source)))
+record={'xpi':str(destination),'version':manifest['version'],
+    'sha256':hashlib.sha256(destination.read_bytes()).hexdigest(),
+    'update_url':manifest['applications']['zotero']['update_url'],
+    'update_policy':'manual with Ask for GPT app',
+    'automatic_update_endpoint_available':False,
+    'automatic_update_note':'The HTTPS loopback URL satisfies Zotero 9 manifest/update security checks. The existing 43792 listener is HTTP, so automatic update checks are expected to fail locally at TLS. No online update service, TLS listener, certificate installation, or reduced security checks are provided.'}
+(destination.parent/'AskGPTInline-package.json').write_text(json.dumps(record,ensure_ascii=False,indent=2)+'\n')
+print(json.dumps(record,ensure_ascii=False))
+PY
+fi
+

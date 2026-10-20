@@ -1,0 +1,5 @@
+# Upstream source: https://github.com/funstory-ai/BabelDOC/tree/v0.6.4
+# Isolated local execution only. Upstream license: AGPL-3.0.
+BabelDOC==0.6.4
+# BabelDOC imports BitStream, removed in bitstring 5.x.
+bitstring==4.3.1

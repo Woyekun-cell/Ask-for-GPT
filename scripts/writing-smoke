@@ -1,0 +1,7 @@
+#!/usr/bin/env node
+'use strict';
+// Reproducible six-case smoke. Model use always requires an explicit --live flag.
+const {main}=require('./writing-skill-eval');
+const args=process.argv.slice(2);
+if (args.includes('--live') && !args.includes('--ids')) args.push('--ids','cal-01,cal-11,hold-01,hold-08,hold-11,clean-01');
+main(args).catch(error=>{console.error('WRITING_SMOKE_FAILED: '+error.message);process.exitCode=1;});

@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Benchmark fixed public English and a short original-paper excerpt; never read user documents."""
+import json
+import pathlib
+import subprocess
+import sys
+import tempfile
+
+root = pathlib.Path(__file__).resolve().parent.parent
+entry = r'''
+import Foundation
+@main struct Benchmark {
+    static func main() async {
+        let backend = CodexBackend(settings: CodexSettings())
+        let paragraph = "Small replicate numbers, discreteness, large dynamic range and the presence of outliers require a suitable statistical approach."
+        var metrics: [[String: Any]] = []
+        do {
+            let launch = ProcessInfo.processInfo.systemUptime
+            let connection = try await backend.validateConnection()
+            let handshake = ProcessInfo.processInfo.systemUptime - launch
+            let cases = [
+                ("synthetic_sentence", "The experiment compared two groups of samples and measured gene expression at two time points."),
+                ("DESeq2_original_excerpt", paragraph)
+            ]
+            for (name, text) in cases {
+                let session = try await backend.startSession(instructions: "忠实翻译为简体中文。保留术语、数量和证据强度，只输出译文。禁止使用工具、文件或网页。")
+                let result = try await backend.send(threadID: session, text: "请翻译引用原文：\n" + text, onDelta: { _ in })
+                metrics.append(["case": name, "input": text, "translation": result.text,
+                    "firstDeltaSeconds": result.firstDeltaSeconds as Any? ?? NSNull(), "totalSeconds": result.totalSeconds])
+                await backend.releaseSession(threadID: session)
+            }
+            await backend.shutdown()
+            let data = try JSONSerialization.data(withJSONObject: [
+                "authMode": connection.authMode, "cliVersion": connection.cliVersion,
+                "model": "gpt-6.1-sol", "effort": "low", "handshakeSeconds": handshake,
+                "paperSource": "https://link.springer.com/article/10.1186/s13059-014-0550-8",
+                "paperExcerptWords": paragraph.split(separator: " ").count,
+                "cases": metrics
+            ], options: [.prettyPrinted, .sortedKeys])
+            print(String(decoding: data, as: UTF8.self))
+        } catch {
+            await backend.shutdown()
+            FileHandle.standardError.write(Data(("BENCHMARK_FAILED: " + error.localizedDescription + "\n").utf8))
+            exit(1)
+        }
+    }
+}
+'''
+with tempfile.TemporaryDirectory(prefix="askgpt-reading-benchmark-") as temporary:
+    work = pathlib.Path(temporary)
+    source = work / "Benchmark.swift"
+    source.write_text(entry)
+    binary = work / "benchmark"
+    files = [root / "Sources/AskGPTCore" / name for name in ("Models.swift", "CodexRPC.swift", "CodexBackend.swift")]
+    subprocess.run(["/usr/bin/swiftc", "-parse-as-library", "-swift-version", "5", "-module-cache-path", str(root / "work/backend-module-cache"), *map(str, files), str(source), "-o", str(binary)], check=True)
+    result = subprocess.run([str(binary)], timeout=260)
+    sys.exit(result.returncode)

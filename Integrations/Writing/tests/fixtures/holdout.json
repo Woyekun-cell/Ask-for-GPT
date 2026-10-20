@@ -1,0 +1,640 @@
+{
+  "schemaVersion": 1,
+  "split": "holdout",
+  "frozenOn": "2026-10-17",
+  "policy": "Frozen before live evaluation. Self-authored public synthetic cases. Holdout is evaluation-only and must not be reused to tune this policy or counted as calibration. No model-weight training or expert certification.",
+  "cases": [
+    {
+      "id": "hold-01",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "agreement"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "These findings indicates a consistent trend.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 44
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "indicates",
+            "range": {
+              "start": 15,
+              "length": 9
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "These findings indicate a consistent trend."
+        ],
+        "preserveLiterals": [],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-02",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "article"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "We analyzed an distinct batch of samples.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 41
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "an distinct",
+            "range": {
+              "start": 12,
+              "length": 11
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "We analyzed a distinct batch of samples."
+        ],
+        "preserveLiterals": [],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-03",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "number-agreement",
+        "experimental-unit"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "Two replicate was measured for each pool.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 41
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "replicate was",
+            "range": {
+              "start": 4,
+              "length": 13
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "Two replicates were measured for each pool."
+        ],
+        "preserveLiterals": [
+          "Two",
+          "each pool"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-04",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "negation",
+        "numbers"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "The concentration did not changed at 5 mg/L.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 44
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "changed",
+            "range": {
+              "start": 26,
+              "length": 7
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "The concentration did not change at 5 mg/L."
+        ],
+        "preserveLiterals": [
+          "did not",
+          "5 mg/L"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-05",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "comparison-direction"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "Survival was higher in A than in B, although the difference were small.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 71
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "were",
+            "range": {
+              "start": 60,
+              "length": 4
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "Survival was higher in A than in B, although the difference was small."
+        ],
+        "preserveLiterals": [
+          "higher in A than in B"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-06",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "association",
+        "numbers",
+        "sample-size"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "The observations is associated with a 1.5-fold change (n = 12).",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 63
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "is",
+            "range": {
+              "start": 17,
+              "length": 2
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "The observations are associated with a 1.5-fold change (n = 12)."
+        ],
+        "preserveLiterals": [
+          "associated with",
+          "1.5-fold",
+          "n = 12"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-07",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "evidence-boundary",
+        "default-terminology"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "The ssGSEA score suggest enrichment, rather than confirmed pathway activity.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 76
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "suggest",
+            "range": {
+              "start": 17,
+              "length": 7
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "The ssGSEA score suggests enrichment, rather than confirmed pathway activity."
+        ],
+        "preserveLiterals": [
+          "ssGSEA",
+          "rather than confirmed pathway activity"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-08",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "context",
+        "review-only"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "This treatment improved survival.",
+        "contextBefore": "Both heat treatment and a dietary supplement were tested.",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 33
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "This treatment",
+            "range": {
+              "start": 0,
+              "length": 14
+            },
+            "categories": [
+              "context"
+            ],
+            "reviewOnly": true
+          }
+        ],
+        "acceptableTexts": [
+          "This treatment improved survival."
+        ],
+        "preserveLiterals": [],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": "Which previously named method or treatment is meant? Leave original text unchanged.",
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-09",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "unicode",
+        "crlf",
+        "selection-scope"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "😀 The café samples was frozen.\r\nA second sentence was retained.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 31
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "was frozen",
+            "range": {
+              "start": 20,
+              "length": 10
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "😀 The café samples were frozen.\r\nA second sentence was retained."
+        ],
+        "preserveLiterals": [
+          "😀",
+          "café",
+          "\r\nA second sentence was retained."
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-10",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "default-terminology"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "CRISPR-Cas9 samples was described alongside LC-MS/MS data.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 58
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "was",
+            "range": {
+              "start": 20,
+              "length": 3
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "CRISPR-Cas9 samples were described alongside LC-MS/MS data."
+        ],
+        "preserveLiterals": [
+          "CRISPR-Cas9",
+          "LC-MS/MS"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-11",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "spelling",
+        "en-GB"
+      ],
+      "mode": "spelling",
+      "input": {
+        "rawText": "The color was recorded under uniform illumination.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-GB",
+          "style": "minimal",
+          "customTerms": []
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 50
+        },
+        "protectedRanges": []
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "color",
+            "range": {
+              "start": 4,
+              "length": 5
+            },
+            "categories": [
+              "spelling"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "The colour was recorded under uniform illumination."
+        ],
+        "preserveLiterals": [],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    },
+    {
+      "id": "hold-12",
+      "source": "self-authored public synthetic text; no private manuscript",
+      "tags": [
+        "negation",
+        "numbers",
+        "identifier"
+      ],
+      "mode": "polish",
+      "input": {
+        "rawText": "The effect were absent after 3 d; accession XP_012345678.1 was retained.",
+        "contextBefore": "",
+        "contextAfter": "",
+        "profile": {
+          "spellingVariant": "en-US",
+          "style": "minimal",
+          "customTerms": [
+            "XP_012345678.1"
+          ]
+        },
+        "targetRange": {
+          "start": 0,
+          "length": 72
+        },
+        "protectedRanges": [
+          {
+            "start": 44,
+            "length": 14
+          }
+        ]
+      },
+      "expected": {
+        "issues": [
+          {
+            "anchorText": "were",
+            "range": {
+              "start": 11,
+              "length": 4
+            },
+            "categories": [
+              "grammar"
+            ],
+            "reviewOnly": false
+          }
+        ],
+        "acceptableTexts": [
+          "The effect was absent after 3 d; accession XP_012345678.1 was retained."
+        ],
+        "preserveLiterals": [
+          "absent",
+          "3 d",
+          "XP_012345678.1"
+        ],
+        "forbiddenNewLiterals": [
+          "proves",
+          "causes",
+          "demonstrates"
+        ],
+        "authorQuestionIntent": null,
+        "scope": "Reviewable synthetic expectations, not expert annotation or proof of semantic equivalence."
+      }
+    }
+  ]
+}

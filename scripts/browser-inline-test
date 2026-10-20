@@ -1,0 +1,641 @@
+#!/usr/bin/env node
+'use strict';
+// Synthetic JSDOM + mocked Chrome APIs only. Never launches Chrome, reads user
+// pages, loads an extension, or uses the exported local pairing token.
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const { spawnSync } = require('node:child_process');
+const root = path.resolve(__dirname, '..');
+const browser = path.join(root, 'Integrations/Browser');
+const identity = JSON.parse(fs.readFileSync(path.join(root, 'Integrations/identity.json'), 'utf8'));
+const manifest = JSON.parse(fs.readFileSync(path.join(browser, 'manifest.json'), 'utf8'));
+const contentSource = fs.readFileSync(path.join(browser, 'content.js'), 'utf8');
+const workerSource = fs.readFileSync(path.join(browser, 'service-worker.js'), 'utf8');
+const SECRET = 'synthetic_test_pairing_token_12345678901234567890';
+const ENDPOINT = 'http://127.0.0.1:43792/v1/inline/translate';
+const checks = {};
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function until(condition, message, timeout = 4000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) { if (await condition()) return; await wait(5); }
+  throw new Error(message);
+}
+function event() { let callback; return { addListener(value) { callback = value; }, fire(...args) { return callback?.(...args); } }; }
+function workerHarness(options = {}) {
+  const values = {}, calls = [], deliveries = [], outputs = [];
+  const tab = { id: 7, active: true, url: 'https://fixture.test/paper' };
+  const tabs = new Map([[tab.id, tab]]);
+  const events = { message: event(), action: event(), command: event(), removed: event(), updated: event(), activated: event() };
+  const chrome = {
+    runtime: { id: identity.chromeExtensionID, getURL: name => `chrome-extension://${identity.chromeExtensionID}/${name}`, onMessage: events.message },
+    storage: { session: {
+      async get(key) { return key == null ? structuredClone(values) : { [key]: structuredClone(values[key]) }; },
+      async set(next) { Object.assign(values, structuredClone(next)); },
+      async remove(key) { delete values[key]; }
+    } },
+    tabs: { async get(id) { if (!tabs.has(id)) throw new Error('No such tab'); return { ...tabs.get(id) }; }, async query() { return [{ ...tab }]; },
+      async sendMessage(id, message, target) { deliveries.push({ id, message, target }); return { ok: true, supported: true }; },
+      onRemoved: events.removed, onUpdated: events.updated, onActivated: events.activated },
+    scripting: { async executeScript(input) {
+      await options.inject?.(tabs.get(input.target.tabId));
+      return [{ frameId: 0, documentId: 'doc-' + input.target.tabId }];
+    } },
+    action: { onClicked: events.action, async setBadgeText() {}, async setTitle() {} },
+    commands: { onCommand: events.command }
+  };
+  const configuration = { version: 1, endpoint: 'http://127.0.0.1:43792', token: SECRET,
+    extensionID: identity.chromeExtensionID, ...options.configuration };
+  async function fetchFixture(url, init = {}) {
+    if (url.endsWith('/connection.local.json')) return new Response(JSON.stringify(configuration), { status: 200 });
+    const body = JSON.parse(init.body);
+    calls.push({ url, init, body });
+    const output = outputs.shift();
+    if (typeof output === 'function') return output(url, init, body);
+    return new Response(JSON.stringify(output?.body || { id: body.id, translation: '译文 0.05' }), { status: output?.status || 200 });
+  }
+  const context = vm.createContext({ chrome, fetch: fetchFixture, URL, AbortController, setTimeout, clearTimeout,
+    crypto: crypto.webcrypto, console: { log() { throw new Error('worker must not log'); }, error() { throw new Error('worker must not log'); } } });
+  context.importScripts = (...names) => names.forEach(name => vm.runInContext(fs.readFileSync(path.join(browser, name), 'utf8'), context, { filename: name }));
+  vm.runInContext(workerSource, context, { filename: 'service-worker.js' });
+  const sender = { id: identity.chromeExtensionID, tab: { id: tab.id }, frameId: 0, documentId: 'doc-7', url: tab.url };
+  function request(message, overrides = {}) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('worker message did not terminate')), 3000);
+      const accepted = events.message.fire(message, { ...sender, ...overrides }, response => { clearTimeout(timer); resolve(response); });
+      if (!accepted) { clearTimeout(timer); resolve(null); }
+    });
+  }
+  async function start(target = tab) {
+    events.action.fire(target);
+    await until(() => deliveries.some(value => value.id === target.id && value.message.type === 'INLINE_START'), 'worker did not start injected session');
+    return values['askgpt.inline.' + target.id];
+  }
+  function translation(session, extra = {}) {
+    return { type: 'INLINE_TRANSLATE', sessionId: session.id, id: 'fixture-1', text: 'The response was not significant (P > 0.05).', source: 'en', target: 'zh-Hans', ...extra };
+  }
+  return { values, tab, tabs, events, calls, deliveries, outputs, request, start, translation };
+}
+function heldFetch(_url, init) {
+  return new Promise((_resolve, reject) => {
+    if (init.signal.aborted) reject(new DOMException('Aborted', 'AbortError'));
+    else init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+  });
+}
+async function workerChecks() {
+  const harness = workerHarness();
+  const noSession = await harness.request(harness.translation({ id: 'invented' }));
+  assert.equal(noSession.code, 'INACTIVE'); assert.equal(harness.calls.length, 0);
+  const active = await harness.start();
+  for (const sender of [{ id: 'another-extension' }, { documentId: 'old-document' }, { frameId: 1 }, { tab: undefined }]) {
+    assert.equal((await harness.request(harness.translation(active), sender)).code, 'INACTIVE');
+  }
+  for (const extra of [{ id: 'x'.repeat(81) }, { text: '😀'.repeat(1801) }, { source: 'auto' }, { target: 'en' }, { text: '' }]) {
+    assert.equal((await harness.request(harness.translation(active, extra))).code, 'INVALID');
+  }
+  assert.equal(harness.calls.length, 0);
+  checks.worker_sender_session_document_and_payload_guards = true;
+  const inactive = workerHarness(); inactive.tab.active = false; inactive.events.action.fire(inactive.tab); await wait(20);
+  assert.equal(inactive.deliveries.length, 0); assert.equal(Object.keys(inactive.values).length, 0);
+  checks.worker_initial_inactive_tab_cannot_authorize_translation = true;
+  const switching = workerHarness({ inject(target) { target.active = false; } });
+  const switched = await switching.start();
+  assert.equal((await switching.request(switching.translation(switched))).ok, true);
+  const replacing = workerHarness({ inject(target) { target.url = 'https://fixture.test/new-document'; } });
+  replacing.events.action.fire({ ...replacing.tab }); await wait(20);
+  assert.equal(Object.keys(replacing.values).length, 0);
+  assert(!replacing.deliveries.some(value => value.message.type === 'INLINE_START'));
+  checks.worker_focus_move_during_injection_keeps_authorization_but_document_navigation_does_not = true;
+  const background = workerHarness(), first = await background.start();
+  const second = { id: 8, active: true, url: 'https://fixture.test/second' }; background.tabs.set(second.id, second);
+  let releaseFirst;
+  background.outputs.push((_url, init, body) => new Promise((resolve, reject) => {
+    releaseFirst = () => resolve(new Response(JSON.stringify({ id: body.id, translation: 'First document' })));
+    init.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
+  }));
+  const firstRequest = background.request(background.translation(first));
+  await until(() => releaseFirst, 'background first document did not start');
+  background.tab.active = false; background.events.activated.fire({ tabId: second.id });
+  const secondSession = await background.start(second);
+  background.outputs.push(heldFetch);
+  const secondSender = { tab: { id: second.id }, documentId: 'doc-8', url: second.url };
+  const secondRequest = background.request(background.translation(secondSession), secondSender);
+  await until(() => background.calls.length === 2, 'second independent document did not start');
+  await background.request({ type: 'INLINE_CONTROL', sessionId: secondSession.id, action: 'pause' }, secondSender);
+  assert.equal((await secondRequest).code, 'CANCELLED');
+  releaseFirst(); assert.equal((await firstRequest).ok, true);
+  assert.equal(background.values['askgpt.inline.7'].paused, false);
+  assert.equal(background.values['askgpt.inline.8'].paused, true);
+  assert(!background.deliveries.some(value => value.id === 7 && value.message.type === 'INLINE_PAUSE'));
+  assert.equal((await background.request(background.translation(first, { id: 'background-next' }))).ok, true);
+  background.events.updated.fire(7, { url: 'https://fixture.test/replaced' }, { ...background.tab, url: 'https://fixture.test/replaced' });
+  await until(() => !background.values['askgpt.inline.7'], 'background navigation did not revoke its document');
+  assert.equal((await background.request(background.translation(first))).code, 'INACTIVE');
+  assert(background.values['askgpt.inline.8']);
+  checks.worker_authorized_tabs_continue_independently_and_stop_or_navigation_only_retires_owner = true;
+  const success = await harness.request(harness.translation(active));
+  assert.equal(success.ok, true); assert.equal(harness.calls.length, 1);
+  assert.equal(harness.calls[0].url, ENDPOINT);
+  assert.deepEqual(Object.keys(harness.calls[0].body).sort(), ['id', 'source', 'target', 'text']);
+  assert.equal(harness.calls[0].init.headers.Authorization, 'Bearer ' + SECRET);
+  assert(!JSON.stringify(success).includes(SECRET)); assert(!JSON.stringify(harness.deliveries).includes(SECRET));
+  checks.worker_fixed_endpoint_private_token_and_minimal_response = true;
+  harness.outputs.push(heldFetch);
+  const pending = harness.request(harness.translation(active, { id: 'cancel-me' }));
+  await until(() => harness.calls.length === 2, 'held request did not start');
+  await harness.request({ type: 'INLINE_CONTROL', sessionId: active.id, action: 'cancel-block', id: 'cancel-me' });
+  assert.equal((await pending).code, 'CANCELLED');
+  harness.outputs.push(heldFetch);
+  const paused = harness.request(harness.translation(active, { id: 'pause-me' }));
+  await until(() => harness.calls.length === 3, 'pause request did not start');
+  await harness.request({ type: 'INLINE_CONTROL', sessionId: active.id, action: 'pause' });
+  assert.equal((await paused).code, 'CANCELLED');
+  assert.equal((await harness.request(harness.translation(active))).code, 'INACTIVE');
+  await harness.request({ type: 'INLINE_CONTROL', sessionId: active.id, action: 'resume' });
+  assert.equal((await harness.request(harness.translation(active))).ok, true);
+  checks.worker_block_cancel_pause_resume_abort_fetches = true;
+  harness.outputs.push(heldFetch);
+  const navigating = harness.request(harness.translation(active, { id: 'navigation' }));
+  await until(() => harness.calls.length === 5, 'navigation request did not start');
+  harness.events.updated.fire(7, { status: 'loading' }, harness.tab);
+  assert.equal((await navigating).code, 'CANCELLED');
+  await until(() => Object.keys(harness.values).length === 0, 'navigation did not revoke session');
+  checks.worker_navigation_revokes_session_and_aborts_fetch = true;
+  const restored = workerHarness(); const restoreSession = await restored.start();
+  restored.outputs.push(heldFetch);
+  const restoring = restored.request(restored.translation(restoreSession));
+  await until(() => restored.calls.length === 1, 'restore request did not start');
+  await restored.request({ type: 'INLINE_CONTROL', sessionId: restoreSession.id, action: 'restore' });
+  assert.equal((await restoring).code, 'CANCELLED'); assert.equal(Object.keys(restored.values).length, 0);
+  checks.worker_restore_revokes_and_cancels = true;
+  const retry = workerHarness(); const retrySession = await retry.start();
+  retry.outputs.push(...Array.from({ length: 3 }, () => ({ status: 503, body: { error: { code: 'translation_busy' } } })));
+  assert.equal((await retry.request(retry.translation(retrySession))).code, 'BUSY'); assert.equal(retry.calls.length, 3);
+  retry.outputs.push({ status: 503, body: { error: { code: 'native_unavailable' } } });
+  assert.equal((await retry.request(retry.translation(retrySession))).code, 'NATIVE_UNAVAILABLE'); assert.equal(retry.calls.length, 4);
+  retry.outputs.push({ status: 502, body: { error: { code: 'translation_failed' } } });
+  assert.equal((await retry.request(retry.translation(retrySession))).code, 'FAILED'); assert.equal(retry.calls.length, 5);
+  checks.worker_busy_retry_is_bounded_and_unavailable_is_not_retried = true;
+  const badConfig = workerHarness({ configuration: { endpoint: 'https://not-allowed.invalid' } });
+  const badSession = await badConfig.start();
+  assert.equal((await badConfig.request(badConfig.translation(badSession))).code, 'UNPAIRED');
+  assert.equal(badConfig.calls.length, 0);
+  checks.worker_rejects_nonlocal_configuration = true;
+  const reverse = workerHarness(); const reverseSession = await reverse.start();
+  for (const pair of [{ source: 'zh', target: 'en' }, { source: 'zh-Hans', target: 'zh-Hans' },
+    { source: 'en', target: 'en' }, { source: 'auto', target: 'en' }]) {
+    assert.equal((await reverse.request(reverse.translation(reverseSession, pair))).code, 'INVALID');
+  }
+  assert.equal(reverse.calls.length, 0);
+  const reverseResult = await reverse.request(reverse.translation(reverseSession,
+    { text: '处理组没有增加，剂量为 3 mg。', source: 'zh-Hans', target: 'en' }));
+  assert.equal(reverseResult.ok, true);
+  assert.deepEqual(reverse.calls[0].body, { id: 'fixture-1', text: '处理组没有增加，剂量为 3 mg。', source: 'zh-Hans', target: 'en' });
+  assert(!JSON.stringify(reverseResult).includes(SECRET));
+  checks.worker_exact_bidirectional_pairs_forward_source_and_target_without_token_leak = true;
+}
+async function domChecks(JSDOM) {
+  const environments = [];
+  function fixture(html, handler, options = {}) {
+    const dom = new JSDOM(html, { url: 'https://fixture.test/paper', runScripts: 'outside-only', pretendToBeVisual: true });
+    environments.push(dom);
+    const window = dom.window, roots = new Map(), calls = [], controls = [], listeners = [];
+    const originalAttach = window.Element.prototype.attachShadow;
+    window.Element.prototype.attachShadow = function (options) { const value = originalAttach.call(this, options); roots.set(this, value); return value; };
+    const preferences = options.preferences || {}, preferenceWrites = [];
+    window.chrome = { storage: { local: {
+      get(key, callback) {
+        if (options.readPreference) options.readPreference(key, callback);
+        else queueMicrotask(() => callback({ [key]: preferences[key] }));
+      },
+      set(values, callback) { Object.assign(preferences, values); preferenceWrites.push({ ...values }); queueMicrotask(callback); }
+    } }, runtime: { id: identity.chromeExtensionID, onMessage: { addListener(listener) { listeners.push(listener); } },
+      sendMessage(message, callback) {
+        if (message.type === 'INLINE_CONTROL') { controls.push(message); queueMicrotask(() => callback({ ok: true })); return; }
+        calls.push(message);
+        if (handler) handler(message, callback);
+        else queueMicrotask(() => callback({ ok: true, id: message.id, translation: '中文：' + message.text }));
+      } } };
+    window.eval(contentSource);
+    function send(value, sender = { id: identity.chromeExtensionID }) { let response; listeners[0](value, sender, result => { response = result; }); return response; }
+    function start() { return send({ type: 'INLINE_START', sessionId: 'synthetic-session' }); }
+    const translations = () => [...window.document.querySelectorAll('askgpt-inline-translation')].map(host => roots.get(host).querySelector('div').textContent);
+    const bar = () => roots.get(window.document.querySelector('askgpt-inline-controls'));
+    function click(name) {
+      const action = { '停止': 'pause', '继续': 'resume', '恢复原文': 'restore', '方向': 'direction' }[name] || name;
+      const button = [...bar().querySelectorAll('button')].find(button => button.dataset.action === action || button.dataset.color === name);
+      assert(button, 'missing toolbar action ' + name); button.click();
+    }
+    const translatedElements = () => [...window.document.querySelectorAll('askgpt-inline-translation')].map(host => roots.get(host).querySelector('div'));
+    return { window, calls, controls, roots, listeners, send, start, translations, translatedElements, bar, click, preferences, preferenceWrites };
+  }
+  try {
+    const layouts = fixture(`<main><section id="grid" style="display:grid;grid-template-columns:1fr 1fr">
+      <p id="grid-a">Grid original alpha.</p><p id="grid-b">Grid original beta.</p></section>
+      <section id="flex" style="display:flex"><p id="flex-a" style="display:flex;height:20px;max-height:20px;overflow:hidden">Flex original alpha.</p><p id="flex-b">Flex original beta.</p></section>
+      <ul><li id="list-a">List original alpha.</li><li id="list-b">List original beta.</li></ul>
+      <table><tbody><tr><td id="cell-a">Cell original alpha.</td><td id="cell-b">Cell original beta.</td></tr></tbody></table>
+      <section style="column-count:2"><p id="columns-a">Column original alpha.</p><p id="columns-b">Column original beta.</p></section>
+      <p id="inner-columns" style="column-count:2">Paragraph columns original alpha.</p></main>`);
+    const layoutDocument = layouts.window.document;
+    const layoutOriginal = layoutDocument.querySelector('main').outerHTML;
+    const layoutNodes = [...layoutDocument.querySelectorAll('p,li,td')];
+    let clicked = 0; layoutNodes[0].addEventListener('click', () => clicked++);
+    layouts.start(); await until(() => layouts.translations().length === layoutNodes.length, 'layout fixture did not translate');
+    for (const source of layoutNodes) {
+      const host = source.querySelector('askgpt-inline-translation');
+      assert(host, source.id + ' translation must be contained in its original layout item');
+      assert.equal(source.lastElementChild, host, source.id + ' translation must follow the original inside one item');
+      assert.equal(layouts.roots.get(host).querySelector('div').textContent, '中文：' + source.firstChild.textContent);
+    }
+    assert.equal(layoutDocument.querySelector('#grid').children.length, 2);
+    assert.equal(layoutDocument.querySelector('#flex').children.length, 2);
+    assert.equal(layoutDocument.querySelector('ul').children.length, 2);
+    assert.equal(layoutDocument.querySelector('tr').children.length, 2);
+    assert.equal(layoutDocument.querySelector('#flex-a').style.display, 'block');
+    assert.equal(layoutDocument.querySelector('#flex-a').style.height, 'auto');
+    assert.equal(layoutDocument.querySelector('#flex-a').style.maxHeight, 'none');
+    assert.equal(layoutDocument.querySelector('#flex-a').style.overflowX, 'visible');
+    assert.equal(layoutDocument.querySelector('#inner-columns').style.columnCount, 'auto');
+    layoutNodes[0].click(); assert.equal(clicked, 1);
+    layouts.click('恢复原文');
+    assert.equal(layoutDocument.querySelector('main').outerHTML, layoutOriginal);
+    checks.dom_grid_flex_list_table_columns_keep_each_original_and_translation_in_one_item_and_restore = true;
+    const moving = fixture('<main><section id="left"><p id="moving-a">Moving original alpha.</p><p id="moving-b">Moving original beta.</p></section><section id="right" style="display:grid"></section></main>');
+    const movingDocument = moving.window.document;
+    moving.start(); await until(() => moving.translations().length === 2, 'moving fixture missing translations');
+    const movingA = movingDocument.querySelector('#moving-a'), movingB = movingDocument.querySelector('#moving-b');
+    const movingHost = movingA.querySelector('askgpt-inline-translation');
+    movingDocument.querySelector('#right').append(movingA);
+    await wait(180); assert.equal(movingA.lastElementChild, movingHost);
+    movingHost.remove();
+    await until(() => movingA.lastElementChild === movingHost, 'removed translation was not repaired under its original');
+    movingB.append(movingHost);
+    await until(() => movingA.lastElementChild === movingHost, 'misplaced translation was not reclaimed by its original');
+    const movingCalls = moving.calls.length; await wait(300);
+    assert.equal(moving.calls.length, movingCalls); assert.equal(movingCalls, 2);
+    assert.equal(moving.translations().length, 2);
+    moving.click('恢复原文');
+    assert.equal(movingA.parentElement.id, 'right', 'restoring must keep the site\'s own node movement');
+    assert.equal(movingA.hasAttribute('style'), false);
+    checks.dom_moved_original_carries_translation_removed_or_misplaced_hosts_repair_without_retranslation = true;
+    let movedReply;
+    const pendingMove = fixture('<main><section id="pending-left"><p id="pending-move">Pending source moves before response.</p></section><section id="pending-right" style="display:flex"></section></main>', (message, callback) => {
+      movedReply = () => callback({ ok: true, id: message.id, translation: '移动后的对应译文。' });
+    });
+    pendingMove.start(); await until(() => movedReply, 'pending move request missing');
+    const pendingSource = pendingMove.window.document.querySelector('#pending-move');
+    pendingMove.window.document.querySelector('#pending-right').append(pendingSource); movedReply();
+    await until(() => pendingMove.translations().length === 1, 'moved pending translation missing');
+    assert.equal(pendingSource.lastElementChild.tagName, 'ASKGPT-INLINE-TRANSLATION');
+    assert.equal(pendingSource.parentElement.children.length, 1);
+    assert.equal(pendingMove.calls.length, 1);
+    checks.dom_pending_source_reparenting_attaches_result_at_current_source_location = true;
+    const siteStyles = fixture('<main><p id="site-style" style="height:20px;color:navy;overflow-x:clip">Site style updates remain after restore.</p></main>');
+    siteStyles.start(); await until(() => siteStyles.translations().length === 1, 'site style fixture missing');
+    const siteSource = siteStyles.window.document.querySelector('#site-style');
+    siteSource.style.setProperty('height', '99px'); siteSource.style.setProperty('width', '70%');
+    siteSource.style.setProperty('color', 'purple');
+    await until(() => siteSource.style.height === 'auto', 'updated source did not preserve downward flow');
+    siteStyles.click('恢复原文');
+    assert.equal(siteSource.style.height, '99px'); assert.equal(siteSource.style.width, '70%');
+    assert.equal(siteSource.style.color, 'purple'); assert.equal(siteSource.style.overflowX, 'clip');
+    assert.equal(siteSource.style.overflowY, '');
+    checks.dom_restore_preserves_site_inline_updates_and_original_overflow_longhands = true;
+    let unsupportedReply;
+    const positioning = fixture('<main><p id="supported">Ordinary supported paragraph.</p><p style="position:absolute">Absolute source must remain unchanged.</p><p style="writing-mode:vertical-rl">Vertical source must remain unchanged.</p></main>', (message, callback) => {
+      unsupportedReply = () => callback({ ok: true, id: message.id, translation: '不应插入绝对定位的段落。' });
+    });
+    positioning.start(); await until(() => unsupportedReply, 'positioning fixture missing request');
+    positioning.window.document.querySelector('#supported').style.position = 'absolute'; unsupportedReply();
+    await wait(180); assert.equal(positioning.calls.length, 1); assert.equal(positioning.translations().length, 0);
+    checks.dom_absolute_fixed_vertical_sources_are_kept_original_and_late_layout_changes_reject_results = true;
+    const clipped = fixture('<main><section id="clip" style="height:20px;overflow-x:hidden;overflow-y:hidden"><p id="clip-source">A clipped card must not display a cut-off translation.</p></section></main>');
+    const clipDocument = clipped.window.document;
+    const originalBounds = clipped.window.Element.prototype.getBoundingClientRect;
+    clipped.window.Element.prototype.getBoundingClientRect = function () {
+      if (this.id === 'clip') return { top: 0, bottom: 20, left: 0, right: 300, width: 300, height: 20 };
+      if (this.tagName === 'ASKGPT-INLINE-TRANSLATION') return { top: 25, bottom: 60, left: 0, right: 300, width: 300, height: 35 };
+      return originalBounds.call(this);
+    };
+    const clipOriginal = clipDocument.querySelector('#clip').outerHTML;
+    clipped.start(); await until(() => clipped.calls.length === 1, 'clipped-card request missing');
+    await wait(300); assert.equal(clipped.translations().length, 0, 'a clipped translation must be withheld instead of being cut off');
+    assert.equal(clipDocument.querySelector('#clip').outerHTML, clipOriginal);
+    assert.equal(clipped.calls.length, 1);
+    checks.dom_fixed_ancestor_clipping_keeps_original_and_never_partially_renders_or_loops = true;
+    for (const axis of ['y', 'x']) {
+      const scrolled = fixture(`<main id="viewport" style="overflow-${axis}:hidden"><section id="scrolling" style="overflow-${axis}:auto"><div><p id="offscreen">Offscreen source stays paired when scrolling into view.</p></div></section></main>`);
+      const scrollDocument = scrolled.window.document, scrollSource = scrollDocument.querySelector('#offscreen');
+      const scrollContainer = scrollDocument.querySelector('#scrolling');
+      for (const [name, value] of Object.entries(axis === 'y' ? { clientHeight: 768, scrollHeight: 2000 } : { clientWidth: 768, scrollWidth: 2000 })) {
+        Object.defineProperty(scrollContainer, name, { configurable: true, value });
+      }
+      let offset = 900;
+      const baseRect = scrolled.window.Element.prototype.getBoundingClientRect;
+      scrolled.window.Element.prototype.getBoundingClientRect = function () {
+        if (this.id === 'viewport' || this.id === 'scrolling') return { top: 0, bottom: 768, left: 0, right: 768, width: 768, height: 768 };
+        if (this.id === 'offscreen') return axis === 'y' ? { top: offset, bottom: offset + 25, left: 0, right: 300, width: 300, height: 25 } :
+          { top: 0, bottom: 25, left: offset, right: offset + 25, width: 25, height: 25 };
+        if (this.tagName === 'ASKGPT-INLINE-TRANSLATION') return axis === 'y' ? { top: offset + 30, bottom: offset + 80, left: 0, right: 300, width: 300, height: 50 } :
+          { top: 30, bottom: 80, left: offset + 30, right: offset + 80, width: 50, height: 50 };
+        return baseRect.call(this);
+      };
+      scrolled.start(); await until(() => scrolled.calls.length === 1, axis + '-axis offscreen request missing');
+      await wait(180); assert.equal(scrolled.translations().length, 1, axis + '-axis outer viewport clipping incorrectly removed a scrollable pair');
+      offset = 100; scrolled.window.dispatchEvent(new scrolled.window.Event('scroll'));
+      scrollSource.className = 'in-view'; await wait(180);
+      assert.equal(scrolled.translations().length, 1); assert.equal(scrolled.calls.length, 1);
+      assert.equal(scrollSource.lastElementChild.tagName, 'ASKGPT-INLINE-TRANSLATION');
+    }
+    checks.dom_outer_viewport_clipping_does_not_drop_offscreen_pairs_inside_horizontal_or_vertical_scrollers = true;
+    for (const mode of ['inside-card', 'wrong-axis', 'no-scroll-range', 'nested-scroll-chain']) {
+      const nestedScroll = fixture(`<main id="outer-scroll" style="overflow-y:auto"><section id="outer-clip" style="overflow-x:hidden;overflow-y:hidden"><div id="middle-scroll" style="overflow-x:auto"><section id="inner-scroll" style="overflow-y:auto"><div id="inner-card"><p id="nested-scroll-source">Nested scrolling keeps each source and result together.</p></div></section></div></section></main>`);
+      const nestedDocument = nestedScroll.window.document;
+      const rect = (top, bottom, left = 0, right = 300) => ({ top, bottom, left, right, width: right - left, height: bottom - top });
+      const setSize = (id, values) => {
+        for (const [name, value] of Object.entries(values)) Object.defineProperty(nestedDocument.querySelector(id), name, { configurable: true, value });
+      };
+      setSize('#outer-scroll', { clientHeight: 768, scrollHeight: 2000 });
+      if (mode === 'inside-card') nestedDocument.querySelector('#inner-card').style.overflowY = 'hidden';
+      if (mode !== 'no-scroll-range') setSize('#middle-scroll', { clientWidth: 300, scrollWidth: 2000 });
+      if (mode !== 'wrong-axis' && mode !== 'no-scroll-range') setSize('#inner-scroll', { clientHeight: 768, scrollHeight: 2000 });
+      const baseBounds = nestedScroll.window.Element.prototype.getBoundingClientRect;
+      nestedScroll.window.Element.prototype.getBoundingClientRect = function () {
+        if (this.id === 'inner-card') return rect(900, 925, 900, 925);
+        if (this.id === 'outer-clip' || this.id === 'outer-scroll' || this.id === 'middle-scroll' || this.id === 'inner-scroll') return rect(0, 768, 0, 768);
+        if (this.id === 'nested-scroll-source') return rect(900, 925, 900, 925);
+        if (this.tagName === 'ASKGPT-INLINE-TRANSLATION') return rect(930, 980, 930, 980);
+        return baseBounds.call(this);
+      };
+      nestedScroll.start(); await until(() => nestedScroll.calls.length === 1, mode + ' request missing');
+      await wait(180);
+      assert.equal(nestedScroll.translations().length, mode === 'nested-scroll-chain' ? 1 : 0,
+        mode + ' failed to distinguish a local clipped card from a reachable scrolling viewport');
+      const nestedCalls = nestedScroll.calls.length; await wait(180); assert.equal(nestedScroll.calls.length, nestedCalls);
+    }
+    checks.dom_nested_scroll_chain_is_axis_specific_and_does_not_exempt_local_cards_or_non_scrollers = true;
+    const basic = fixture('<main><p id="a">First IL-1β response was not significant (P > 0.05).</p><p id="b">Second dose was 3 mg/mL.</p></main>');
+    const a = basic.window.document.querySelector('#a'), b = basic.window.document.querySelector('#b');
+    const node = a.firstChild, original = a.outerHTML;
+    basic.start();
+    await until(() => basic.translations().length === 2, 'paragraph translations were not inserted');
+    assert.equal(a.firstChild, node); assert.equal(a.textContent, node.textContent);
+    assert.equal(a.lastElementChild.tagName, 'ASKGPT-INLINE-TRANSLATION');
+    assert.equal(a.nextElementSibling, b);
+    assert(basic.translations()[0].includes('0.05')); assert(basic.translations()[1].includes('3 mg/mL'));
+    assert(!JSON.stringify(basic.calls).includes(SECRET));
+    const settledCalls = basic.calls.length; await wait(300); assert.equal(basic.calls.length, settledCalls);
+    checks.dom_original_nodes_order_numbers_and_no_observer_self_loop = true;
+    basic.window.eval(contentSource); assert.equal(basic.listeners.length, 1);
+    basic.click('恢复原文'); await wait(5);
+    assert.equal(basic.window.document.querySelectorAll('[data-askgpt-inline-owned]').length, 0);
+    assert.equal(a.outerHTML, original); assert.equal(a.firstChild, node);
+    checks.dom_restore_removes_only_owned_nodes_and_injection_is_idempotent = true;
+    const exclusions = fixture(`<main>
+      <p>Ordinary visible response 0.05.</p><nav><p>Navigation secret text</p></nav>
+      <section style="display:none"><p style="display:block">Hidden ancestor secret text</p></section>
+      <p style="opacity:0">Invisible opacity secret text</p>
+      <p>Visible value <span style="opacity:0">inline opacity secret text</span> remains 3 mg.</p>
+      <p>The identifier <code>IL-1β-123</code> must stay intact.</p>
+      <p>The formula <math><mi>x</mi><mn>2</mn></math> must stay intact.</p>
+      <p>The input <input value="private input value"> must not become a partial sentence.</p>
+      <p>The editor <span contenteditable="true">private editable words</span> must not become a partial sentence.</p>
+      <form><p>Form private response text</p><textarea>Private notes</textarea></form>
+      </main>`);
+    exclusions.start(); await until(() => exclusions.calls.length === 2, 'visible-only paragraphs were not translated'); await wait(200);
+    const transmitted = exclusions.calls.map(value => value.text).join('\n');
+    assert(!/secret|private|identifier|formula|editor|input|must stay/.test(transmitted));
+    assert(exclusions.bar().querySelector('span').title.includes('complex paragraphs kept unchanged'));
+    assert.equal(exclusions.bar().querySelector('span').textContent, '');
+    assert.equal(exclusions.calls.length, 2);
+    checks.dom_excludes_ancestor_hidden_opacity_and_entire_complex_paragraphs = true;
+    const dynamic = fixture('<main><p>Initial visible response 1.</p></main>');
+    dynamic.start(); await until(() => dynamic.calls.length === 1, 'initial dynamic paragraph missing');
+    const added = dynamic.window.document.createElement('p'); added.textContent = 'Dynamically loaded response 2.';
+    dynamic.window.document.querySelector('main').append(added);
+    await until(() => dynamic.translations().length === 2, 'dynamic paragraph missing');
+    const dynamicCalls = dynamic.calls.length; await wait(300); assert.equal(dynamic.calls.length, dynamicCalls);
+    checks.dom_dynamic_content_translates_once_without_mutation_loop = true;
+    let releaseOld;
+    const late = fixture('<main><p id="late">Original response 0.05.</p></main>', (message, callback) => {
+      if (!releaseOld) releaseOld = () => callback({ ok: true, id: message.id, translation: '旧译 0.05' });
+      else queueMicrotask(() => callback({ ok: true, id: message.id, translation: '新译 0.06' }));
+    });
+    late.start(); await until(() => releaseOld, 'held paragraph did not start');
+    late.window.document.querySelector('#late').textContent = 'Changed response 0.06.';
+    releaseOld();
+    await until(() => late.translations()[0] === '新译 0.06', 'old translation attached to a changed source paragraph');
+    assert(!late.translations().join('').includes('旧译'));
+    assert.equal(late.calls.length, 2);
+    checks.dom_source_change_rejects_late_result_before_observer_debounce = true;
+    let releaseSecond; let secondAttempts = 0;
+    const paused = fixture('<main><p>Keep completed paragraph 1.</p><p>Pause pending paragraph 2.</p></main>', (message, callback) => {
+      if (message.text.startsWith('Pause') && secondAttempts++ === 0) releaseSecond = () => callback({ ok: true, id: message.id, translation: '不应显示旧结果' });
+      else queueMicrotask(() => callback({ ok: true, id: message.id, translation: '译文：' + message.text }));
+    });
+    paused.start(); await until(() => releaseSecond, 'second pending paragraph missing');
+    paused.click('停止'); releaseSecond(); await wait(5);
+    assert.equal(paused.translations().length, 1);
+    paused.click('继续'); await until(() => paused.translations().length === 2, 'resume did not finish pending paragraph');
+    assert.equal(paused.calls.filter(value => value.text.startsWith('Keep')).length, 1);
+    assert(!paused.translations().join('').includes('不应显示旧结果'));
+    checks.dom_stop_resume_retains_completed_paragraphs_and_rejects_cancelled_reply = true;
+    let releaseBackground;
+    const backgroundPage = fixture('<main><p>Background original paragraph one.</p><p>Background original paragraph two.</p></main>', (message, callback) => {
+      if (!releaseBackground) releaseBackground = () => callback({ ok: true, id: message.id, translation: 'Background first result' });
+      else queueMicrotask(() => callback({ ok: true, id: message.id, translation: 'Background next result' }));
+    });
+    backgroundPage.start(); await until(() => releaseBackground, 'background DOM request did not start');
+    Object.defineProperty(backgroundPage.window.document, 'hidden', { configurable: true, value: true });
+    backgroundPage.window.document.dispatchEvent(new backgroundPage.window.Event('visibilitychange'));
+    releaseBackground();
+    await until(() => backgroundPage.translations().length === 2, 'hidden authorized page did not continue translation');
+    assert(!backgroundPage.controls.some(value => ['pause', 'cancel-block'].includes(value.action)));
+    backgroundPage.window.dispatchEvent(new backgroundPage.window.Event('pagehide'));
+    assert.equal(backgroundPage.translations().length, 0);
+    assert(backgroundPage.controls.some(value => value.action === 'restore'));
+    checks.dom_hidden_page_continues_authorized_work_and_page_exit_restores = true;
+    const long = fixture('<main><p>' + 'The dose was 3 mg and P > 0.05. '.repeat(150) + '</p></main>');
+    const longOriginal = long.window.document.querySelector('p').outerHTML;
+    long.start(); await until(() => long.calls.length >= 3 && long.translations().length === 1, 'long paragraph was not chunked');
+    assert(long.calls.every(value => Array.from(value.text).length <= 1800 && value.id.length <= 80));
+    assert.equal(long.window.document.querySelector('p').textContent, 'The dose was 3 mg and P > 0.05. '.repeat(150));
+    assert.equal(long.window.document.querySelectorAll('askgpt-inline-translation').length, 1);
+    long.click('恢复原文'); assert.equal(long.window.document.querySelector('p').outerHTML, longOriginal);
+    checks.dom_long_paragraph_chunks_are_bounded_and_rejoin_under_one_original = true;
+    const pdf = fixture('<embed type="application/pdf" src="https://fixture.test/paper.pdf">');
+    const pdfResult = pdf.start(); assert.equal(pdfResult.supported, false); assert.equal(pdf.calls.length, 0);
+    assert(pdf.bar().textContent.includes('Zotero'));
+    checks.dom_pdf_viewer_is_explicitly_unsupported_without_upload = true;
+    let replyRemoved;
+    const removed = fixture('<main><p>Removed paragraph response 1.</p></main>', (message, callback) => { replyRemoved = () => callback({ ok: true, id: message.id, translation: '不应出现' }); });
+    removed.start(); await until(() => replyRemoved, 'removed paragraph did not start');
+    removed.window.document.querySelector('p').remove(); replyRemoved(); await wait(200);
+    assert.equal(removed.translations().length, 0);
+    checks.dom_removed_paragraph_rejects_late_translation = true;
+    for (const mode of ['descendant-role-math', 'empty-input', 'block-role-math']) {
+      let releaseComplex;
+      const complex = fixture('<main><p id="complex">The <span id="term">IL-1β</span> response was 0.05.</p></main>', (message, callback) => {
+        releaseComplex = () => callback({ ok: true, id: message.id, translation: '不应插入复杂段译文' });
+      });
+      complex.start(); await until(() => releaseComplex, 'complex paragraph request did not start');
+      const paragraph = complex.window.document.querySelector('#complex');
+      if (mode === 'descendant-role-math') complex.window.document.querySelector('#term').setAttribute('role', 'math');
+      else if (mode === 'block-role-math') paragraph.setAttribute('role', 'math');
+      else paragraph.append(complex.window.document.createElement('input'));
+      releaseComplex(); await wait(20);
+      assert.equal(complex.translations().length, 0, mode + ' accepted a late result before observer debounce');
+      await wait(180); assert.equal(complex.translations().length, 0);
+      assert.equal(complex.calls.length, 1, mode + ' transmitted a partial replacement sentence');
+    }
+    checks.dom_pending_complex_change_rejects_reply_before_observer_debounce = true;
+    for (const onBlock of [false, true]) {
+      const completed = fixture('<main><p id="completed">The <span id="formula">IL-1β</span> response was 0.05.</p></main>');
+      completed.start(); await until(() => completed.translations().length === 1, 'completed paragraph fixture did not translate');
+      const target = completed.window.document.querySelector(onBlock ? '#completed' : '#formula');
+      target.setAttribute('role', 'math');
+      await until(() => completed.translations().length === 0, 'completed translation survived a role=math change');
+      assert.equal(completed.calls.length, 1);
+      assert(completed.window.document.querySelector('#completed').textContent.includes('IL-1β'));
+      assert(completed.bar().querySelector('span').title.includes('complex paragraphs kept unchanged'));
+    }
+    checks.dom_completed_role_math_change_removes_only_translation = true;
+    let releaseLeaf;
+    const reparented = fixture('<main><ul><li id="leaf">First synthetic sentence.</li></ul></main>', (message, callback) => {
+      if (message.text === 'First synthetic sentence.') releaseLeaf = () => callback({ ok: true, id: message.id, translation: '不应显示旧列表译文' });
+      else queueMicrotask(() => callback({ ok: true, id: message.id, translation: '第二句译文' }));
+    });
+    reparented.start(); await until(() => releaseLeaf, 'leaf-list paragraph did not start');
+    const list = reparented.window.document.querySelector('#leaf');
+    const nested = reparented.window.document.createElement('p'); nested.textContent = 'Second synthetic sentence.';
+    list.replaceChildren(nested);
+    await wait(180); releaseLeaf();
+    await until(() => reparented.translations()[0] === '第二句译文', 'replacement leaf paragraph did not translate');
+    await wait(180);
+    assert.deepEqual(reparented.calls.map(value => value.text), ['First synthetic sentence.', 'Second synthetic sentence.']);
+    assert(!reparented.translations().join('').includes('不应显示旧列表译文'));
+    checks.dom_parent_to_nested_paragraph_drops_old_record_without_retry_loop = true;
+    let quietReply;
+    const quiet = fixture('<main><p>Only the translated result should appear.</p></main>', (message, callback) => {
+      quietReply = () => callback({ ok: true, id: message.id, translation: '只显示译文。' });
+    });
+    quiet.start(); await until(() => quietReply, 'quiet pending request missing');
+    const status = quiet.bar().querySelector('span');
+    assert.equal(status.textContent, ''); assert.equal(status.hidden, true);
+    assert.equal(quiet.bar().querySelector('[data-action="direction"]').textContent, 'EN→中');
+    assert.equal(quiet.bar().querySelector('[data-action="pause"]').hidden, false);
+    assert.equal(quiet.bar().querySelector('[data-action="resume"]').hidden, true);
+    assert.equal(quiet.bar().querySelectorAll('.swatch').length, 4);
+    assert([...quiet.bar().querySelectorAll('button')].every(button => button.title && button.getAttribute('aria-label')));
+    quietReply(); await until(() => quiet.translations()[0] === '只显示译文。', 'quiet result not inserted');
+    await wait(5); assert.equal(status.textContent, ''); assert.equal(status.hidden, true);
+    quiet.click('停止'); assert.equal(status.textContent, '');
+    assert.equal(quiet.bar().querySelector('[data-action="resume"]').hidden, false);
+    checks.dom_compact_controls_have_no_wait_progress_or_success_text_and_keep_accessible_actions = true;
+    const preferences = {};
+    const colors = fixture('<main><p style="color:rgb(20,20,20)">Translation colors leave original text unchanged.</p></main>', undefined, { preferences });
+    const colorSource = colors.window.document.querySelector('p'); const colorOriginal = colorSource.outerHTML;
+    colors.start(); await until(() => colors.translations().length === 1, 'color paragraph not inserted');
+    assert.equal(colors.translatedElements()[0].style.color, 'rgb(29, 78, 216)');
+    for (const [color, expected] of [['green', 'rgb(4, 120, 87)'], ['purple', 'rgb(124, 58, 237)'], ['theme', ''], ['blue', 'rgb(29, 78, 216)']]) {
+      colors.click(color); assert.equal(colors.translatedElements()[0].style.color, expected);
+      assert.equal(colors.bar().querySelector(`[data-color="${color}"]`).getAttribute('aria-pressed'), 'true');
+      assert.equal(colorSource.textContent, 'Translation colors leave original text unchanged.');
+      assert.equal(colorSource.style.color, 'rgb(20, 20, 20)');
+    }
+    colors.click('green'); await wait(5);
+    assert.deepEqual(Object.keys(preferences), ['askgpt.inline.translationColor']);
+    assert.equal(preferences['askgpt.inline.translationColor'], 'green');
+    assert(colors.preferenceWrites.every(value => Object.keys(value).length === 1 && !JSON.stringify(value).includes(SECRET)));
+    const nextColors = fixture('<main><p>Another session restores only the selected color.</p></main>', undefined, { preferences });
+    nextColors.start(); await until(() => nextColors.translations().length === 1, 'persisted-color paragraph missing');
+    assert.equal(nextColors.translatedElements()[0].style.color, 'rgb(4, 120, 87)');
+    assert.equal(nextColors.bar().querySelector('[data-action="direction"]').textContent, 'EN→中');
+    colors.window.document.querySelector('p').style.color = 'rgb(240,240,240)';
+    await until(() => colors.translatedElements()[0].style.color === 'rgb(110, 231, 183)', 'dark-theme contrast color not refreshed');
+    checks.dom_color_dots_persist_only_color_recolor_results_and_preserve_source_styles = true;
+    let latePreference;
+    const selectedColor = fixture('<main><p>A chosen color wins over an old stored preference.</p></main>', undefined,
+      { readPreference(_key, callback) { latePreference = callback; } });
+    selectedColor.start(); selectedColor.click('purple'); latePreference({ 'askgpt.inline.translationColor': 'green' });
+    await until(() => selectedColor.translations().length === 1, 'late-color fixture missing translation');
+    assert.equal(selectedColor.translatedElements()[0].style.color, 'rgb(124, 58, 237)');
+    checks.dom_late_color_preference_cannot_override_a_session_selection = true;
+    const directions = fixture('<main><p id="en">The dose was not increased (3 mg).</p><p id="zh">剂量没有增加，仍为三毫克。</p><p id="mixed">ABC 中文字</p></main>',
+      (message, callback) => queueMicrotask(() => callback({ ok: true, id: message.id,
+        translation: message.source === 'en' ? '正向：' + message.text : 'English: ' + message.text })));
+    directions.start(); await until(() => directions.translations().length === 2, 'default English direction missing');
+    assert(directions.calls.every(value => value.source === 'en' && value.target === 'zh-Hans'));
+    assert(!directions.calls.some(value => value.text === '剂量没有增加，仍为三毫克。'));
+    const forwardIDs = directions.calls.map(value => value.id);
+    directions.click('green'); directions.click('方向');
+    assert.equal(directions.translations().length, 0, 'direction switch must immediately remove prior results');
+    await until(() => directions.translations().length === 2, 'reverse Chinese direction missing');
+    assert.equal(directions.bar().querySelector('[data-action="direction"]').textContent, '中→EN');
+    const reverseCalls = directions.calls.slice(2);
+    assert.equal(reverseCalls.length, 2);
+    assert(reverseCalls.every(value => value.source === 'zh-Hans' && value.target === 'en' && !forwardIDs.includes(value.id)));
+    assert(reverseCalls.some(value => value.text === '剂量没有增加，仍为三毫克。'));
+    assert(reverseCalls.some(value => value.text === 'ABC 中文字'));
+    assert(directions.translations().every(value => value.startsWith('English:')));
+    assert(directions.translatedElements().every(value => value.lang === 'en' && value.style.color === 'rgb(4, 120, 87)'));
+    directions.click('方向'); await until(() => directions.calls.length === 6 && directions.translations().length === 2, 'switching back did not retranslate');
+    assert(directions.calls.slice(4).every(value => value.source === 'en' && value.target === 'zh-Hans'));
+    assert.equal(new Set(directions.calls.map(value => value.id)).size, 6);
+    directions.click('方向'); await until(() => directions.calls.length === 8 && directions.translations().length === 2, 'second reverse switch missing');
+    directions.start(); await until(() => directions.calls.length === 10 && directions.translations().length === 2, 'new session did not translate default direction');
+    assert.equal(directions.bar().querySelector('[data-action="direction"]').textContent, 'EN→中');
+    assert(directions.calls.slice(8).every(value => value.source === 'en' && value.target === 'zh-Hans'));
+    assert.deepEqual(Object.keys(directions.preferences), ['askgpt.inline.translationColor']);
+    checks.dom_direction_defaults_en_zh_reverses_pure_chinese_retires_ids_and_does_not_persist_direction = true;
+    let releaseForward;
+    const lateDirection = fixture('<main><p>Pending English paragraph 3 mg.</p><p>等待中的中文段落三毫克。</p></main>', (message, callback) => {
+      if (message.source === 'en') releaseForward = () => callback({ ok: true, id: message.id, translation: '不应显示旧方向' });
+      else queueMicrotask(() => callback({ ok: true, id: message.id, translation: 'Only the new direction.' }));
+    });
+    lateDirection.start(); await until(() => releaseForward, 'forward held request missing');
+    lateDirection.click('方向'); await until(() => lateDirection.translations().length === 1, 'new direction did not run');
+    releaseForward(); await wait(180);
+    assert.deepEqual(lateDirection.translations(), ['Only the new direction.']);
+    assert.equal(lateDirection.calls.length, 2);
+    assert(lateDirection.controls.some(value => value.action === 'pause'));
+    assert(lateDirection.controls.some(value => value.action === 'cancel-block' && value.id === lateDirection.calls[0].id));
+    assert(lateDirection.controls.some(value => value.action === 'resume'));
+    checks.dom_direction_change_cancels_pending_work_and_rejects_old_direction_reply = true;
+    const failed = fixture('<main><p>Failure needs a short actionable message.</p></main>', (_message, callback) =>
+      queueMicrotask(() => callback({ ok: false, code: 'UNAVAILABLE', error: 'Very long internal error body must never be shown.' })));
+    failed.start(); await until(() => failed.bar().querySelector('span').textContent === 'Ask for GPT offline', 'necessary error was not shown');
+    assert.equal(failed.bar().querySelector('span').hidden, false);
+    assert.equal(failed.bar().querySelector('[data-action="resume"]').hidden, false);
+    assert(!failed.bar().textContent.includes('Very long'));
+    checks.dom_failure_remains_short_actionable_and_resumable = true;
+  } finally { for (const environment of environments) environment.window.close(); }
+}
+(async () => {
+  for (const file of ['service-worker.js', 'content.js', 'pdf-core.js', 'pdf-worker.js', 'pdf-reader.js']) {
+    const result = spawnSync(process.execPath, ['--check', path.join(browser, file)], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  }
+  const der = Buffer.from(manifest.key, 'base64');
+  const derived = [...crypto.createHash('sha256').update(der).digest().subarray(0, 16)]
+    .map(byte => String.fromCharCode(97 + (byte >> 4), 97 + (byte & 15))).join('');
+  assert.equal(derived, identity.chromeExtensionID);
+  assert.deepEqual(manifest.permissions, ['activeTab', 'scripting', 'storage']);
+  assert.deepEqual(manifest.host_permissions, ['http://127.0.0.1:43792/*', 'http://127.0.0.1:43795/*']);
+  assert.deepEqual(manifest.optional_host_permissions, ['file:///*']);
+  assert(!manifest.web_accessible_resources); assert(!fs.existsSync(path.join(browser, 'connection.local.json')));
+  assert(!contentSource.includes('innerHTML')); assert(!contentSource.includes('connection.local.json'));
+  checks.manifest_stable_identity_minimal_permissions_no_real_token_and_syntax = true;
+  await workerChecks();
+  let JSDOM;
+  try { ({ JSDOM } = require(path.join(root, 'work/browser-inline-test/node_modules/jsdom'))); }
+  catch { throw new Error('Test-only jsdom missing. Install the pinned work/browser-inline-test dependency; product has no npm dependency.'); }
+  await domChecks(JSDOM);
+  process.stdout.write(JSON.stringify({ status: 'PASS', checks, extensionID: derived, fixtureOnly: true }, null, 2) + '\n');
+})().catch(error => {
+  process.stdout.write(JSON.stringify({ status: 'FAIL', checks, error: error.message, stack: error.stack }, null, 2) + '\n');
+  process.exitCode = 1;
+});

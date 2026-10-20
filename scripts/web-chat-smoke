@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Three public CLI turns: general chat, real web retrieval, and context recall.
+No user selections, account names, raw RPC or credentials are recorded.
+"""
+import json
+import pathlib
+import re
+import subprocess
+import sys
+import tempfile
+
+root = pathlib.Path(__file__).resolve().parent.parent
+work = root / 'work/web-chat'
+work.mkdir(parents=True, exist_ok=True)
+source = (root/'Sources/AskGPT/ReaderStore.swift').read_text()
+match = re.search(r'    static let readingInstructions = ("[^\n]+")', source)
+if not match:
+    raise RuntimeError('Current chat instructions not found')
+instructions = json.loads(match.group(1))
+entry = r'''
+import Foundation
+@main struct WebChatSmoke {
+    static func main() async {
+        let backend = CodexBackend(settings: CodexSettings(), capabilities: .webChat)
+        do {
+            let instructions = try String(contentsOfFile: CommandLine.arguments[1], encoding: .utf8)
+            let connected = try await backend.validateConnection()
+            let thread = try await backend.startSession(instructions: instructions)
+            let questions = [
+                "本次公开测试标签是 CHAT-742。请用一句话解释 technical replicate，记住标签以便后续追问。",
+                "请实际联网检索并打开 OpenAI 官方的 Codex 网页搜索文档，确认 web_search=live 的含义。用两句话中文回答，附完整可点击的 Markdown 官方来源链接，不要仅凭记忆。",
+                "只回复最开始的测试标签，再用一句话指出上一轮检索的主题。"
+            ]
+            var turns: [[String: Any]] = []
+            var passed = true
+            for (index, question) in questions.enumerated() {
+                let result = try await backend.send(threadID: thread, text: question, onActivity: { _ in }, onDelta: { _ in })
+                let check: Bool
+                if index == 1 { check = result.webSearchCount > 0 && result.text.contains("https://") }
+                else if index == 2 { check = result.text.contains("CHAT-742") }
+                else { check = !result.text.isEmpty }
+                passed = passed && check
+                turns.append(["turn": index+1, "answer": result.text, "webSearchCount": result.webSearchCount,
+                    "firstDeltaSeconds": result.firstDeltaSeconds as Any? ?? NSNull(), "totalSeconds": result.totalSeconds,
+                    "sources": result.sources.map { ["title": $0.title, "url": $0.url.absoluteString] }, "passed": check])
+                FileHandle.standardError.write(Data("PUBLIC_TEST_TURN_\(index+1)_FINISHED search_items=\(result.webSearchCount)\n".utf8))
+            }
+            let report: [String: Any] = ["status": passed ? "PASS" : "FAIL", "authMode": connected.authMode,
+                "cliVersion": connected.cliVersion, "model": "gpt-6.1-sol", "effort": "low",
+                "mode": "webChat", "turns": turns, "apiFallback": false]
+            let data = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: URL(fileURLWithPath: CommandLine.arguments[2]))
+            print(String(decoding: data, as: UTF8.self))
+            await backend.releaseSession(threadID: thread)
+            await backend.shutdown()
+            if !passed { exit(1) }
+        } catch {
+            await backend.shutdown()
+            FileHandle.standardError.write(Data(("WEB_CHAT_SMOKE_FAILED: " + error.localizedDescription + "\n").utf8))
+            exit(1)
+        }
+    }
+}
+'''
+with tempfile.TemporaryDirectory(prefix='probe-', dir=work) as temporary:
+    probe = pathlib.Path(temporary)
+    swift = probe/'WebChatSmoke.swift'; swift.write_text(entry)
+    prompt = probe/'instructions.txt'; prompt.write_text(instructions)
+    binary = probe/'web-chat-smoke'
+    files = [root/'Sources/AskGPTCore'/name for name in ('Models.swift','CodexRPC.swift','CodexBackend.swift')]
+    subprocess.run(['/usr/bin/swiftc','-parse-as-library','-swift-version','5','-module-cache-path',str(work/'module-cache'),
+                    *map(str,files),str(swift),'-o',str(binary)],check=True)
+    result = subprocess.run([str(binary),str(prompt),str(work/'cli-live.json')],timeout=560)
+    sys.exit(result.returncode)

@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""Package reviewed local addons without credentials or installing them."""
+import base64
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import uuid
+import zipfile
+
+
+def runtime_files(directory):
+    ignored = {"tests", "test", "node_modules", ".git", ".cache"}
+    for source in sorted(directory.rglob("*")):
+        relative = source.relative_to(directory)
+        if any(part in ignored or part.startswith(".") for part in relative.parts):
+            continue
+        if source.is_symlink():
+            raise RuntimeError("Addon sources must not contain symbolic links")
+        if not source.is_file() or source.name.endswith((".test.js", ".test.mjs")):
+            continue
+        if source.name == "connection.local.json":
+            raise RuntimeError("A real connection file must not be bundled")
+        if source.suffix not in {".json", ".js", ".mjs", ".css", ".html", ".svg", ".png", ".ftl", ".dtd", ".properties"}:
+            continue
+        yield source, relative
+
+
+def main():
+    root = Path(__file__).resolve().parent.parent
+    integrations = root / "Integrations"
+    identity = json.loads((integrations / "identity.json").read_text())
+    browser = integrations / "Browser"
+    manifest = json.loads((browser / "manifest.json").read_text())
+    digest = hashlib.sha256(base64.b64decode(manifest["key"], validate=True)).digest()[:16].hex()
+    extension_id = "".join(chr(ord("a") + int(d, 16)) for d in digest)
+    assert extension_id == identity["chromeExtensionID"]
+    assert manifest["key"] == identity["chromeExtensionPublicKey"]
+    assert manifest["manifest_version"] == 3
+    assert set(manifest.get("permissions", [])) <= {"activeTab", "scripting", "storage"}
+    assert manifest.get("host_permissions") == ["http://127.0.0.1:43792/*", "http://127.0.0.1:43795/*"]
+    assert manifest.get("optional_host_permissions") == ["file:///*"]
+    assert not manifest.get("content_scripts") and not manifest.get("externally_connectable")
+    assert not manifest.get("web_accessible_resources")
+    destination = Path(sys.argv[1]) if len(sys.argv) > 1 else root / "dist/InlineIntegrations"
+    work = root / "work/inline-reading/package-history"
+    work.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix="stage-", dir=work))
+    target = staging / "InlineIntegrations"
+    target.mkdir()
+    browser_target = target / "Browser"
+    browser_target.mkdir(exist_ok=True)
+    files = list(runtime_files(browser))
+    names = {str(relative) for _, relative in files}
+    assert manifest["background"]["service_worker"] in names
+    for source, relative in files:
+        browser_file = browser_target / relative
+        browser_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, browser_file)
+    shutil.copyfile(integrations / "identity.json", target / "identity.json")
+    zotero = integrations / "Zotero"
+    zotero_manifest = json.loads((zotero / "manifest.json").read_text())
+    assert zotero_manifest.get("applications", {}).get("zotero")
+    zotero_files = list(runtime_files(zotero))
+    assert {"bootstrap.js", "manifest.json"} <= {str(relative) for _, relative in zotero_files}
+    with zipfile.ZipFile(target / "askgpt-inline-zotero.xpi", "w", zipfile.ZIP_DEFLATED) as package:
+        for source, relative in zotero_files:
+            member = zipfile.ZipInfo(str(relative), (2026, 10, 15, 0, 0, 0))
+            member.compress_type = zipfile.ZIP_DEFLATED
+            member.external_attr = 0o644 << 16
+            package.writestr(member, source.read_bytes())
+    with zipfile.ZipFile(target / "askgpt-inline-zotero.xpi") as package:
+        assert package.testzip() is None
+    report = {
+        "extensionID": extension_id,
+        "browserFiles": len(files),
+        "zoteroFiles": len(zotero_files),
+        "containsCredentials": False,
+    }
+    (target / "package-manifest.json").write_text(json.dumps(report, indent=2) + "\n")
+    assert not any(target.rglob("connection.local.json"))
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        if destination.is_symlink() or not destination.is_dir():
+            raise RuntimeError("Package destination must be a real directory")
+        old_manifest = destination / "package-manifest.json"
+        if any(destination.iterdir()) and (
+            not old_manifest.is_file() or
+            json.loads(old_manifest.read_text()).get("extensionID") != extension_id
+        ):
+            raise RuntimeError("Refusing to replace a directory not owned by this packager")
+        if any(destination.rglob("connection.local.json")):
+            raise RuntimeError("Credentials were found in the old package; refusing to package them")
+        destination.rename(work / ("previous-" + uuid.uuid4().hex))
+    target.rename(destination)
+    staging.rmdir()
+    print(json.dumps(report))
+
+
+if __name__ == "__main__":
+    main()

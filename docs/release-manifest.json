@@ -1,0 +1,1296 @@
+{
+  "schemaVersion": 1,
+  "project": "Ask for GPT",
+  "snapshotDate": "2026-10-20",
+  "distribution": "source",
+  "files": [
+    {
+      "path": ".gitignore",
+      "bytes": 172,
+      "sha256": "d184572fe4b392ef1ac1b09c0440ad140a630881e99648e97dce5162275e1ab8"
+    },
+    {
+      "path": "Integrations/Browser/.gitignore",
+      "bytes": 22,
+      "sha256": "74b6fd6bed112692d3660f7826b566938f642166d59dff04bcd77a3fc239597d"
+    },
+    {
+      "path": "Integrations/Browser/connection.local.example.json",
+      "bytes": 155,
+      "sha256": "4877a77016e87a298652aadc062a5853a1c6c322ea2e8567afaa9b6608d7d153"
+    },
+    {
+      "path": "Integrations/Browser/content.js",
+      "bytes": 34026,
+      "sha256": "e8c3a8fb740f79b4978ebabcf88477f29d1b9b0ed602f99ef3ec5b4a70ebb47f"
+    },
+    {
+      "path": "Integrations/Browser/manifest.json",
+      "bytes": 1294,
+      "sha256": "cf0a72a65c85b4b65e2845909eca638428a1c47018cca632f4303576687a7546"
+    },
+    {
+      "path": "Integrations/Browser/pdf-core.js",
+      "bytes": 7420,
+      "sha256": "006497f8b72a1937b1e287dbf88e801c9d58f4a52bc342182564eeb3146d4840"
+    },
+    {
+      "path": "Integrations/Browser/pdf-reader.css",
+      "bytes": 3483,
+      "sha256": "432e982b824efae56889281d90907fb965eb281dd712eaf89906c53ad6c1a9a5"
+    },
+    {
+      "path": "Integrations/Browser/pdf-reader.html",
+      "bytes": 1850,
+      "sha256": "ca646e3bf3945b1dda2ba03e9874ce8d05d4140716e47318e7c2bb07184529fb"
+    },
+    {
+      "path": "Integrations/Browser/pdf-reader.js",
+      "bytes": 7150,
+      "sha256": "47d96d03691b40d745a0c7cd794244033df7abf213a772d654593ab9ab1d49cf"
+    },
+    {
+      "path": "Integrations/Browser/pdf-worker.js",
+      "bytes": 15353,
+      "sha256": "31437a182516321ef68bd53257ae3219340fbb630d35dfcd19e5fad339ebec3e"
+    },
+    {
+      "path": "Integrations/Browser/service-worker.js",
+      "bytes": 11620,
+      "sha256": "ee0b2f145f32281cbd23c39aa7f813eeba3e261ff16ba023aa11574cbc9ddb7b"
+    },
+    {
+      "path": "Integrations/Browser/tests/pdf-reader.test.cjs",
+      "bytes": 32987,
+      "sha256": "b61be35b62490c768f36d46f2d5dadd100bd7db3f635bb46f4cb3e0a95ae8e5d"
+    },
+    {
+      "path": "Integrations/PDFLayout/LICENSE-BabelDOC-AGPL-3.0.txt",
+      "bytes": 34519,
+      "sha256": "afca41723b45e26069f68d485bf906a202f892f90c801d3052f8e6296bb41454"
+    },
+    {
+      "path": "Integrations/PDFLayout/UPSTREAM.json",
+      "bytes": 1163,
+      "sha256": "5a38b5d50f738f8e5f6ab5435b85c7388d1b5c6262d80b5b0bc61943a148643a"
+    },
+    {
+      "path": "Integrations/PDFLayout/alignment.py",
+      "bytes": 24882,
+      "sha256": "4238cf324d7dc26c02fce55d5c4bda4cc66e0e6c5ea37c93fb3d8af7c516544c"
+    },
+    {
+      "path": "Integrations/PDFLayout/batch_permits.py",
+      "bytes": 4259,
+      "sha256": "d8bea96ed81905b5c32400e545bcdf8ffc4fa16765cfa44ccce05330c44fa4bb"
+    },
+    {
+      "path": "Integrations/PDFLayout/gpt_batch.py",
+      "bytes": 14037,
+      "sha256": "3fb506b09165e5ad1877cc636db94973c02510f03a5d80c52724886a5c8e4d53"
+    },
+    {
+      "path": "Integrations/PDFLayout/install-runtime",
+      "bytes": 650,
+      "sha256": "17bb438031f4498cf469a29434889f690df155cf1a2da0b88f864e0312257745"
+    },
+    {
+      "path": "Integrations/PDFLayout/layout_common.py",
+      "bytes": 6803,
+      "sha256": "5555e6fdce625454441ec4f29cd12f8a761e175cbc1aaa27a16f82c6666b0bf6"
+    },
+    {
+      "path": "Integrations/PDFLayout/layout_quality.py",
+      "bytes": 41519,
+      "sha256": "6f37d82621fcc8e5fc429fdfda7848478981748339df85c0197b155276953484"
+    },
+    {
+      "path": "Integrations/PDFLayout/page_parallel.py",
+      "bytes": 6673,
+      "sha256": "3b386af736e4fd31b6516fe46686c50577ccc8b0c157c6a577ca0aed77e012b3"
+    },
+    {
+      "path": "Integrations/PDFLayout/paragraph_continuity.py",
+      "bytes": 11244,
+      "sha256": "e0c05c54bf6d61ea8a00885c755c0d5f3c8dc0441568d0eba3a4cd9f599ea7df"
+    },
+    {
+      "path": "Integrations/PDFLayout/phrase_alignment.py",
+      "bytes": 14831,
+      "sha256": "033a2ef24a6cd93768636e3344875d0021d8d84cb41e9cf3379176d6e5b277b3"
+    },
+    {
+      "path": "Integrations/PDFLayout/prepare-assets.py",
+      "bytes": 1708,
+      "sha256": "754442f7bcf516ff097a98cba35ac79ce84581bd9fb808dedfda31be0336f53b"
+    },
+    {
+      "path": "Integrations/PDFLayout/requirements.in",
+      "bytes": 221,
+      "sha256": "dcffcdabbcfe55a0ccdd6e1228877ead3ec19f82ab96e64a64116526c2ce832e"
+    },
+    {
+      "path": "Integrations/PDFLayout/requirements.lock",
+      "bytes": 213131,
+      "sha256": "800771d88233b4b9c074a09594044bfd2e68cfd45b76bf7356d89589f6cffc60"
+    },
+    {
+      "path": "Integrations/PDFLayout/sentence_alignment.py",
+      "bytes": 19828,
+      "sha256": "302cb423a059709365d0ec7ec54c78eca58f68fc2c8e5a97cd6be42bbde3922e"
+    },
+    {
+      "path": "Integrations/PDFLayout/sentence_service.py",
+      "bytes": 25853,
+      "sha256": "a98ade8628953f0c59589cd9aac842d89bb0a3531d05563273aad37bf3675b57"
+    },
+    {
+      "path": "Integrations/PDFLayout/server.py",
+      "bytes": 51129,
+      "sha256": "95521bb891ea35d6cb811d94cadf5db1faaabcebbe47f99782aee583d8b1dffa"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/integration_smoke.py",
+      "bytes": 3661,
+      "sha256": "c54a65621fe947824fa594efbbff899317aae4250ac9ad601f7e7bc24b401898"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_alignment.py",
+      "bytes": 20562,
+      "sha256": "91e07fe803575f15effba5e1b6ac8451370d0ce964fb893fc6eef7dd6a7371e7"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_batch_permits.py",
+      "bytes": 13573,
+      "sha256": "563a9c2c31505812a57ad256349f34b38247784170041319718482e310fc7494"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_completed_cache.py",
+      "bytes": 13021,
+      "sha256": "5d1a5b3923d60e49fed608448c814e1a28854428bf56d18c4a0a86e741e5679d"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_contract.py",
+      "bytes": 4196,
+      "sha256": "484d30337e55f7470d6f9ec4d12cbe64e2ecbdc5eab9f3617f08242e5172f42d"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_failure_diagnostics.py",
+      "bytes": 9347,
+      "sha256": "f14ad0011ebf2dbd7a57b969d67f31beca7f5a93299db09828582ff122296e93"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_gpt_batch.py",
+      "bytes": 15963,
+      "sha256": "1f89b1ea263339b9fcaf654634f7a5c4790cde92826cd2e7c3cd39a0c683d0bd"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_helper_lifecycle.py",
+      "bytes": 7717,
+      "sha256": "5b502514c0cce2c718ba12875117641e487409c26cef678935db2d609284735d"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_layout_quality.py",
+      "bytes": 35296,
+      "sha256": "a118dc96cf7086d5226fc7828c927cc65526a12bafb073fce585ff0467468df6"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_neighbor_context.py",
+      "bytes": 10882,
+      "sha256": "16a53a525cedebb85f7603b23a5c132b17f450466b8506d5db8c043d3ee1a128"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_page_parallel.py",
+      "bytes": 14260,
+      "sha256": "7bd31372c1303a7564966d476f29c1b85a427b30d7b5f520268d506f27812b2e"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_paragraph_continuity.py",
+      "bytes": 8629,
+      "sha256": "c9d9e9e39b8d81a27837fa9e799a724932c85dbe08dab9c7f3a4eabbcf4dc89a"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_parallel_jobs.py",
+      "bytes": 11611,
+      "sha256": "88803a975979981b70237eeb7fb710fc3981f45abbe74c4ef4346387c7682406"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_pdf_geometry.py",
+      "bytes": 8782,
+      "sha256": "888f08bf22a0d395634862100ffd9641bdd55e421690b687fcacf6c9cca55bbb"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_phrase_alignment.py",
+      "bytes": 21485,
+      "sha256": "2f6f30a9e2b8523480861d98697131872a189f01c2e38813f4f2bc7078e2a064"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_phrase_helper.py",
+      "bytes": 2525,
+      "sha256": "dae112b4749568df324c1132f07568f0958f263b327a6cf256d289894ca8a1c1"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_progress.py",
+      "bytes": 8361,
+      "sha256": "49e92dad3ab8c00fd846f6db813b886dac1fe8ac33f746010b773cc2227bae18"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_scientific_headings.py",
+      "bytes": 2396,
+      "sha256": "1b290c472fb55864f54a91c229fb297c8737f73006aebc8ce64b9668d86a0b05"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_sentence_alignment.py",
+      "bytes": 68028,
+      "sha256": "3bd3810abafcafac483180c21be4084727b0e8f8fd7c88ce9171be2ad18ff70c"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_server.py",
+      "bytes": 28928,
+      "sha256": "2ca24bf4e3894d497780de6970cfe6728dd2d6a0cedf7fc8eb90e8ebad3c8eb4"
+    },
+    {
+      "path": "Integrations/PDFLayout/tests/test_worker.py",
+      "bytes": 2355,
+      "sha256": "2717a101c89dc4e5ae75929dd8c4002f5d5d02641d03aabf77d2f2e4ffb5f577"
+    },
+    {
+      "path": "Integrations/PDFLayout/worker.py",
+      "bytes": 36792,
+      "sha256": "890badb811c3a33ecc9b1276dc2f850dc7f96352c98fd6f4f10a8250f47e6c23"
+    },
+    {
+      "path": "Integrations/Writing/package.json",
+      "bytes": 33,
+      "sha256": "89c47db7851f89caec72da4f215ebc21cf1e294aeef3b45d2583562d846ab035"
+    },
+    {
+      "path": "Integrations/Writing/shared/host-contract.js",
+      "bytes": 3639,
+      "sha256": "8b8aa846e5a861d69bdb87c0087eb039c07b6fe4d7fdaf28be3da06e4feb8f78"
+    },
+    {
+      "path": "Integrations/Writing/shared/page-issue-queue.js",
+      "bytes": 8665,
+      "sha256": "bc4b0e3cef4d64dcb32e69c3f6db167ffa12f88ea64b0e4aa1b942925cca0573"
+    },
+    {
+      "path": "Integrations/Writing/shared/taskpane.css",
+      "bytes": 7933,
+      "sha256": "d8bee799dcd07b2c6210fcf3e2b687c6f0eae37c0fc155ab15e40eb3317062af"
+    },
+    {
+      "path": "Integrations/Writing/shared/taskpane.html",
+      "bytes": 3030,
+      "sha256": "1785d509f3805803b6c470d677595a03961fa8e887d1657b6a9ef6a9dd32d82c"
+    },
+    {
+      "path": "Integrations/Writing/shared/taskpane.js",
+      "bytes": 30391,
+      "sha256": "f81814c75d31d7183e5a7ecb3f91c6c0dd820a8d22458ccb8b7186c3b799bc59"
+    },
+    {
+      "path": "Integrations/Writing/shared/writing-client.js",
+      "bytes": 9182,
+      "sha256": "cb80086233771c6062df0ef5a7ddc9b2a86d4abdf7037936d4263a90895ca09a"
+    },
+    {
+      "path": "Integrations/Writing/tests/fake-word.cjs",
+      "bytes": 11015,
+      "sha256": "f8091e625acd5419948908416d226f0f25bdcbb44301dc0e934b3f055e7d0f33"
+    },
+    {
+      "path": "Integrations/Writing/tests/fake-wps.cjs",
+      "bytes": 3827,
+      "sha256": "cf68140403628165f0e3db5b1d053ce204e68f7c3b984bc4cd2259578df87e34"
+    },
+    {
+      "path": "Integrations/Writing/tests/final-integration.test.cjs",
+      "bytes": 12152,
+      "sha256": "68b9baaf932400cf2b10c359459c837e3f578fb68649bd5c9d3e0a7f31d0765a"
+    },
+    {
+      "path": "Integrations/Writing/tests/fixtures/calibration.json",
+      "bytes": 16587,
+      "sha256": "eaa3683f7839ed9b61edc1c120727c8980456572acd456d9ade74a54593726e2"
+    },
+    {
+      "path": "Integrations/Writing/tests/fixtures/clean.json",
+      "bytes": 7352,
+      "sha256": "e65c6a7b406438ee4498cded7fdda29bab9dfd066d835c02fdaa3de622534c39"
+    },
+    {
+      "path": "Integrations/Writing/tests/fixtures/holdout.json",
+      "bytes": 16885,
+      "sha256": "03ddcc0bb9bc2f5e97af396b76b2228362ecb7dfbb70f6bdb15a27fbc156e96f"
+    },
+    {
+      "path": "Integrations/Writing/tests/native-document-service.test.cjs",
+      "bytes": 85304,
+      "sha256": "7006ea6cd415763973dd71adb4aceca36f8c7d07398a4a5365d161a274a7451d"
+    },
+    {
+      "path": "Integrations/Writing/tests/native-palette-preference.test.cjs",
+      "bytes": 2990,
+      "sha256": "8cc6368bd06fd8d361a4dc188a8faf387da5b2106fe944b7946b96fc339a0340"
+    },
+    {
+      "path": "Integrations/Writing/tests/page-issue-queue.test.cjs",
+      "bytes": 6703,
+      "sha256": "825aedd5d2177df3ce7d844f2b676184afcf8975ae30f3b7052305be472cc53c"
+    },
+    {
+      "path": "Integrations/Writing/tests/taskpane-dom-helper.cjs",
+      "bytes": 2981,
+      "sha256": "eae1443f6b8412cd7a3a3c527188cdc1224835376af05e37d27e5b885dcd159e"
+    },
+    {
+      "path": "Integrations/Writing/tests/taskpane.test.cjs",
+      "bytes": 44737,
+      "sha256": "9091ddfd344780678b81a83062595030e235db135e6d34fc55e92e55d40c9a93"
+    },
+    {
+      "path": "Integrations/Writing/tests/word-host-tracking.test.cjs",
+      "bytes": 5176,
+      "sha256": "c98ef36033bf4bdb2e086f5ac4532c28db5cabd45b149a21d7a346bfdc030e2c"
+    },
+    {
+      "path": "Integrations/Writing/tests/word-host.test.cjs",
+      "bytes": 80664,
+      "sha256": "a6536062e2bdf591a18e4225e81b590a1aa00efa3988481c30124bc429d8cc62"
+    },
+    {
+      "path": "Integrations/Writing/tests/word-xml-dom.cjs",
+      "bytes": 2356,
+      "sha256": "5d7e404b3e17c15e7e3b7ce4ee5cf0cb2d78e13a22e11866b0934600cc4fca91"
+    },
+    {
+      "path": "Integrations/Writing/tests/wps-host.test.cjs",
+      "bytes": 10476,
+      "sha256": "055a47167b1d7cdde1a8d659b182496b7a6dbfa189a2faa0dfaaecfac1ed5297"
+    },
+    {
+      "path": "Integrations/Writing/tests/writing-client-errors.test.cjs",
+      "bytes": 5912,
+      "sha256": "239bc3512fa0670b4149c223a3e48b44c319fab91fc06b2390642d37adda6f17"
+    },
+    {
+      "path": "Integrations/Writing/tests/writing-evaluation.test.cjs",
+      "bytes": 7797,
+      "sha256": "fcc71479296cbba49a6504dcff21a08e1edaeb80a9205c309f4376db78318c84"
+    },
+    {
+      "path": "Integrations/Writing/tests/writing-packaging.test.cjs",
+      "bytes": 10302,
+      "sha256": "3cfda3d1b642b83be0c418fa7d7c2b4dc9fa7a2cdf910a46925ed2e3b9805476"
+    },
+    {
+      "path": "Integrations/Writing/word/icon.png",
+      "bytes": 1130306,
+      "sha256": "85611fa8c1404dac5b66a4e2fa737a43a13be753f003a6cc64888f8daee1f5a3"
+    },
+    {
+      "path": "Integrations/Writing/word/manifest.xml",
+      "bytes": 3059,
+      "sha256": "8b361f635859fa54a24948fa7416b27b708b6756014dc5782142213be3319885"
+    },
+    {
+      "path": "Integrations/Writing/word/native-document-service.js",
+      "bytes": 35822,
+      "sha256": "3d928778f7488290eeec403700674de779cd2df1d44c489ae450437684bfb380"
+    },
+    {
+      "path": "Integrations/Writing/word/word-host.js",
+      "bytes": 53732,
+      "sha256": "afe6edc372349178d0d38f48b14aa050e8389123f3b673f0b6f143fcfd4e1f26"
+    },
+    {
+      "path": "Integrations/Writing/wps/jsplugins.xml",
+      "bytes": 162,
+      "sha256": "dfb2a7235670d39cbcbaf33a02addfc800adc57db4d72885173d5756d5e441e8"
+    },
+    {
+      "path": "Integrations/Writing/wps/main.js",
+      "bytes": 549,
+      "sha256": "d726af5d95efbd2df449d54b6a0af68e8aa89847708695b8d63ce9f855b2f470"
+    },
+    {
+      "path": "Integrations/Writing/wps/ribbon.xml",
+      "bytes": 398,
+      "sha256": "358f8944c5c6f784e09c7e47527d89b2a6f7fd8fb6c8a5dcdf1222ae01e39b44"
+    },
+    {
+      "path": "Integrations/Writing/wps/wps-host.js",
+      "bytes": 12273,
+      "sha256": "fa526513fff0d7a637aed39fa1740f3c8473d1c1da9a15ec169dd35bb2fa5aac"
+    },
+    {
+      "path": "Integrations/Zotero/bootstrap.js",
+      "bytes": 3440,
+      "sha256": "61df41393d8e5499e58d6a9ab6ececc26e0498ce90da1b4b48913c059f518f0d"
+    },
+    {
+      "path": "Integrations/Zotero/content/inline-core.js",
+      "bytes": 21530,
+      "sha256": "ca69c0723c99ccb69ceaf7428c547ff6132d7ee221feb72c36e1b8d65d03b3ff"
+    },
+    {
+      "path": "Integrations/Zotero/content/inline.css",
+      "bytes": 5726,
+      "sha256": "e7d43e55dcd4d79fce0a92e1c935a40597d459b20bfb54f19c6dea00c981ec88"
+    },
+    {
+      "path": "Integrations/Zotero/content/inline.js",
+      "bytes": 28789,
+      "sha256": "4afbc0806ad2382806c5343b760f1b687a222b173336dc80caee113ca610cd39"
+    },
+    {
+      "path": "Integrations/Zotero/content/pdf-figure-navigation.js",
+      "bytes": 10714,
+      "sha256": "7188718bfc8c0ff0e8c4a3c38e5014701a5c369490643555dd80171b6ed26709"
+    },
+    {
+      "path": "Integrations/Zotero/content/pdf-figure-panel.js",
+      "bytes": 6550,
+      "sha256": "1e5f977179938b2f8475cacce72f2ab30131957ba2ffc81fc3feb0ee52afea06"
+    },
+    {
+      "path": "Integrations/Zotero/content/pdf-layout.js",
+      "bytes": 72019,
+      "sha256": "7442ba934187e17ca4340154c8f669b8a36c7c2e060aa8e25f29a28d3a2d0658"
+    },
+    {
+      "path": "Integrations/Zotero/content/pdf-native-view.js",
+      "bytes": 121114,
+      "sha256": "2170f1ec8ad36470b86eda802c67e3b17a493c21e036011dd8f0a1f71b6b2185"
+    },
+    {
+      "path": "Integrations/Zotero/content/pdf-pane-gestures.js",
+      "bytes": 7413,
+      "sha256": "f13b3eda511cf41934b85032967bfec3421912ad5f419af9db7d0f3f9cba8a92"
+    },
+    {
+      "path": "Integrations/Zotero/content/pdf-reading-tools.js",
+      "bytes": 9013,
+      "sha256": "356b9347d7a34e09e7befe9f05f2cb98dde5c801000edccf336a616a37d954c2"
+    },
+    {
+      "path": "Integrations/Zotero/content/pdf-scroll-sync.js",
+      "bytes": 5706,
+      "sha256": "6dcd5c533f09863eb67ad1aa20976a30c343b2317a1f58b6c377ab812fca3435"
+    },
+    {
+      "path": "Integrations/Zotero/content/pdf-selection-link.js",
+      "bytes": 5695,
+      "sha256": "3a57b60b57bd72e03ec3a52ca6080e4d51945faeecd8985576882f21ae34b26f"
+    },
+    {
+      "path": "Integrations/Zotero/content/sidebar.js",
+      "bytes": 11637,
+      "sha256": "dab0548f666b365ee7d405af35b223f033e06c1fdbaf082fab309f0fc86defbc"
+    },
+    {
+      "path": "Integrations/Zotero/content/translate.svg",
+      "bytes": 434,
+      "sha256": "bdc1b60e2e2ea1b0d3ba0857107a5d672932eeecbe63d76cbabc9bc87ec13c78"
+    },
+    {
+      "path": "Integrations/Zotero/locale/en-US/askgpt-inline.ftl",
+      "bytes": 969,
+      "sha256": "62879d281c1a87cf1a20f900ad20644f86fab07a0f7ba65273adc083480d3cc6"
+    },
+    {
+      "path": "Integrations/Zotero/locale/zh-CN/askgpt-inline.ftl",
+      "bytes": 921,
+      "sha256": "ef6f93ffeeba4e07ab36ad707d35b38087630a5d55e87027f9836ea2f2c15599"
+    },
+    {
+      "path": "Integrations/Zotero/manifest.json",
+      "bytes": 465,
+      "sha256": "ce7a4df8db02e6dc0c5eb5dfc8b1e0e72ae1703ec6bf8d60c7fa37fcb8e926cb"
+    },
+    {
+      "path": "Integrations/Zotero/tests/fake-dom.cjs",
+      "bytes": 4044,
+      "sha256": "754721832f7f0094c8323c5d443fc4a91e5337237416e00d0038c1c85ab36ff3"
+    },
+    {
+      "path": "Integrations/Zotero/tests/inline-tests.cjs",
+      "bytes": 91798,
+      "sha256": "983b3836a2d44713b90f75930aa78d2b5ecd2a14d79c43b7c1df64608a67f7f1"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-alignment-transport-tests.cjs",
+      "bytes": 43816,
+      "sha256": "affcbea661e1051a36319e3ca094e4e1ccc770d7e33223feeaab99b3be4c28b4"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-background-tests.cjs",
+      "bytes": 8938,
+      "sha256": "aac4270fc671f21cb464c780f5d6955b862093c91e28ed1a5fba8874c79f417f"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-figure-navigation-tests.cjs",
+      "bytes": 20199,
+      "sha256": "4ae7f8d9a15fe383ccd3610181dcf92e1cf44f222ca8d8347bcd0b620b972f0e"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-figure-panel-tests.cjs",
+      "bytes": 2140,
+      "sha256": "5a585a27ddf50ff836cd37121e03df5a3fd9601c029c484939104cb713b8477c"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-gestures-tests.cjs",
+      "bytes": 17259,
+      "sha256": "1b52c190a83d49f5481f6b886399abdada1bb1d5238c84761bae40ac15f3e843"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-native-view-tests.cjs",
+      "bytes": 188137,
+      "sha256": "7ea442bb52a3fc73888efe503df2668d2fd9e8beacab1aafef3781d206f1941c"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-pane-gestures-tests.cjs",
+      "bytes": 7571,
+      "sha256": "4b3f168db452b8ae4a4b23ce62809a13c45eee1afcf6f973f58bc35cdad3ac7b"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-progress-tests.cjs",
+      "bytes": 3621,
+      "sha256": "aea5402ad56abe90740dcd2258fd5adf599788e7d384647e48b3eb10ce116b0e"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-reading-tools-tests.cjs",
+      "bytes": 12110,
+      "sha256": "6aeca4248cc0ee2fd251723a4bf940a1780b7b365310cd7209709126e2bc3196"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-scroll-sync-tests.cjs",
+      "bytes": 14973,
+      "sha256": "e67c094a66e9c3d3a950ddae2c9198b9e424d414a5c124b6a9297e603515eb49"
+    },
+    {
+      "path": "Integrations/Zotero/tests/pdf-selection-link-tests.cjs",
+      "bytes": 8567,
+      "sha256": "7a60d51dd6e7d13490a20ef3862ff32973e2ba1ca08c86bf2247baa0dbf0d19b"
+    },
+    {
+      "path": "Integrations/Zotero/tests/sidebar-tests.cjs",
+      "bytes": 14366,
+      "sha256": "a122a4001522ba3436d9b02191575afde3bddd03a05bb886da594afcbed72c53"
+    },
+    {
+      "path": "Integrations/identity.json",
+      "bytes": 510,
+      "sha256": "42ac7ce1c88990a8b67c1297504bfdea44fd9a9d7e9b71eb6e0264b43ea29b10"
+    },
+    {
+      "path": "NOTICE.md",
+      "bytes": 1964,
+      "sha256": "cf859c669e777c7cbbb40f94ee1700a1db36b1b52389d98ebf68c339beb4f859"
+    },
+    {
+      "path": "Package.swift",
+      "bytes": 669,
+      "sha256": "4e799ab4e080a235e87a0e2697736f0aea0a7b3f70ca94362d53a082a37cf072"
+    },
+    {
+      "path": "README.en.md",
+      "bytes": 7019,
+      "sha256": "e241ba2b5a0c7fd1f71711d9ec408306cc1d7a09e26f601311a31806848cc7e5"
+    },
+    {
+      "path": "README.md",
+      "bytes": 7864,
+      "sha256": "4b6571ea1438b9765ce192a0722341378033dc395ef458a530cd9f21ab8f3f85"
+    },
+    {
+      "path": "Resources/AppIcon.icns",
+      "bytes": 1408778,
+      "sha256": "8ca852f8debceec8f09d6afd192ce8380340008743bb5e3697e42669c3f4ae95"
+    },
+    {
+      "path": "Resources/AppIcon.png",
+      "bytes": 1130306,
+      "sha256": "85611fa8c1404dac5b66a4e2fa737a43a13be753f003a6cc64888f8daee1f5a3"
+    },
+    {
+      "path": "Resources/Dictionary/LICENSE",
+      "bytes": 1063,
+      "sha256": "f8552dd246f61a4e064569eae6194a01c6b3d63b03bf27c6ca863593c549ed0f"
+    },
+    {
+      "path": "Resources/Dictionary/provenance.json",
+      "bytes": 1157,
+      "sha256": "7902497a0f96d09e8e5872b79fd37b0c50d731de6b4710163d37fb3f0dea88e9"
+    },
+    {
+      "path": "Resources/Dictionary/words.sqlite",
+      "bytes": 35340288,
+      "sha256": "e82b7fd021394b847f7886587a7f7a83af2d077bdcb8b2ebc999ffdb3dc73c1f"
+    },
+    {
+      "path": "Resources/Writing/skill/SKILL.md",
+      "bytes": 6230,
+      "sha256": "3cf64deef8c454de719c2f670737bde1997a73bf949b18f922ed987376ed2c67"
+    },
+    {
+      "path": "Resources/Writing/skill/profile.json",
+      "bytes": 98,
+      "sha256": "2804686bbc12fbff35573acdb6c861a319bf63a90a83805efcf66dde29949a4b"
+    },
+    {
+      "path": "Resources/Writing/skill/terminology.json",
+      "bytes": 96,
+      "sha256": "a6df9ac5a37bee539921ef3d9f44e90e54027a058341945042792cf01bc8009c"
+    },
+    {
+      "path": "Sources/AskGPT/AppDelegate.swift",
+      "bytes": 13213,
+      "sha256": "0e6be7ece63404d245ee72ec52f48c8b4f1d19b37f63b8ccabeb48be3ba8ef35"
+    },
+    {
+      "path": "Sources/AskGPT/AppMain.swift",
+      "bytes": 2176,
+      "sha256": "f549a919b32ee62f757f314a699cda950e5a6495ab374ce587785d9020331a57"
+    },
+    {
+      "path": "Sources/AskGPT/DocumentReadingController.swift",
+      "bytes": 11418,
+      "sha256": "9a6027ac75a9fe3066d4ecdd2a0f355cc272880dcdb2757e04236c7f77fe780a"
+    },
+    {
+      "path": "Sources/AskGPT/DocumentReadingStore.swift",
+      "bytes": 34828,
+      "sha256": "e09820b9ba8d1b352b96667c462129a167ba82592eb1e461f2ace5e6c5d8b9b8"
+    },
+    {
+      "path": "Sources/AskGPT/DocumentReadingView.swift",
+      "bytes": 18882,
+      "sha256": "46f14afb52a6d5284c03936d86b7148d6df91d8761c7e4b7caca50bedc5f8afb"
+    },
+    {
+      "path": "Sources/AskGPT/GlassStyle.swift",
+      "bytes": 5178,
+      "sha256": "7689504c5eb4f065cf225e317e84b0b987387a4fa8807edeb58b56309311a862"
+    },
+    {
+      "path": "Sources/AskGPT/InlineIntegrationController.swift",
+      "bytes": 9642,
+      "sha256": "33dba279b3695b4ccd804af763fe5cd4c2da04768b4c44c8dfdc4d896b802cd8"
+    },
+    {
+      "path": "Sources/AskGPT/NativePDFTranslationController.swift",
+      "bytes": 21319,
+      "sha256": "39c65ead1669da473ba0b3e06e5fb01570e09ffb293a6640f57d881ab9040779"
+    },
+    {
+      "path": "Sources/AskGPT/NativeWordWritingController.swift",
+      "bytes": 35627,
+      "sha256": "518f42e52347afc4a04481af279dc6e4265e8eb48c28ec68d71e64ee142fabb9"
+    },
+    {
+      "path": "Sources/AskGPT/PanelController.swift",
+      "bytes": 15265,
+      "sha256": "662e70db08bd4c573aee62d129cecccd84df19a3f37c362a8db64c50dadc97db"
+    },
+    {
+      "path": "Sources/AskGPT/ReaderStore.swift",
+      "bytes": 38792,
+      "sha256": "bf5d9fe62f959a7f491307ca7b08978fea2770cf34ad6ac003cac68d1e4b685f"
+    },
+    {
+      "path": "Sources/AskGPT/Views.swift",
+      "bytes": 29959,
+      "sha256": "d141b01a26bb836f3acc6e9731cbc866fab13d41e767d3a4944ddbafe077869d"
+    },
+    {
+      "path": "Sources/AskGPT/WordWritingAXObserver.swift",
+      "bytes": 5791,
+      "sha256": "25b2e0a058d164b139f6d184f0831038d67f0f1ca0def532bccab58e17b79648"
+    },
+    {
+      "path": "Sources/AskGPT/WordWritingOverlaySurface.swift",
+      "bytes": 23512,
+      "sha256": "5fbf7558e88e319ce9ff6e533de7f0a1288ce746d4305c44ae5b117cfd5a422b"
+    },
+    {
+      "path": "Sources/AskGPT/WordWritingPopoverView.swift",
+      "bytes": 13762,
+      "sha256": "afeaae350b77b54744163571fcf139ac5acded0dda4af427134da5d34f012cc0"
+    },
+    {
+      "path": "Sources/AskGPT/WritingIntegrationController.swift",
+      "bytes": 4116,
+      "sha256": "3e79c6b978c28a5cbd8ab22ddacd773858f46fb68164aacd51290e269ab0229d"
+    },
+    {
+      "path": "Sources/AskGPTCore/ActiveReadingCapture.swift",
+      "bytes": 31552,
+      "sha256": "a2a9bfe08f663af0fa1ea737cf605c7634df5e26ca83c92de9e268fdcfa61ba3"
+    },
+    {
+      "path": "Sources/AskGPTCore/BilingualDocument.swift",
+      "bytes": 3182,
+      "sha256": "3b72d9275a7ebd91879a5cc87a7a485e63c226e29edca2d26215de4c6fce67a4"
+    },
+    {
+      "path": "Sources/AskGPTCore/CodexBackend.swift",
+      "bytes": 34263,
+      "sha256": "59d7835cd07e08f7bdfd72a7480d44ba454b16d8f00a90f1a8f9f300233c382a"
+    },
+    {
+      "path": "Sources/AskGPTCore/CodexRPC.swift",
+      "bytes": 13023,
+      "sha256": "fdae68e8e1f0b3ef84c6abfe035675dc4514bf1be8daf00a83f706497a657490"
+    },
+    {
+      "path": "Sources/AskGPTCore/ConversationLedger.swift",
+      "bytes": 1865,
+      "sha256": "f18c8b904e08b5db2cc233461681a649ab244661f08d76f4e5a79e4bb6ad1a4d"
+    },
+    {
+      "path": "Sources/AskGPTCore/EasydictIntegration.swift",
+      "bytes": 20094,
+      "sha256": "01a79067b108b6e50764046f6c659f792f80cb645aa04357b06bcb0bfa455178"
+    },
+    {
+      "path": "Sources/AskGPTCore/GPTWritingReviewer.swift",
+      "bytes": 6879,
+      "sha256": "e19ec9b2de9b522a25c35ee587767eb87f58e35a6132520fbc6d0fe8ee819818"
+    },
+    {
+      "path": "Sources/AskGPTCore/GlobalHotKey.swift",
+      "bytes": 5554,
+      "sha256": "6c6c3b38fca8808f1219c1eb7c57b261e703f2cef37327f58ff41a6b1b721c24"
+    },
+    {
+      "path": "Sources/AskGPTCore/InlineTranslationBridge.swift",
+      "bytes": 26710,
+      "sha256": "f04e3eaa8990b01624e7a0473f11986fe42364034facf7d3b47d1c5fe05964a8"
+    },
+    {
+      "path": "Sources/AskGPTCore/LocalProofreader.swift",
+      "bytes": 9757,
+      "sha256": "fdb589efdead6048e3172d15ce4607153ef8fafbd8869705d8bbe7f6e6c17b35"
+    },
+    {
+      "path": "Sources/AskGPTCore/LocalPunctuationChecker.swift",
+      "bytes": 5828,
+      "sha256": "90c047346b4aa369a77ffaa859c874e44133c2f5230357beec2ee2e666562bb0"
+    },
+    {
+      "path": "Sources/AskGPTCore/LocalTranslationBridge.swift",
+      "bytes": 23881,
+      "sha256": "c97cbd86f3f5f7dc6112e30e20898ab85d441248678485079ce6b364f933e5d3"
+    },
+    {
+      "path": "Sources/AskGPTCore/Models.swift",
+      "bytes": 1365,
+      "sha256": "0998fd3fa81dc7877e73685910b9e2a41def2c343d2a159dced9789616f979d3"
+    },
+    {
+      "path": "Sources/AskGPTCore/NativePDFTranslationStore.swift",
+      "bytes": 17413,
+      "sha256": "89235ff18896c76102e5a2cde6754735224482b88d4ed159f4471bc2709a7bbd"
+    },
+    {
+      "path": "Sources/AskGPTCore/NativeTranslationEngine.swift",
+      "bytes": 26423,
+      "sha256": "262d4be16554da1b08963c18efd1f2e60d9b6a0b3e2bcf993fd2faac7ac16a75"
+    },
+    {
+      "path": "Sources/AskGPTCore/NativeWritingApplyAttempt.swift",
+      "bytes": 6110,
+      "sha256": "2722a626a7b6dca64ce0eb0b5c07542c6bd0c447658e60aa536d565a52b587d6"
+    },
+    {
+      "path": "Sources/AskGPTCore/NativeWritingDocumentBroker.swift",
+      "bytes": 37864,
+      "sha256": "1e345dc7095f7c5ef97ce6212d1269465f4ef98435e8c5db0f4104a0993ab582"
+    },
+    {
+      "path": "Sources/AskGPTCore/PDFBatchTranslator.swift",
+      "bytes": 23998,
+      "sha256": "7df15557b84beb3828307de319438902b50913c847af86ea57d8638dc5fee377"
+    },
+    {
+      "path": "Sources/AskGPTCore/PDFLayoutService.swift",
+      "bytes": 16795,
+      "sha256": "464208acd3e028f06efc7e674dfdcdfac73be935c7293e4cc4d0b20aea5a93ee"
+    },
+    {
+      "path": "Sources/AskGPTCore/PDFPhraseAlignmentTranslator.swift",
+      "bytes": 17242,
+      "sha256": "b98f67ba873fa7ab6ffd301b65c03574356d756b569d365648a9af109de80e14"
+    },
+    {
+      "path": "Sources/AskGPTCore/PDFSentenceAlignmentTranslator.swift",
+      "bytes": 11937,
+      "sha256": "4dc4a50ccec5daf07e81bdb20a250f1f53b8b72062db2420c3019d78b860bc13"
+    },
+    {
+      "path": "Sources/AskGPTCore/PDFTranslationDocument.swift",
+      "bytes": 18544,
+      "sha256": "3c2d2da9f76356df67d003275fe96217dae970ebdf0220045de9c8b89bd212ec"
+    },
+    {
+      "path": "Sources/AskGPTCore/PassageRefinement.swift",
+      "bytes": 7847,
+      "sha256": "30627db7bfb6cc84183895ad1971850e22282ae793a91d168d659751d5769fb3"
+    },
+    {
+      "path": "Sources/AskGPTCore/RequestCancellationGate.swift",
+      "bytes": 798,
+      "sha256": "a383ea4359de4d09d25b2d218f32ea89912d1c86b631158d25bd983c7ca80447"
+    },
+    {
+      "path": "Sources/AskGPTCore/SelectionCapture.swift",
+      "bytes": 15174,
+      "sha256": "6d1f8bb7ec662ef451e8e859c5fc7e0b6db02ad6f50604172f7696f10956ca55"
+    },
+    {
+      "path": "Sources/AskGPTCore/SelectionWatcher.swift",
+      "bytes": 3284,
+      "sha256": "608b96a52c82732b0d34fd201998e1f1415dc563c184fc9eab1f3861183ca891"
+    },
+    {
+      "path": "Sources/AskGPTCore/ShortcutSelectionCapture.swift",
+      "bytes": 10167,
+      "sha256": "814608abc1e898d90219e4d4d0969fa0a5cfa2ec883f361b83bb284f0141117e"
+    },
+    {
+      "path": "Sources/AskGPTCore/TranslationHelperLifecycle.swift",
+      "bytes": 3046,
+      "sha256": "b99a5668835e4553446a336d5b7cb85148b5fd46fb2b18b0db30ec932f98c24f"
+    },
+    {
+      "path": "Sources/AskGPTCore/TranslationTextPreparation.swift",
+      "bytes": 5829,
+      "sha256": "b6fb9bb54624f0a668a323925e1ff7f3be80bb7d581369db1debf0cff9e0cf1c"
+    },
+    {
+      "path": "Sources/AskGPTCore/WordInlineGeometry.swift",
+      "bytes": 50985,
+      "sha256": "4b711a4f427ae87ddfccd80bfad2c833dd36ba6c9ff07a98da15d82a54e70d46"
+    },
+    {
+      "path": "Sources/AskGPTCore/WordLookupEngine.swift",
+      "bytes": 13252,
+      "sha256": "045c896d9d13582761c6165172a70d934c05f8e1ba2c464397163c4d6fc1188c"
+    },
+    {
+      "path": "Sources/AskGPTCore/WordWritingHoverDwell.swift",
+      "bytes": 3468,
+      "sha256": "d84eafe1b3e8e298e06bf2f660557d3a3dc7fc600d97560a29e9f8f43d568ca8"
+    },
+    {
+      "path": "Sources/AskGPTCore/WordWritingObservationHealth.swift",
+      "bytes": 2480,
+      "sha256": "b7e6f9b5ecd1215d471e2a6342fc6306a2766f2326a246e450966232a5da4f13"
+    },
+    {
+      "path": "Sources/AskGPTCore/WritingBridge.swift",
+      "bytes": 39478,
+      "sha256": "003607cbd54251f6874f16d4ce47a72e8442a2e12636cbefa284e9e1f5a26e7f"
+    },
+    {
+      "path": "Sources/AskGPTCore/WritingIssueValidator.swift",
+      "bytes": 7566,
+      "sha256": "e91dbfc3e1eab9133d5a777d80217cae6e7a69c0156b34d577f2eff823f3eea4"
+    },
+    {
+      "path": "Sources/AskGPTCore/WritingModels.swift",
+      "bytes": 5579,
+      "sha256": "253986f3b09a5809752f3bc0aa5764b5cda00ecb4d703147e5d3b2ba8e656b19"
+    },
+    {
+      "path": "Sources/AskGPTCore/WritingPolishComparison.swift",
+      "bytes": 9354,
+      "sha256": "397f73cc4f1938aff25d20eb7b2bfcc941a16959eb52c3a8dd55af5a91a913bc"
+    },
+    {
+      "path": "Sources/AskGPTCore/WritingService.swift",
+      "bytes": 10055,
+      "sha256": "771174860a9cf58209ff9c45831a7fa5aff88297d3bdfbcfcefa4aafec5fdee4"
+    },
+    {
+      "path": "Sources/AskGPTCore/WritingSkill.swift",
+      "bytes": 3864,
+      "sha256": "1117bbc5584cb7906bb4e149b1a6ce9015ddedf91bc311a7a2d3ad4253727f47"
+    },
+    {
+      "path": "Sources/AskGPTTranslate/AppMain.swift",
+      "bytes": 7692,
+      "sha256": "3392d9290cb1a7e08a7a106da323d297107107fa71232ab7f3fe318722469810"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/ActiveReadingCaptureTests.swift",
+      "bytes": 9002,
+      "sha256": "d12ee90a87cfbb141da2e28b318de02884c8bdcc8ff94d16526c315bb36a0aea"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/BilingualDocumentTests.swift",
+      "bytes": 5540,
+      "sha256": "c446669d9155253c240ac05efbfa287cfc6556954f28d804f5cc02a7f95f8956"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/CodexBackendTests.swift",
+      "bytes": 34468,
+      "sha256": "ee303efeab74b2c224bc83d8c2509441af0a402ce225c31a8a608bd137e0daf4"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/ConversationLedgerTests.swift",
+      "bytes": 3160,
+      "sha256": "0e5f2f63d5689b7ac77e88ac54233d09527c06916b79329754278ed5d7d53d6c"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/EasydictIntegrationTests.swift",
+      "bytes": 25208,
+      "sha256": "a223dd79b922c8e2a64a61ad356a8035b5d8e2d625e6b42630675b71d3bf152a"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/GPTWritingReviewerTests.swift",
+      "bytes": 8905,
+      "sha256": "a2ef72b4e450cad9e3330b147ddebce967730ed5a0708f8828f14b48191c72ab"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/GlobalHotKeyTests.swift",
+      "bytes": 1577,
+      "sha256": "4e7ce14e40b014e61a6fea01fd07601e77e501fd690d26190ca0ca9ee7a9e2c6"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/InlineTranslationBridgeTests.swift",
+      "bytes": 34220,
+      "sha256": "356fa1153f984ead2be1a97097d5afcc9744d5e758c3feff53814271ab9adcbb"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/LocalProofreaderTests.swift",
+      "bytes": 8812,
+      "sha256": "817a0a4ba4df7103d26a80cbac030e1b92fcaefed281b53af45369eb29a20e65"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/LocalPunctuationCheckerTests.swift",
+      "bytes": 7817,
+      "sha256": "d886428b1c4a42a77aa30695836e239bc92ea25f65a0a0e0aee8b26c19f7ffc1"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/LocalTranslationBridgeTests.swift",
+      "bytes": 22950,
+      "sha256": "7e60121a98169046e0a44a7fbc28e038e3f1f190a1b0ea5331c33ac92359ee26"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/NativePDFTranslationStoreTests.swift",
+      "bytes": 18121,
+      "sha256": "aaddc3ac4e52d1d658ea5e69c8596731834427d7183dccdaeeb433dc0feba5c4"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/NativeTranslationEngineTests.swift",
+      "bytes": 24098,
+      "sha256": "eec8678fb655890b2fc3977a76d0a762c33ba625cf80787833c25e63334d6d1e"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/NativeWritingApplyAttemptTests.swift",
+      "bytes": 14001,
+      "sha256": "fea479f7ff51909f452d8e563370493082a2de7ca49a959d8fc2c26bf68b7b35"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/NativeWritingDocumentBrokerTests.swift",
+      "bytes": 42125,
+      "sha256": "24756e75123274285c983a7dd0dfa4c63152b436c146e08bc939b6d917680720"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/PDFBatchTranslatorTests.swift",
+      "bytes": 29505,
+      "sha256": "81276b73ecbe181276140f98bae12c4b3f0faf9430b41831eeb2f86297b3c238"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/PDFLayoutServiceTests.swift",
+      "bytes": 13266,
+      "sha256": "b34f3133910e6da551d4f17f39206e7051823f4f919babb9001767cb159fd7af"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/PDFPhraseAlignmentTranslatorTests.swift",
+      "bytes": 18111,
+      "sha256": "7a1c971372baaf2a30a0b907fe5534d69180eef964d0e0b23b961e3201f23984"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/PDFSentenceAlignmentTranslatorTests.swift",
+      "bytes": 8955,
+      "sha256": "c3616a9503e7c4d9624d6f8e65c79ccc11df6d701e4f125fcda0be63e87c1ebb"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/PDFTranslationDocumentTests.swift",
+      "bytes": 12895,
+      "sha256": "e6949acb36551dc34efa5bdf28779fe2c08c82a5021b1d9697618391550aeb3f"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/PassageRefinementTests.swift",
+      "bytes": 7994,
+      "sha256": "55bb70a1d3c463a3148bc5066e0306b07e7e7817c2e87eb5375de9875672ec00"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/RPCShutdownTests.swift",
+      "bytes": 3127,
+      "sha256": "d510657d02efcbc453523383604b6c7136f0405ff34be32c41cc570ca9affe7d"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/RequestCancellationGateTests.swift",
+      "bytes": 2862,
+      "sha256": "9fc4752dcef4fb9212edc07208bcf6070cca8b0bf8700f2c3b5111595c4774a9"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/SelectionTests.swift",
+      "bytes": 9117,
+      "sha256": "497b61c40ab108705b11980a65e51cc6d392e553c8ebab9e18b3669cb9d4bff7"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/ShortcutSelectionCaptureTests.swift",
+      "bytes": 4218,
+      "sha256": "588cb9d8eae54347cc011a473cfe44672aada402a9b3cefddf9a8ecc0e78b576"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/TranslationTextPreparationTests.swift",
+      "bytes": 4469,
+      "sha256": "0ec67fbe52ffe0ca4be76593b5103beae9385b5dca461e3a3a15b6a0f0869577"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/WordInlineGeometryTests.swift",
+      "bytes": 22001,
+      "sha256": "bc0f9ba6825cda794ce98b4ff53e02de44d4a568218e60418ea59bcb82c8b02e"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/WordLookupEngineTests.swift",
+      "bytes": 11359,
+      "sha256": "2f98d1de2ca44b34b1417b7b680e1daaeca9fe43ce4318506e48ce834d0b7976"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/WordWritingHoverDwellTests.swift",
+      "bytes": 6822,
+      "sha256": "073d48aca867407dd32d9dfaa3f71208e98b9c4dc1e043865bbe77bf96d02895"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/WordWritingObservationHealthTests.swift",
+      "bytes": 3574,
+      "sha256": "5e5526724660fb8dadf93a514f41da7f6199fc6b239e1ad3cb6af80db93f95b4"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/WritingBridgeTests.swift",
+      "bytes": 19962,
+      "sha256": "37a2d8889f37eec28403a58eb6fecfc9aebde6ffc9303c98480c157c76a62a3c"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/WritingIssueValidatorTests.swift",
+      "bytes": 12282,
+      "sha256": "7913c08372ed9e494b78deaeb068a42a245762d78581c63176b425c6a178b2c7"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/WritingPolishComparisonTests.swift",
+      "bytes": 11519,
+      "sha256": "7449097a80946cd44c3276331db8f0a17baab5c047fe01b94d9e31c1d668f37c"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/WritingServiceTests.swift",
+      "bytes": 4847,
+      "sha256": "71ec5d753bcf1de2ed174cc172dac5239fca4c8e15eb5bf365dbb05d9b2d33c2"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/WritingSkillTests.swift",
+      "bytes": 5394,
+      "sha256": "cd8f874b2c86591ee791d20fbecb2e26c6466a0e4272c1e45678c328526c8289"
+    },
+    {
+      "path": "docs/GALLERY.md",
+      "bytes": 1728,
+      "sha256": "0fb9f15ce9cb1e7cdc33253c406baa46af8ca37493d6e331745b73cdb0bd923f"
+    },
+    {
+      "path": "docs/HANDBOOK.zh-CN.md",
+      "bytes": 14452,
+      "sha256": "dd6dc574ee41f58e70b6490cfe8760f81f21c1e7ac4f04cf73d9418878ab3e24"
+    },
+    {
+      "path": "docs/demo-source/READMEPreviews.swift",
+      "bytes": 5944,
+      "sha256": "77de283d2a874fda85202fab58431ee33f74ac5aae19fd31d9e66144ca54f7ad"
+    },
+    {
+      "path": "docs/images/bilingual-reading.jpg",
+      "bytes": 88021,
+      "sha256": "2828015dedf570917c4d83ac76d8929a34cec96553ba7511f0f236d3c5e96fae"
+    },
+    {
+      "path": "docs/images/provenance.json",
+      "bytes": 7097,
+      "sha256": "fb1ead8fe817ac3bf447ed0d7ea30337200335bdb5413329810444e7be7e45ed"
+    },
+    {
+      "path": "docs/images/settings.png",
+      "bytes": 141963,
+      "sha256": "3c66f1f0af6072897ff3b5f36d5ff7d677a7d419d2a58e2704d3345b790baf2b"
+    },
+    {
+      "path": "docs/images/translation.png",
+      "bytes": 78756,
+      "sha256": "89fd4e9e201613e09febd60ce397ca5bfe7ea08c7a113c075599a7634bdb2e30"
+    },
+    {
+      "path": "docs/images/writing.png",
+      "bytes": 60873,
+      "sha256": "6e5579460fd8c7e485745550a9ca0ba8861bd150671efff758971792eab2c603"
+    },
+    {
+      "path": "scripts/app-signing",
+      "bytes": 15771,
+      "sha256": "8df15d97f179fc94caf17b4c51dd7b057d2cc474ad71cf308aa0380420f56249"
+    },
+    {
+      "path": "scripts/browser-inline-test",
+      "bytes": 52486,
+      "sha256": "32cd7193d46b79875eb1bd04ba3cf7b958bc5740a176f06707115b36068963af"
+    },
+    {
+      "path": "scripts/build-app",
+      "bytes": 3700,
+      "sha256": "d54d0e7925c4abaabf35684e1f7f18bed116629453c65a4ba48a549f7ba93e2e"
+    },
+    {
+      "path": "scripts/cli-smoke",
+      "bytes": 3867,
+      "sha256": "65171066c0786541338bc1b0c2994e531502935257cb76ec5dd005c4c6d73c46"
+    },
+    {
+      "path": "scripts/document-ui-smoke",
+      "bytes": 2865,
+      "sha256": "71eea0ef2e0a73616e0c5db216affe7bc402d27d6b720a44b96177f04f46ca03"
+    },
+    {
+      "path": "scripts/document-ui-smoke.swift",
+      "bytes": 40120,
+      "sha256": "c7361c4828d9cf71c475f5ae0337f6736569aa55f912835873d1bbc580c2fbde"
+    },
+    {
+      "path": "scripts/import-ecdict.py",
+      "bytes": 7488,
+      "sha256": "c6646bb16b8d5560f76f2dc66286c0b1a7d0d72e35554fafbed7eb91d58bc520"
+    },
+    {
+      "path": "scripts/inline-native-smoke",
+      "bytes": 1323,
+      "sha256": "e6a135f2f401457189396812d8019227e34b4551f4bbf57d107c82db542b43f9"
+    },
+    {
+      "path": "scripts/inline-native-smoke.swift",
+      "bytes": 4120,
+      "sha256": "e91368f9319e83832b1edba4839fc893fcc972d778a5e59bfd4f098508ebd343"
+    },
+    {
+      "path": "scripts/install-app",
+      "bytes": 3093,
+      "sha256": "f04fe274ea3080bb2110a4824e6ff992cea8e81f7ffd6199446d8093631a032a"
+    },
+    {
+      "path": "scripts/install-writing-addins",
+      "bytes": 11006,
+      "sha256": "69ddaefd642fc2a15c805df6ec83380477667fe764f197b4b136728942e56dc0"
+    },
+    {
+      "path": "scripts/make-qa-fixtures.swift",
+      "bytes": 2406,
+      "sha256": "57a5e50c38ccce2548f6ebcbf039b50168d52c3aa4f21af5c2760198deb8b396"
+    },
+    {
+      "path": "scripts/package-dictionary",
+      "bytes": 2480,
+      "sha256": "1f0bb67d60612103a68c6349e36b7900617801094c34f88c8413a9fdde0a9b62"
+    },
+    {
+      "path": "scripts/package-inline-integrations",
+      "bytes": 4968,
+      "sha256": "7bc646d5ba685047f2047afacf6ac87a0f774d4190f34cef3f9605aa61d4b3af"
+    },
+    {
+      "path": "scripts/package-pdf-layout",
+      "bytes": 1901,
+      "sha256": "f464691f7bdb7874097932ac2c0a4549dc4c794323c07afbb7797726b697352a"
+    },
+    {
+      "path": "scripts/package-writing-integrations",
+      "bytes": 6273,
+      "sha256": "048f6b895718ce078352a23e6a5ef3147dd7b37dc12baed9ea57755d8ff5ab61"
+    },
+    {
+      "path": "scripts/prepare-github-release",
+      "bytes": 5929,
+      "sha256": "bb46288e858c954ab17481725905e7680f2c04254b7082a9fea08ad2c684d981"
+    },
+    {
+      "path": "scripts/prepare-writing-tls",
+      "bytes": 3304,
+      "sha256": "0a8f24f55fb56473ceddf48d60887e0a892bb8c66e00a499e269a8f24ca8fe58"
+    },
+    {
+      "path": "scripts/reading-benchmark",
+      "bytes": 3153,
+      "sha256": "d9086b98b39bff8693acded601e852a5a52b8c69f08a2518e4888b3e00e91935"
+    },
+    {
+      "path": "scripts/render-readme-previews",
+      "bytes": 4011,
+      "sha256": "68ab1f5cd2dabdd7c5537b2021b45212d93ac06837a79864c4ad91cb14c3881f"
+    },
+    {
+      "path": "scripts/test",
+      "bytes": 635,
+      "sha256": "48db331b72ee59f79fab8a81926af6e008886297df6f49a413d288f719386929"
+    },
+    {
+      "path": "scripts/ui-smoke",
+      "bytes": 3272,
+      "sha256": "34787f242e03ffb2593bde8dcdf4d96583e8d5a5798a60c6cb19d4174506988b"
+    },
+    {
+      "path": "scripts/ui-smoke.swift",
+      "bytes": 74163,
+      "sha256": "f494120ffb80212d332806f405e76f5a727e81f44eda6480a3f0b4eead282f7d"
+    },
+    {
+      "path": "scripts/web-chat-smoke",
+      "bytes": 4277,
+      "sha256": "72f8c0083f0f5abbc281c21b78be8e790f95d406519b7a5acc59c45c10485052"
+    },
+    {
+      "path": "scripts/writing-eval.swift",
+      "bytes": 3610,
+      "sha256": "d1326f9f2e4fd274d218e71c019614c740f800eba2907de904ae6f052cbbe4f1"
+    },
+    {
+      "path": "scripts/writing-host.swift",
+      "bytes": 3507,
+      "sha256": "8288c83fc43e86f6b6a7a73509a7b73a0027914ba83d46294aca5a7357dcc8fc"
+    },
+    {
+      "path": "scripts/writing-skill-eval",
+      "bytes": 19269,
+      "sha256": "d3ff60ebaf1dee61983595d1ebbc47a1668cccff74df10400c2ca3a9235d0881"
+    },
+    {
+      "path": "scripts/writing-smoke",
+      "bytes": 424,
+      "sha256": "de80e082000ca9f6b54d1913f12759b98cffb2da9c62e9b4986c503fc9b0bf9a"
+    },
+    {
+      "path": "scripts/zotero-inline-test",
+      "bytes": 3194,
+      "sha256": "05d32b31a82d25206e0dad9ca1eacf2d1e094eae2e47d6709c22cd9741384881"
+    }
+  ],
+  "excluded": [
+    "work",
+    ".build",
+    "runtime credentials",
+    "research documents",
+    "historical internal reports"
+  ],
+  "scope": "File integrity and credential-pattern checks; not a clean-machine installation or live-host acceptance test."
+}

@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict');
+const DOM=require('./fake-dom.cjs');
+const Panel=require('../content/pdf-figure-panel.js');
+const win=new DOM.Window(),doc=win.document,anchor=new DOM.Element(doc,'button'),jumps=[];doc.body.appendChild(anchor);
+anchor.getBoundingClientRect=()=>({right:900,bottom:40});
+let state={source:true,target:true,side:'source',pages:[0,2]},opens=0;
+const panel=Panel.create({doc,win,anchor,getState:()=>state,onOpen:()=>{opens++;},onJump:(entry,side)=>jumps.push({entry,side})});
+const figures=[{id:'fig1',label:'Fig. 1',kind:'figure',pageIndex:0,top:120,left:30,caption:'A real caption'},
+ {id:'table2',label:'Table 2',kind:'table',pageIndex:1,top:500,left:20,caption:'Measurements'}];
+panel.setEntries(figures,{done:true});panel.toggle();assert.equal(panel.element.hidden,false);assert.equal(opens,1);
+const button=text=>panel.element.allNodes().find(x=>x.tagName==='button'&&x.textContent===text);
+assert.equal(button('左侧').getAttribute('aria-pressed'),'true');button('右侧').emit('click');
+let rows=panel.element.allNodes().filter(x=>x.getAttribute?.('data-figure-id'));
+assert.equal(rows[0].disabled,false);assert.equal(rows[1].disabled,true,'untranslated target pages cannot jump to an unrelated page');
+button('左侧').emit('click');rows=panel.element.allNodes().filter(x=>x.getAttribute?.('data-figure-id'));assert.equal(rows[1].disabled,false);
+rows[1].emit('click');assert.equal(jumps.length,1);assert.equal(jumps[0].side,'source');assert.equal(jumps[0].entry.pageIndex,1);assert.equal(panel.element.hidden,true);
+panel.toggle();const event=panel.element.emit('keydown',{key:'Escape'});assert.equal(event.defaultPrevented,true);assert.equal(panel.element.hidden,true);
+panel.setEntries([],{done:true});panel.toggle();assert(panel.element.textContent.includes('未识别到图表标题'));panel.close();
+const foreign=new DOM.Element(doc,'div');doc.body.appendChild(foreign);panel.dispose();panel.setEntries(figures,{done:true});panel.toggle();assert.equal(panel.element.parentNode,null);assert.equal(foreign.parentNode,doc.body);
+console.log('6 figure panel interaction checks passed');

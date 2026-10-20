@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+umask 077
+integration_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+cache_root=${1:-"$HOME/Library/Application Support/AskGPTReader/PDFLayout"}
+uv_bin=${ASKGPT_UV:-"$HOME/.local/bin/uv"}
+python_bin=${ASKGPT_PYTHON:-"$HOME/.local/bin/python3.12"}
+mkdir -p "$cache_root"
+chmod 700 "$cache_root"
+if [ ! -x "$cache_root/runtime/bin/python" ]; then
+    "$uv_bin" venv --python "$python_bin" "$cache_root/runtime"
+fi
+"$uv_bin" pip install --python "$cache_root/runtime/bin/python" --require-hashes -r "$integration_dir/requirements.lock"
+"$cache_root/runtime/bin/python" "$integration_dir/prepare-assets.py" --cache-root "$cache_root"

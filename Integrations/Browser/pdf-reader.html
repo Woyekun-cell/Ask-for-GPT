@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PDF · Ask for GPT</title>
+  <link rel="stylesheet" href="pdf-reader.css">
+  <script src="pdf-core.js" defer></script>
+  <script src="pdf-reader.js" defer></script>
+</head>
+<body>
+  <header class="toolbar" aria-label="PDF translation">
+    <span class="document-title" id="title">PDF</span>
+    <div class="controls">
+      <select id="mode" aria-label="Display">
+        <option value="mono">Translation</option>
+        <option value="dual">Original + Translation</option>
+        <option value="original">Original</option>
+      </select>
+      <span class="divider" aria-hidden="true"></span>
+      <select id="scope" aria-label="Translation range">
+        <option value="page">Page</option>
+        <option value="all">Document</option>
+      </select>
+      <input id="page" type="number" min="1" max="2000" placeholder="Page" aria-label="PDF page number" title="PDF page number. If Chrome did not expose its current page, choose it here.">
+      <span id="page-count" class="page-count"></span>
+      <button id="direction" title="Switch translation direction" aria-label="Switch translation direction">EN → 中</button>
+      <button id="translate" class="primary">Translate</button>
+      <button id="cancel" hidden>Cancel</button>
+      <button id="restore" title="Return to the original PDF · ⌥⇧X">↩ Original PDF</button>
+    </div>
+  </header>
+  <div id="progress" class="translation-progress" hidden>
+    <span id="progress-label" role="status" aria-live="polite" aria-atomic="true"></span>
+    <progress id="progress-bar" aria-labelledby="progress-label"></progress>
+  </div>
+  <p id="error" role="alert" hidden></p>
+  <main id="document" aria-busy="false"></main>
+</body>
+</html>

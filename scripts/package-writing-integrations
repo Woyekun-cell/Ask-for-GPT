@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Copy a fixed public writing-addin resource set; never package private support data."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import tempfile
+import uuid
+import xml.etree.ElementTree as ET
+
+PACKAGE_ID = "askgpt-writing"
+WORD_ID = "931f421a-3efa-48bd-906a-dc3182d38f5b"
+ORIGIN = "https://localhost:43793"
+PUBLIC_FILES = (
+    "package.json", "shared/host-contract.js", "shared/page-issue-queue.js",
+    "shared/writing-client.js", "shared/taskpane.js", "shared/taskpane.html",
+    "shared/taskpane.css", "word/word-host.js", "word/native-document-service.js", "word/manifest.xml", "word/icon.png",
+    "wps/wps-host.js", "wps/main.js", "wps/ribbon.xml", "wps/jsplugins.xml",
+)
+
+
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def validate_xml(source):
+    word = ET.parse(source / "word/manifest.xml").getroot()
+    namespace = {"o": "http://schemas.microsoft.com/office/appforoffice/1.1"}
+    if word.findtext("o:Id", namespaces=namespace) != WORD_ID:
+        raise ValueError("Unexpected Word addin ID")
+    location = word.find("o:DefaultSettings/o:SourceLocation", namespace)
+    if location is None or location.get("DefaultValue") != ORIGIN + "/shared/taskpane.html?host=word":
+        raise ValueError("Word taskpane must use the fixed localhost HTTPS origin")
+    overrides = "http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+    basic = "http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+    version = word.find("{" + overrides + "}VersionOverrides")
+    runtime = version.findall(".//{" + overrides + "}Runtime") if version is not None else []
+    if len(runtime) != 1 or runtime[0].attrib != {"resid": "Taskpane.Url", "lifetime": "long"}:
+        raise ValueError("Word shared runtime must use the single reviewed taskpane")
+    urls = version.findall(".//{" + basic + "}Url")
+    if len(urls) != 1 or urls[0].attrib != {"id": "Taskpane.Url", "DefaultValue": ORIGIN + "/shared/taskpane.html?host=word"}:
+        raise ValueError("Word shared runtime must use the fixed localhost HTTPS origin")
+    actions = version.findall(".//{" + overrides + "}Action")
+    if not actions or any(action.find("{" + overrides + "}TaskpaneID") is not None or
+                          len(list(action)) != 1 or list(action)[0].tag != "{" + overrides + "}SourceLocation" or
+                          list(action)[0].attrib != {"resid": "Taskpane.Url"} for action in actions):
+        raise ValueError("Word commands must open the same reviewed shared runtime")
+    registrations = ET.parse(source / "wps/jsplugins.xml").getroot()
+    entries = list(registrations)
+    if registrations.tag != "jsplugins" or len(entries) != 1 or entries[0].attrib != {
+        "name": PACKAGE_ID, "type": "wps", "version": "0.1.0", "url": "file://", "enable": "enable_dev"
+    }:
+        raise ValueError("Unexpected WPS local registration")
+    ribbon = ET.parse(source / "wps/ribbon.xml").getroot()
+    buttons = ribbon.findall(".//{http://schemas.microsoft.com/office/2006/01/customui}button")
+    if not buttons or any(button.get("onAction") != "AskGPTWritingOpen" for button in buttons):
+        raise ValueError("Unexpected WPS ribbon callback")
+
+
+def package_public(destination):
+    root = Path(__file__).resolve().parent.parent
+    source = root / "Integrations/Writing"
+    destination = Path(destination).expanduser().absolute()
+    if destination == source or source in destination.parents:
+        raise ValueError("Package destination must not overwrite integration sources")
+    for relative in PUBLIC_FILES:
+        path = source / relative
+        if path.is_symlink() or any(parent.is_symlink() for parent in path.parents if parent != source.parent):
+            raise ValueError("Public runtime source must not be a symbolic link")
+        if not path.is_file():
+            raise ValueError("Missing public runtime resource: " + relative)
+    validate_xml(source)
+    if destination.exists() or destination.is_symlink():
+        if destination.is_symlink() or not destination.is_dir():
+            raise ValueError("Package destination must be a real directory")
+        marker = destination / "package-manifest.json"
+        if any(destination.iterdir()) and (not marker.is_file() or json.loads(marker.read_text()).get("packageID") != PACKAGE_ID):
+            raise ValueError("Refusing to replace a directory not owned by this packager")
+        for path in destination.rglob("*"):
+            if path.is_symlink() or path.suffix.lower() in {".pem", ".p12", ".pfx", ".key"} or any(term in path.name.lower() for term in ("connection.local", "token", "private")):
+                raise ValueError("Private or symbolic-link content found in old package; refusing replacement")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".writing-package-", dir=destination.parent))
+    backup = None
+    try:
+        for relative in PUBLIC_FILES:
+            target = staging / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source / relative, target)
+        report = {"packageID": PACKAGE_ID, "version": "0.1.0", "containsCredentials": False,
+                  "files": {relative: digest(staging / relative) for relative in PUBLIC_FILES}}
+        (staging / "package-manifest.json").write_text(json.dumps(report, indent=2) + "\n")
+        if destination.exists():
+            history = root / "work/writing-assistant/package-history"
+            history.mkdir(parents=True, exist_ok=True)
+            backup = history / ("previous-" + uuid.uuid4().hex)
+            destination.rename(backup)
+        try:
+            staging.rename(destination)
+        except BaseException:
+            if backup:
+                backup.rename(destination)
+            raise
+        return report
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("destination", help="Output directory for public runtime resources")
+    arguments = parser.parse_args()
+    print(json.dumps(package_public(arguments.destination)))
+
+
+if __name__ == "__main__":
+    main()
