@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "project": "Ask for GPT",
-  "snapshotDate": "2026-10-21",
+  "snapshotDate": "2026-10-22",
   "distribution": "source",
   "files": [
     {
@@ -606,8 +606,8 @@
     },
     {
       "path": "NOTICE.md",
-      "bytes": 3133,
-      "sha256": "18c5b5c9cadbda4d1b7b8885b5488852152a7d1eee43abe8232bd9c1c506648f"
+      "bytes": 3793,
+      "sha256": "a70da630f954d8108e9c1e41e1b68e9aa82a96d63769c4a26887ac82de5b6221"
     },
     {
       "path": "Package.swift",
@@ -616,13 +616,13 @@
     },
     {
       "path": "README.en.md",
-      "bytes": 16140,
-      "sha256": "6f1d898d1d08da8da374763ba778797174c9ea0da9fd39ce3bbea40db5bc8267"
+      "bytes": 17144,
+      "sha256": "a9db8272818216d91e3938b587ed8f8f5c491575bafb31c642ccdac01ae344ef"
     },
     {
       "path": "README.md",
-      "bytes": 14325,
-      "sha256": "1d5b008529036da4a8c8654f508a368936c8dbbe3cb1545af26258f82ceb3ba1"
+      "bytes": 15171,
+      "sha256": "42bab62ed5975e2985feb562ecac14b0df5f7073e0187861e5395ceac686b5d0"
     },
     {
       "path": "Resources/AppIcon.icns",
@@ -1166,8 +1166,8 @@
     },
     {
       "path": "docs/GALLERY.md",
-      "bytes": 4068,
-      "sha256": "3a97555b2cfd1bd6dc74449d425c22e740361778d5cfa12a484c66a543491c67"
+      "bytes": 5364,
+      "sha256": "6861e9da32e2b2c363e79231b971d705f8cbebf3d95b3ca2889dbcc60146e2b8"
     },
     {
       "path": "docs/HANDBOOK.zh-CN.md",
@@ -1186,8 +1186,8 @@
     },
     {
       "path": "docs/ZOTERO.zh-CN.md",
-      "bytes": 14965,
-      "sha256": "3c85599d0ff595d259f6fede7bfced155c5fda317e18279b803c02e77e36c393"
+      "bytes": 15671,
+      "sha256": "20f5be6793bc01dc2d4e81a7c0a43963de1a2d0df2b77145f071bdad3eb0ec84"
     },
     {
       "path": "docs/demo-source/READMEPreviews.swift",
@@ -1273,6 +1273,21 @@
       "path": "docs/images/zotero/06-navigation.png",
       "bytes": 324245,
       "sha256": "aade27abbbaabc0399092d2f8ae22ffb47582e3f83f855f0e123c814a5b55417"
+    },
+    {
+      "path": "docs/images/zotero/live-abstract-detail.jpg",
+      "bytes": 1310902,
+      "sha256": "64572476946ed45ec56349851bb61fe5e48c92e610293ca8af36815e80810b42"
+    },
+    {
+      "path": "docs/images/zotero/live-bilingual-reading.jpg",
+      "bytes": 1195016,
+      "sha256": "9884396c062b45322a1e2ff8e153941e49d3ac0b21bbfa4dfe244281567dd250"
+    },
+    {
+      "path": "docs/images/zotero/live-provenance.json",
+      "bytes": 3349,
+      "sha256": "5013b7c9a828597922d49a3bb95e20528d6d9963a179c8d2d0b59d3327aee24d"
     },
     {
       "path": "scripts/app-signing",

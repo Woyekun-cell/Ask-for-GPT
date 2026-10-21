@@ -56,7 +56,9 @@ The installer includes a guide and placeholder examples. See [translation backen
 
 Open a PDF in Zotero. The **PDF 翻译** sidebar offers scope, view, and language direction. Start with **当前页** (current page), **中英对照** (side by side), and **EN → 中** to read an abstract or key result. When the paper is relevant, choose **整篇** (whole document) to continue. **中 → EN** is also available for Chinese documents.
 
-![Zotero overview with native PDF translation sidebar](docs/images/zotero/01-overview.png)
+![A real paper in Zotero, with the English original beside its Chinese translation](docs/images/zotero/live-bilingual-reading.jpg)
+
+*Live screenshot: Liao et al., [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x), Nature 617, 312–324 (2023), open in Zotero. The English original is on the left; the Chinese machine translation generated and laid out by Ask for GPT is on the right. The paper is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).*
 
 The translation appears in the existing attachment tab. Progress stays visible in the sidebar and toolbar while you read the original or switch to another paper. Each document has its own task; up to two can run at once and can be stopped separately.
 
@@ -87,6 +89,10 @@ Saved marks are projected again when you return to the original or reopen the si
 ### Scroll together or keep one pane in place
 
 **联动** (linked) scrolling follows your reading position from either pane. Switch to **独立** (independent) to leave one pane on the results while checking a method or definition in the other. Turn linked scrolling back on to align from the side you are reading.
+
+![Live view comparing the English abstract with its Chinese translation](docs/images/zotero/live-abstract-detail.jpg)
+
+*The same paper's first PDF page (printed page 312), captured in Zotero. With **独立** (independent) scrolling, position each pane manually to keep the same abstract or introduction passage in view. Check terminology, numbers, and meaning against the original when using the machine translation.*
 
 ![Linked and independent scrolling, with Match pane zoom in the More menu](docs/images/zotero/05-reading-tools.png)
 
@@ -160,7 +166,7 @@ Dictionary lookup and Apple translation run on your device. AI translation and s
 
 Original PDFs are preserved. Manually saved Zotero annotations belong to the original attachment. Completed translations remain stored locally, while unfinished working files have separate cleanup rules. Check terminology, numbers, equations, and meaning before quoting a translation. Physical modifier-wheel gestures, displayed frame rates, and a complete fresh-Mac installation still need further live testing.
 
-Images on this page use real native interface resources with project-authored sample text. Rendering methods, sources, and scope are documented together in the [interface gallery](docs/GALLERY.md).
+The two screenshots of the paper were captured locally with Ask for GPT 1.0.89, Zotero 9.0.6, and add-on 0.3.28 while reading a real paper. The other five Zotero feature images and three app images use native interface resources with project-authored sample content. Image sources, production methods, and scope are documented in the [interface gallery](docs/GALLERY.md).
 
 ## Source and development
 
