@@ -70,7 +70,8 @@ import AskGPTCore
         do { try registerTranslationShortcut(store.hotKey, restoringSavedShortcut: true) }
         catch { store.errorMessage = error.localizedDescription }
         watcher.start()
-        store.connect()
+        if store.appliedSettings.translationConfigurationPath.isEmpty { store.connect() }
+        else { store.status = "已使用自定义翻译配置；问答需单独连接 Codex" }
         // A manual launch should provide an editable window even after first use.
         if !CommandLine.arguments.contains("--background") { panels.showTranslation() }
         if CommandLine.arguments.contains("--settings") { panels.showSettings() }

@@ -1,0 +1,5 @@
+{
+  "provider": "claude-code",
+  "cliPath": "/Users/YOUR_NAME/.local/bin/claude",
+  "model": "YOUR_MODEL_ID"
+}

@@ -2,7 +2,7 @@
 
 Ask for GPT 是 macOS 阅读与英文写作助手：划词后查看本机译文或词典，按需调用 GPT 精译、解析和追问；通过 Chrome、Zotero 插件在原页面中阅读双语内容。PDF 使用独立的本机排版组件，生成保留版式的译本。
 
-本文依据仓库源码和脚本说明安装流程。新机器上的完整安装、系统权限、宿主兼容性和交互效果仍需在目标机器验收；已有开发机测试不代表所有环境均已验证。
+普通使用者可以直接下载 [macOS 安装版](https://github.com/Woyekun-cell/Ask-for-GPT/releases/latest)，按[安装与首次配置指南](INSTALL.macOS.zh-CN.md)操作。下文保留源码构建及进阶集成的步骤，方便开发与排错。
 
 ## 1. 准备环境
 
@@ -11,15 +11,18 @@ Ask for GPT 是 macOS 阅读与英文写作助手：划词后查看本机译文�
 | 应用基础运行 | Swift 包和应用包声明最低 macOS 13；各功能另有系统要求 |
 | 本机翻译、网页本机翻译 | macOS 26 或更新版本，并已安装所需语言对的系统翻译资源；26.4 起使用可用的翻译策略选择 |
 | Word / WPS 写作服务 | macOS 15 或更新版本，另需对应宿主、加载项和 localhost TLS 配置 |
-| GPT 精译、解析、提问、PDF 翻译与写作润色 | Codex CLI 0.162.1 或更新版本，并通过 ChatGPT 账号登录；模型可用性及额度取决于账号 |
+| 默认 AI 翻译、提问与写作润色 | Codex CLI 0.162.1 或更新版本，并通过 ChatGPT 账号登录；模型可用性及额度取决于账号 |
+| 可选翻译配置 | API 使用兼容的 HTTPS Chat Completions 接口及本地密钥文件；Claude Code 使用已安装、已登录且兼容适配参数的 CLI；属于未做连通/效果测试的实验性接入 |
 | 源码构建 | Swift 6 工具链、macOS SDK、Python 3，以及系统 `codesign`、`security`、`openssl` |
-| PDF 排版组件安装 | `uv`、Python 3.12；安装依赖与公开模型、字体等资源时需要联网 |
+| PDF 排版组件安装 | Apple Silicon、macOS 15+；配置入口自动准备 uv、Python 3.12 和预编译依赖，首次需要联网 |
 | Chrome 扩展 | Chrome 106 或更新版本；以本地未打包扩展方式加载 |
 | Zotero 插件 | 当前 manifest 声明兼容 Zotero 9.x |
 
-先确认工具已安装，例如运行 `swift --version`、`codex --version`、`uv --version` 和 `python3.12 --version`。GPT 功能需要先在终端完成 `codex login`，使用 ChatGPT 登录。应用不会自动改走 API Key 计费方式，也不提供无限额度。
+先确认所需工具已安装，例如运行 `swift --version`、`codex --version`、`uv --version` 和 `python3.12 --version`。默认 Codex 路径先在终端完成 `codex login`，使用 ChatGPT 登录。可选翻译配置使用你指定的服务与账号；应用遇到连接或额度错误时不会自动切换服务。
 
-应用默认查找 `/opt/homebrew/bin/codex`；如果你的 CLI 安装在其他位置，在应用“设置”中填写实际绝对路径。提问模型和推理强度可在设置中修改，短选段精译及 PDF 辅助任务有各自的模型配置。
+应用默认查找 `/opt/homebrew/bin/codex`；如果你的 CLI 安装在其他位置，在应用“设置”的 **Codex 路径**中填写实际绝对路径。提问模型和推理强度可在设置中修改。点击 **保存设置**保存，**测试 Codex**仅检查 Codex 连接。
+
+**翻译配置文件**留空时，短段精译/解释、PDF 正文和句词映射仍走原有 Codex 路径。填写本机 JSON 路径后，这些任务采用配置中的 API 或 Claude Code；问答、网页检索与写作保持 Codex。独立翻译配置可单独保存，不要求 Codex 连通。配置字段、示例和权限要求见[翻译后端配置](TRANSLATION-BACKENDS.zh-CN.md)。修改配置或密钥文件后重启应用，让后续任务读取新配置。
 
 Easydict 是可选兼容入口，基本划词翻译不依赖它。
 
@@ -55,12 +58,6 @@ python3 scripts/app-signing prepare
 SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ./scripts/build-app
 ```
 
-SwiftPM 解析 `Package.swift` 时也会使用 SDK 环境；脚本的 `--sdk` 参数只覆盖目标编译。如果 manifest 阶段选错 SDK，可在确认下列路径存在后，同时指定 `SDKROOT`：
-
-```bash
-SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk ./scripts/build-app
-```
-
 路径须与本机实际安装的兼容 SDK 一致，不能仅复制开发机路径并假定已具备该环境。
 
 ### 安装并启动
@@ -78,13 +75,23 @@ open "$HOME/Applications/Ask for GPT.app"
 
 ## 3. 安装 PDF 排版组件
 
-先准备可执行的 `uv` 和 Python 3.12，再运行：
+二进制安装版带有 **02-准备PDF翻译.command**，双击即可。源码用户在仓库根目录运行：
 
 ```bash
 sh Integrations/PDFLayout/install-runtime
 ```
 
-脚本默认查找 `~/.local/bin/uv` 和 `~/.local/bin/python3.12`。如果位置不同，将下面两个占位路径替换为实际绝对路径：
+安装器会下载并核验固定版本的 uv 0.12.23，准备独立的 CPython 3.12.15，再依据带哈希的锁文件安装预编译依赖。最后下载排版模型、字体与 CMap 等公开资源。整个流程不要求 Homebrew、外部 Python 或编译器，完整组件约占 1 GB。
+
+运行目录为：
+
+```text
+~/Library/Application Support/AskGPTReader/PDFLayout/
+```
+
+安装器生成的工具保存在该目录下的 `Tools/`，运行环境在 `runtime/`。这些路径由当前用户首次准备，安装包不会携带作者机器上的绝对 Python 链接或登录信息。网络中断后可重新运行；不要同时打开多个安装任务。
+
+已有受控工具环境的开发者，仍可指定绝对路径：
 
 ```bash
 ASKGPT_UV="/absolute/path/to/uv" \
@@ -92,22 +99,14 @@ ASKGPT_PYTHON="/absolute/path/to/python3.12" \
   sh Integrations/PDFLayout/install-runtime
 ```
 
-这两个环境变量仅覆盖安装时使用的工具。正常应用固定使用默认运行目录：
-
-```text
-~/Library/Application Support/AskGPTReader/PDFLayout/
-```
-
-虽然安装脚本接受自定义目录参数，正式应用当前没有相应的运行目录设置；常规安装请保留默认目录。脚本建立独立虚拟环境，按带哈希的锁文件安装 BabelDOC 0.6.4 等依赖，并下载排版模型、字体与 CMap 等公开资源。它不会上传你的 PDF；后续 PDF 翻译任务也不会自动安装缺失资源。
-
-安装后可检查依赖版本：
+安装器接受一个自定义目录参数，供测试与开发使用；正式应用固定使用上述默认目录。常规使用请保留默认值。准备完成后可检查依赖版本：
 
 ```bash
 "$HOME/Library/Application Support/AskGPTReader/PDFLayout/runtime/bin/python3" \
   -c 'import importlib.metadata; print(importlib.metadata.version("BabelDOC"))'
 ```
 
-预期输出 `0.6.4`。这只验证依赖版本；仍需启动应用并用有权处理的文本型 PDF 检查翻译、排版和阅读器显示。
+预期输出 `0.6.4`。接着在 Zotero 中用有文字层的 PDF 翻译一页，检查阅读效果，再处理整篇。
 
 ## 4. 安装阅读插件
 
@@ -137,6 +136,8 @@ Preview / WPS PDF 可从菜单栏 PDF 入口翻译，生成的私有译本仍在
 ## 5. Word / WPS 写作加载项
 
 写作组件提供本机拼写检查、GPT 选句和上下文润色。可选择美式/英式拼写、最小修改/清晰表达及标注色。写作服务与阅读翻译使用独立的 localhost HTTPS 连接。
+
+写作润色继续使用 Codex；设置中的可选翻译配置只影响阅读翻译与句词映射。
 
 先只准备资源：
 
@@ -177,12 +178,14 @@ Word 可使用文内建议和原生悬浮界面；替换会重新核对文档、
 
 ## 7. 数据流、保存与限制
 
-- **Local 与词典**：本机翻译使用 Apple Translation 和已安装语言包，词典读取随应用打包的 ECDICT 数据。普通选区预热只运行本机处理，不会自动向 GPT 发送选段。
-- **显式 GPT 操作**：GPT 精译/解析发送当前选段；提问发送选段、问题和相应对话上下文，并可进行网页检索。写作润色包含目标文本及必要的邻段上下文。请求经过已登录的 Codex CLI，因此这些功能需要网络。
-- **PDF 翻译**：PDF 在本机提取和排版，独立 helper 将需要翻译的文本及必要上下文提交给模型；不把 PDF 二进制作为模型输入。应仅处理你有权提交给相关服务的文档内容。
-- **本机连接**：阅读插件、PDF 服务和写作桥使用分离的本机端口与认证。连接令牌、证书私钥和运行配置保留在用户目录，不应放入仓库、问题反馈或截图。
+- **Local 与词典**：本机翻译使用 Apple Translation 和已安装语言包，词典读取随应用打包的 ECDICT 数据。普通选区预热只运行本机处理，不会自动发送到外部模型服务。
+- **短段翻译**：GPT 精译/Explain 发送当前选段与所需上下文，采用当前翻译后端；未填写可选配置时使用 Codex。
+- **问答与写作**：提问发送选段、问题和相应对话上下文，并可进行网页检索；写作润色包含目标文本及必要的邻段上下文。这两类功能继续经过已登录的 Codex CLI。
+- **PDF 翻译**：PDF 在本机提取和排版，独立 helper 将需要翻译的正文和句词映射上下文提交给所选模型服务；不把 PDF 二进制作为模型输入。应仅处理你有权提交给相应服务的内容。
+- **凭据与费用**：API Key 保存在用户指定的本机纯文本密钥文件，由 `apiKeyFile`引用；不把密钥写进 JSON 示例或发布包。使用 API 后，费用和额度计入对应服务账户。CLI 方式沿用各自的认证与账户规则。
+- **本机连接**：阅读插件、PDF 服务和写作桥使用分离的本机端口与认证。连接令牌、API 密钥、证书私钥和私人运行配置不应放入仓库、问题反馈或截图。
 - **原文与标注**：原始 PDF 不被覆盖。Zotero 中用户确认的标注会保存到对应文献的标注记录；译文侧选区通过词语映射关联原文。
-- **完成译本**：按源文档哈希、页面范围、语言方向及翻译修订隔离复用。完成的本地译本永久保留；未完成、失败或取消的临时目录才受最多64项、7天及768 MiB的清理限制。当前最多同时运行2个文档任务，各自可取消。
+- **完成译本**：按源文档哈希、页面范围、语言方向、翻译修订及后端配置摘要隔离复用。完成的本地译本永久保留；未完成、失败或取消的临时目录才受最多64项、7天及768 MiB的清理限制。当前最多同时运行2个文档任务，各自可取消。
 - **无 OCR**：当前面向可提取文本的 PDF。扫描件不支持，图片内文字不翻译；复杂竖排文字和图内文字可能没有可靠的词语对应。排版保留与精确词级标注是不同能力，不能互相替代。
 - **结果检查**：翻译和润色仍需核对数字、公式、术语、引文及原意。首次使用新文档或宿主版本，分别检查处理成功、译文内容、最终显示和修改结果。
 
@@ -218,5 +221,7 @@ SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk \
 重新渲染界面图：先运行核心测试以生成当前 debug Core，再执行 `python3 scripts/render-readme-previews`。该入口使用演示状态，不调用模型，不操作已安装应用；段落阅读图单独保留历史来源。
 
 测试通过说明覆盖范围内的代码检查通过，不等同于目标机器安装成功、权限已授予或所有宿主交互均已验收。本手册编写时没有重新执行新机器安装，也没有发起模型请求。
+
+默认 Codex 翻译与阅读流程已有既有运行记录；本次新增 API / Claude Code 接入已构建，未做连通或翻译效果测试。配置文件示例只包含占位值。
 
 安装流程以 [构建脚本](../scripts/build-app)、[签名工具](../scripts/app-signing)、[安装脚本](../scripts/install-app)、[PDF runtime 安装器](../Integrations/PDFLayout/install-runtime) 和 [写作加载项准备器](../scripts/install-writing-addins) 为准。兼容边界见 [本机翻译](../Sources/AskGPTCore/NativeTranslationEngine.swift)、[写作服务入口](../Sources/AskGPT/WritingIntegrationController.swift)、[Chrome manifest](../Integrations/Browser/manifest.json)、[Zotero manifest](../Integrations/Zotero/manifest.json) 和 [WPS adapter](../Integrations/Writing/wps/wps-host.js)。上游来源与许可证见 [BabelDOC provenance](../Integrations/PDFLayout/UPSTREAM.json) 和 [词典 provenance](../Resources/Dictionary/provenance.json)。

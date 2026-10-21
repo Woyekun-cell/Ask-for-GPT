@@ -16,8 +16,18 @@ public struct CodexSettings: Equatable, Codable, Sendable {
     public var cliPath: String
     public var model: String
     public var reasoningEffort: String
-    public init(cliPath: String = "/opt/homebrew/bin/codex", model: String = "gpt-6.1-sol", reasoningEffort: String = "low") {
+    public var translationConfigurationPath: String
+    public init(cliPath: String = "/opt/homebrew/bin/codex", model: String = "gpt-6.1-sol", reasoningEffort: String = "low", translationConfigurationPath: String = "") {
         self.cliPath = cliPath; self.model = model; self.reasoningEffort = reasoningEffort
+        self.translationConfigurationPath = translationConfigurationPath
+    }
+    private enum CodingKeys: String, CodingKey { case cliPath, model, reasoningEffort, translationConfigurationPath }
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        cliPath = try values.decode(String.self, forKey: .cliPath)
+        model = try values.decode(String.self, forKey: .model)
+        reasoningEffort = try values.decode(String.self, forKey: .reasoningEffort)
+        translationConfigurationPath = try values.decodeIfPresent(String.self, forKey: .translationConfigurationPath) ?? ""
     }
 }
 

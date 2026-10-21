@@ -1,5 +1,5 @@
 {
-  "renderedAt": "2026-10-20T15:20:15.763926+00:00",
+  "renderedAt": "2026-10-21T14:16:10.813922+00:00",
   "renderer": "macOS AppKit NSHostingView.cacheDisplay of current source SwiftUI views",
   "fixtures": {
     "translation.png": "AutomaticTranslationView; evidence dictionary card; deterministic injected DemoWordProvider and DemoTranslationDriver; no real engine/model",
@@ -10,12 +10,12 @@
   "sideEffects": "No app control, desktop capture, service startup, real translation engine/model call, document mutation, or permission request. ReaderStore/SettingsView read this renderer process's accessibility trust status. App preferences are in-memory overrides.",
   "validationScope": "Native view demonstration renders only; not end-to-end or installed-app testing.",
   "sources": {
-    "Sources/AskGPT/ReaderStore.swift": "bf5d9fe62f959a7f491307ca7b08978fea2770cf34ad6ac003cac68d1e4b685f",
-    "Sources/AskGPT/PanelController.swift": "662e70db08bd4c573aee62d129cecccd84df19a3f37c362a8db64c50dadc97db",
-    "Sources/AskGPT/Views.swift": "d141b01a26bb836f3acc6e9731cbc866fab13d41e767d3a4944ddbafe077869d",
+    "Sources/AskGPT/ReaderStore.swift": "302c21bad5fdf514e3dc6dfa4aa00219185279a8fdc1c9425a06d9c0a271d9c2",
+    "Sources/AskGPT/PanelController.swift": "d9a0214ed6277f271b0123d62a53c3cb1610b76c03f726e64860d17e14f81e1c",
+    "Sources/AskGPT/Views.swift": "da8169ba8dc2216d4de2d3494332f1c8eca590097220734ca97a0008eb93c348",
     "Sources/AskGPT/GlassStyle.swift": "7689504c5eb4f065cf225e317e84b0b987387a4fa8807edeb58b56309311a862",
     "Sources/AskGPT/WordWritingPopoverView.swift": "afeaae350b77b54744163571fcf139ac5acded0dda4af427134da5d34f012cc0",
-    "docs/demo-source/READMEPreviews.swift": "77de283d2a874fda85202fab58431ee33f74ac5aae19fd31d9e66144ca54f7ad",
+    "docs/demo-source/READMEPreviews.swift": "f8dcdc1a7a0f44ef94ba367a6491ef6e9b908a0c772c49d09a3f7fb5fae33d35",
     "Sources/AskGPTCore/ActiveReadingCapture.swift": "a2a9bfe08f663af0fa1ea737cf605c7634df5e26ca83c92de9e268fdcfa61ba3",
     "Sources/AskGPTCore/BilingualDocument.swift": "3b72d9275a7ebd91879a5cc87a7a485e63c226e29edca2d26215de4c6fce67a4",
     "Sources/AskGPTCore/CodexBackend.swift": "59d7835cd07e08f7bdfd72a7480d44ba454b16d8f00a90f1a8f9f300233c382a",
@@ -28,21 +28,23 @@
     "Sources/AskGPTCore/LocalProofreader.swift": "fdb589efdead6048e3172d15ce4607153ef8fafbd8869705d8bbe7f6e6c17b35",
     "Sources/AskGPTCore/LocalPunctuationChecker.swift": "90c047346b4aa369a77ffaa859c874e44133c2f5230357beec2ee2e666562bb0",
     "Sources/AskGPTCore/LocalTranslationBridge.swift": "c97cbd86f3f5f7dc6112e30e20898ab85d441248678485079ce6b364f933e5d3",
-    "Sources/AskGPTCore/Models.swift": "0998fd3fa81dc7877e73685910b9e2a41def2c343d2a159dced9789616f979d3",
+    "Sources/AskGPTCore/Models.swift": "e4645f6f32e1201d203166658aebecb054812ba4c938508546f06449c9d947ee",
     "Sources/AskGPTCore/NativePDFTranslationStore.swift": "89235ff18896c76102e5a2cde6754735224482b88d4ed159f4471bc2709a7bbd",
     "Sources/AskGPTCore/NativeTranslationEngine.swift": "262d4be16554da1b08963c18efd1f2e60d9b6a0b3e2bcf993fd2faac7ac16a75",
     "Sources/AskGPTCore/NativeWritingApplyAttempt.swift": "2722a626a7b6dca64ce0eb0b5c07542c6bd0c447658e60aa536d565a52b587d6",
     "Sources/AskGPTCore/NativeWritingDocumentBroker.swift": "1e345dc7095f7c5ef97ce6212d1269465f4ef98435e8c5db0f4104a0993ab582",
-    "Sources/AskGPTCore/PDFBatchTranslator.swift": "7df15557b84beb3828307de319438902b50913c847af86ea57d8638dc5fee377",
-    "Sources/AskGPTCore/PDFLayoutService.swift": "464208acd3e028f06efc7e674dfdcdfac73be935c7293e4cc4d0b20aea5a93ee",
-    "Sources/AskGPTCore/PDFPhraseAlignmentTranslator.swift": "b98f67ba873fa7ab6ffd301b65c03574356d756b569d365648a9af109de80e14",
-    "Sources/AskGPTCore/PDFSentenceAlignmentTranslator.swift": "4dc4a50ccec5daf07e81bdb20a250f1f53b8b72062db2420c3019d78b860bc13",
+    "Sources/AskGPTCore/PDFBatchTranslator.swift": "9d8360f860df4abb019bccc6e651502e61b9ca5c7e33ae5896eff83f22582b31",
+    "Sources/AskGPTCore/PDFLayoutService.swift": "bd97111dd0f7ea235aeabcafabccf6ce9c18d14972a2b2d409dacfe3d33e5b53",
+    "Sources/AskGPTCore/PDFPhraseAlignmentTranslator.swift": "f4cf6b67b40546407b78e5eb42001b478b4ba9c900d007d21d65887868724010",
+    "Sources/AskGPTCore/PDFSelectionAlignmentTranslator.swift": "9cfd1333b633d0e2c2c2e5e724ac31b6c1d2073f30911fa099ace51f0a922dfb",
+    "Sources/AskGPTCore/PDFSentenceAlignmentTranslator.swift": "389103b41f19dc0693b8b9218f6e79ad3520842c10503049502832246e591e3f",
     "Sources/AskGPTCore/PDFTranslationDocument.swift": "3c2d2da9f76356df67d003275fe96217dae970ebdf0220045de9c8b89bd212ec",
-    "Sources/AskGPTCore/PassageRefinement.swift": "30627db7bfb6cc84183895ad1971850e22282ae793a91d168d659751d5769fb3",
+    "Sources/AskGPTCore/PassageRefinement.swift": "7afd6f9bba2ee558c79c0f591a8885c8c696bf4004c80af03e21d86783efe16c",
     "Sources/AskGPTCore/RequestCancellationGate.swift": "a383ea4359de4d09d25b2d218f32ea89912d1c86b631158d25bd983c7ca80447",
     "Sources/AskGPTCore/SelectionCapture.swift": "6d1f8bb7ec662ef451e8e859c5fc7e0b6db02ad6f50604172f7696f10956ca55",
     "Sources/AskGPTCore/SelectionWatcher.swift": "608b96a52c82732b0d34fd201998e1f1415dc563c184fc9eab1f3861183ca891",
     "Sources/AskGPTCore/ShortcutSelectionCapture.swift": "814608abc1e898d90219e4d4d0969fa0a5cfa2ec883f361b83bb284f0141117e",
+    "Sources/AskGPTCore/TranslationBackend.swift": "a50032733ec07bdcc3376af7c4ec7c2d47173700dc9430e92124205a35a25f7a",
     "Sources/AskGPTCore/TranslationHelperLifecycle.swift": "b99a5668835e4553446a336d5b7cb85148b5fd46fb2b18b0db30ec932f98c24f",
     "Sources/AskGPTCore/TranslationTextPreparation.swift": "b6fb9bb54624f0a668a323925e1ff7f3be80bb7d581369db1debf0cff9e0cf1c",
     "Sources/AskGPTCore/WordInlineGeometry.swift": "4b711a4f427ae87ddfccd80bfad2c833dd36ba6c9ff07a98da15d82a54e70d46",
@@ -58,16 +60,16 @@
   },
   "images": {
     "translation.png": {
-      "sha256": "89fd4e9e201613e09febd60ce397ca5bfe7ea08c7a113c075599a7634bdb2e30",
-      "bytes": 78756
+      "sha256": "dd12e908ca6b7d001ee738ed05cd40ed0a120819868420330bf5e07e6b89d3a4",
+      "bytes": 355906
     },
     "settings.png": {
-      "sha256": "3c66f1f0af6072897ff3b5f36d5ff7d677a7d419d2a58e2704d3345b790baf2b",
-      "bytes": 141963
+      "sha256": "c45fe4696260b3932b4bf1029891648a48a8af81c3ef5dd68414f919d65d524b",
+      "bytes": 784065
     },
     "writing.png": {
-      "sha256": "6e5579460fd8c7e485745550a9ca0ba8861bd150671efff758971792eab2c603",
-      "bytes": 60873
+      "sha256": "ead88180e9da8a655f6160f4a32928a77552f017e5c48ec3b520978663705e62",
+      "bytes": 271102
     },
     "bilingual-reading.jpg": {
       "sha256": "2828015dedf570917c4d83ac76d8929a34cec96553ba7511f0f236d3c5e96fae",

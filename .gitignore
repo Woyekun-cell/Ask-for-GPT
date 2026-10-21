@@ -15,3 +15,8 @@ connection.local.json
 *.pfx
 *.keychain-db
 *-key.pem
+
+# Personal optional translation-provider configuration and keys
+translation.local.json
+*-api-key.txt
+*.secret

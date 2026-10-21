@@ -1,0 +1,6 @@
+/* Demonstration harness only. Zotero reader.css and plugin styles remain live. */
+html,body{color-scheme:light!important;background:#fff}body{margin-right:238px!important}
+#reader-ui,#split-view{right:238px!important}
+#demo-context{position:fixed;box-sizing:border-box;right:0;top:0;bottom:0;width:238px;padding:20px 17px;background:#fafafa;border-left:1px solid #ddd;font:13px -apple-system,BlinkMacSystemFont,sans-serif;color:#222;z-index:10}
+.context-title{font-size:15px;font-weight:600;margin-bottom:24px}.context-subtitle{font-size:12px;font-weight:600;margin-bottom:14px;color:#555}.context-foot{position:absolute;bottom:22px;line-height:1.7;font-size:11px;color:#888}
+#demo-context select{font:inherit;flex:1;height:28px;border:1px solid #d1d1d1;border-radius:5px;background:white;padding:2px 6px;color:#222}#demo-context button{font:inherit;flex:1;height:29px;border:1px solid #d1d1d1;border-radius:5px;background:white;color:#222}#demo-context button:disabled{opacity:.45}#demo-context progress{height:5px;accent-color:#337fc0}#demo-context [hidden]{display:none!important}

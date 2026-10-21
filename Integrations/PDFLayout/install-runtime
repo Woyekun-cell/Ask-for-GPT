@@ -1,14 +1,119 @@
 #!/bin/sh
 set -eu
 umask 077
+
+# Official release, pinned independently of the user's PATH or Python setup.
+# https://github.com/astral-sh/uv/releases/tag/0.12.23
+# https://releases.astral.sh/github/uv/releases/download/0.12.23/uv-aarch64-apple-darwin.tar.gz.sha256
+uv_version=0.12.23
+uv_sha256=50487ae565ccd96e499056b4674d438f4c53170202617b4c759defe0c6a1b544
+python_version=3.12.15
+
+fail() {
+    printf '错误：%s\n请修正问题后重新运行“准备 PDF 组件”；已安装的工具和依赖可复用。\n' "$1" >&2
+    exit 1
+}
+
+[ "$(/usr/bin/uname -s)" = Darwin ] || fail "PDF 组件仅支持 macOS。"
+[ "$(/usr/bin/uname -m)" = arm64 ] || fail "PDF 组件仅支持 Apple Silicon（arm64）。"
+macos_version=$(/usr/bin/sw_vers -productVersion)
+macos_major=${macos_version%%.*}
+case "$macos_major" in ''|*[!0-9]*) fail "无法确认 macOS 版本。" ;; esac
+[ "$macos_major" -ge 15 ] || fail "PDF 组件需要 macOS 15 或更新版本。"
+
 integration_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cache_root=${1:-"$HOME/Library/Application Support/AskGPTReader/PDFLayout"}
-uv_bin=${ASKGPT_UV:-"$HOME/.local/bin/uv"}
-python_bin=${ASKGPT_PYTHON:-"$HOME/.local/bin/python3.12"}
+[ "$#" -le 1 ] || fail "最多接受一个 PDF 组件安装目录。"
+[ ! -L "$cache_root" ] || fail "PDF 组件安装目录不能是符号链接。"
 mkdir -p "$cache_root"
 chmod 700 "$cache_root"
-if [ ! -x "$cache_root/runtime/bin/python" ]; then
-    "$uv_bin" venv --python "$python_bin" "$cache_root/runtime"
+cache_root=$(CDPATH= cd -- "$cache_root" && pwd -P)
+tools="$cache_root/Tools"
+[ ! -L "$tools" ] || fail "PDF 工具目录不能是符号链接。"
+lock="$cache_root/.install-lock"
+if ! mkdir "$lock" 2>/dev/null; then
+    fail "另一个安装任务正在准备 PDF 组件。请等待该窗口结束后重试；若上次被强制结束，请确认没有安装任务运行，再移除 ${lock}。"
 fi
-"$uv_bin" pip install --python "$cache_root/runtime/bin/python" --require-hashes -r "$integration_dir/requirements.lock"
+temporary=
+stage="初始化"
+cleanup() {
+    result=$?
+    trap - 0
+    if [ -n "$temporary" ] && [ -d "$temporary" ]; then rm -rf -- "$temporary"; fi
+    rmdir "$lock" 2>/dev/null || :
+    if [ "$result" -ne 0 ]; then
+        printf 'PDF 组件准备未完成（%s）。请检查上方错误后重新运行；原有组件和文档已保留。\n' "$stage" >&2
+    fi
+    exit "$result"
+}
+trap cleanup 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+temporary=$(mktemp -d "$cache_root/.install-XXXXXX")
+mkdir -p "$tools"
+chmod 700 "$tools"
+
+# No global installation, shell profile edits, or external Python requirement.
+# Keeping this directory stable makes the venv's managed-Python link persistent.
+export UV_PYTHON_INSTALL_DIR="$tools/python"
+export UV_CACHE_DIR="$temporary/uv-cache"
+export UV_LINK_MODE=copy
+uv_bin=${ASKGPT_UV:-"$tools/uv"}
+if [ -n "${ASKGPT_UV:-}" ]; then
+    [ -x "$uv_bin" ] || fail "ASKGPT_UV 指定的工具不可执行。"
+else
+    needs_uv=1
+    if [ -x "$uv_bin" ]; then
+        case "$("$uv_bin" --version 2>/dev/null || :)" in
+            "uv $uv_version"|"uv $uv_version "*) needs_uv=0 ;;
+        esac
+    fi
+fi
+if [ -z "${ASKGPT_UV:-}" ] && [ "$needs_uv" -eq 1 ]; then
+    stage="下载并校验 uv"
+    printf '正在下载已固定版本的 PDF 安装工具 uv %s…\n' "$uv_version"
+    archive="$temporary/uv.tar.gz"
+    curl --fail --location --show-error --silent --retry 3 --retry-delay 2 \
+        --connect-timeout 20 --max-time 600 --proto '=https' --proto-redir '=https' \
+        --tlsv1.2 --output "$archive" \
+        "https://releases.astral.sh/github/uv/releases/download/$uv_version/uv-aarch64-apple-darwin.tar.gz"
+    if ! printf '%s  %s\n' "$uv_sha256" "$archive" | shasum -a 256 -c -; then
+        fail "uv 下载校验失败，未执行下载内容。请检查网络后重试。"
+    fi
+    tar -xzf "$archive" -C "$temporary" uv-aarch64-apple-darwin/uv
+    downloaded_uv="$temporary/uv-aarch64-apple-darwin/uv"
+    [ -f "$downloaded_uv" ] && [ ! -L "$downloaded_uv" ] || fail "uv 下载内容不完整。"
+    chmod 700 "$downloaded_uv"
+    mv -f "$downloaded_uv" "$uv_bin"
+fi
+
+if [ -n "${ASKGPT_PYTHON:-}" ]; then
+    python_bin=$ASKGPT_PYTHON
+    [ -x "$python_bin" ] || fail "ASKGPT_PYTHON 指定的 Python 不可执行。"
+else
+    stage="安装独立 Python"
+    printf '正在准备独立 Python %s（无需编译器）…\n' "$python_version"
+    [ ! -L "$UV_PYTHON_INSTALL_DIR" ] || fail "独立 Python 目录不能是符号链接。"
+    "$uv_bin" python install --install-dir "$UV_PYTHON_INSTALL_DIR" --no-bin \
+        --no-config "$python_version"
+    python_bin=$python_version
+fi
+stage="准备 Python 环境"
+[ ! -L "$cache_root/runtime" ] || fail "Python 环境目录不能是符号链接。"
+if [ ! -x "$cache_root/runtime/bin/python" ]; then
+    if [ -n "${ASKGPT_PYTHON:-}" ]; then
+        "$uv_bin" venv --python "$python_bin" --no-python-downloads --no-config "$cache_root/runtime"
+    else
+        "$uv_bin" venv --python "$python_bin" --managed-python --no-python-downloads \
+            --no-config "$cache_root/runtime"
+    fi
+fi
+stage="下载已锁定的二进制依赖"
+printf '正在安装 PDF 依赖（仅预编译包，逐项校验）…\n'
+"$uv_bin" pip install --python "$cache_root/runtime/bin/python" --only-binary :all: \
+    --require-hashes --no-python-downloads --no-config -r "$integration_dir/requirements.lock"
+stage="准备模型、字体及 CMap"
 "$cache_root/runtime/bin/python" "$integration_dir/prepare-assets.py" --cache-root "$cache_root"
+[ -s "$cache_root/assets-ready.json" ] || fail "PDF 资产准备未生成完成记录。"
+printf 'PDF 组件准备完成。现在可以返回 Ask for GPT 使用保版翻译。\n'

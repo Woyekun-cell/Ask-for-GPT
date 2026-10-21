@@ -13,6 +13,7 @@ trap 'rmdir "$task_package_lock"' EXIT
 # The installed 26.5 SDK provides the compatible property-wrapper interfaces.
 task_sdk="/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
 if [[ ! -d "$task_sdk" ]]; then task_sdk="$(xcrun --sdk macosx --show-sdk-path)"; fi
+export SDKROOT="$task_sdk"
 swift build --build-system native --sdk "$task_sdk" --scratch-path .build/sdk26 -c release
 task_binary_dir="$(swift build --build-system native --sdk "$task_sdk" --scratch-path .build/sdk26 -c release --show-bin-path)"
 task_app="$task_root/.build/AppPackage.noindex/Ask for GPT.app"
@@ -50,7 +51,7 @@ info={
  'CFBundleExecutable':'AskGPT',
  'CFBundleIconFile':'AppIcon.icns',
  'CFBundlePackageType':'APPL',
- 'CFBundleShortVersionString':'0.1.0',
+ 'CFBundleShortVersionString':os.environ.get('ASKGPT_BUILD_NUMBER') or automatic_version,
  'CFBundleVersion':os.environ.get('ASKGPT_BUILD_NUMBER') or automatic_version,
  'LSMinimumSystemVersion':'13.0',
  'LSUIElement':True,

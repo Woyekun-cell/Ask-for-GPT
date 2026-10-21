@@ -106,7 +106,7 @@ final class ReaderPanel: NSPanel {
     func showSettings() {
         cancelPendingShortcutCapture()
         if settings == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 544, height: 372), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 544, height: 472), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.title = "Ask for GPT · 设置"
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: SettingsView(store: store))

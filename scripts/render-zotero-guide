@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""Render honest, isolated Zotero Reader + current plugin UI demonstrations.
+
+Requires local Zotero and bundled Chromium/Playwright; never opens a user library.
+The XUL sidebar uses the documented HTML adapter in guide.js for Chromium.
+"""
+from pathlib import Path
+import hashlib,json,os,subprocess,zipfile
+root=Path(__file__).resolve().parent.parent
+work=root/'work/github-zotero-visuals';web=work/'web';web.mkdir(parents=True,exist_ok=True)
+source=root/'docs/demo-source/zotero';output=root/'docs/images/zotero';output.mkdir(parents=True,exist_ok=True)
+runtime=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies'
+python=runtime/'python/bin/python3';node=runtime/'node/bin/node'
+demo=work/'demo'
+subprocess.run([str(python),str(source/'make_demo.py'),str(demo)],check=True)
+app=Path(os.environ.get('ZOTERO_APP','/Applications/Zotero.app'))
+archive=app/'Contents/Resources/app/omni.ja'
+with zipfile.ZipFile(archive) as z:
+    for name in z.namelist():
+        if name.startswith('resource/reader/') and not name.endswith('/'):
+            p=web/name.removeprefix('resource/reader/');p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(z.read(name))
+    for name in ['react.js','react-dom.js','prop-types.js']:(web/name).write_bytes(z.read('resource/'+name))
+    (web/'reader.ftl').write_bytes(z.read('localization/zh-CN/reader.ftl'))
+    page=z.read('resource/reader/reader.html').decode().replace('resource://zotero/','/')
+plugin=root/'Integrations/Zotero/content'
+modules=['pdf-layout.js','pdf-pane-gestures.js','pdf-scroll-sync.js','pdf-reading-tools.js','pdf-selection-link.js','pdf-figure-navigation.js','pdf-figure-panel.js','pdf-native-view.js','sidebar.js']
+for name in modules:
+    target=web/'plugin'/name;target.parent.mkdir(exist_ok=True);target.write_bytes((plugin/name).read_bytes())
+for name in ['original.pdf','translation.pdf','alignment.json']:
+    target=web/'demo'/name;target.parent.mkdir(exist_ok=True);target.write_bytes((demo/name).read_bytes())
+for name in ['guide.js','guide.css']:(web/name).write_bytes((source/name).read_bytes())
+page=page.replace('</head>','<link href="/guide.css" rel="stylesheet"></head>')
+page=page.replace('</body>',''.join('<script src="/plugin/'+name+'"></script>' for name in modules)+'<script src="/guide.js"></script></body>')
+(web/'index.html').write_text(page)
+env=os.environ.copy();env['NODE_PATH']=str(runtime/'node/node_modules')
+subprocess.run([str(node),str(source/'render.cjs'),str(web),str(output),str(work)],env=env,check=True)
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+manifest={'renderer':'Local Chromium running bundled Zotero Reader/PDFView resources and unmodified current plugin modules','status':'Isolated native Reader resource demonstration; not a complete desktop Zotero end-to-end screenshot','demoContent':'Self-authored original.pdf and translation.pdf are regenerated under work/github-zotero-visuals/demo. Parallel Chinese text, progress, and the genome/基因组 phrase pair are deterministic handwritten fixtures; no model was called. Glyph rectangles are read from the real native PDFView. No user PDFs, library metadata, tabs, or conversations were accessed.','reproduce':'scripts/render-zotero-guide (requires macOS, local Zotero, and Codex bundled Playwright/reportlab; all PDF fixtures are generated from make_demo.py, without downloads or a user library)','sidebarAdapter':'Current sidebar.js runs without modification; Gecko-only XUL nodes are mapped to native HTML controls for Chromium. See guide.js. The surrounding right pane is a demonstration host.','runtimeArchive':{'path':str(archive),'sha256':sha(archive)},'sources':{str(p.relative_to(root)):sha(p) for p in [source/'make_demo.py',source/'guide.js',source/'guide.css',source/'render.cjs',root/'scripts/render-zotero-guide']+[plugin/n for n in modules]},'generatedFixtures':{str(p.relative_to(root)):{'sha256':sha(p),'bytes':p.stat().st_size} for p in [demo/'original.pdf',demo/'translation.pdf',demo/'alignment.json',work/'rendered-glyph-alignment.json']},'images':{p.name:{'sha256':sha(p),'bytes':p.stat().st_size} for p in sorted(output.glob('*.png'))}}
+(source/'provenance.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')
+print(json.dumps({'images':list(manifest['images']),'provenance':str(source/'provenance.json')},ensure_ascii=False))

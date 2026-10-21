@@ -1,0 +1,71 @@
+{
+  "renderer": "Local Chromium running bundled Zotero Reader/PDFView resources and unmodified current plugin modules",
+  "status": "Isolated native Reader resource demonstration; not a complete desktop Zotero end-to-end screenshot",
+  "demoContent": "Self-authored original.pdf and translation.pdf are regenerated under work/github-zotero-visuals/demo. Parallel Chinese text, progress, and the genome/基因组 phrase pair are deterministic handwritten fixtures; no model was called. Glyph rectangles are read from the real native PDFView. No user PDFs, library metadata, tabs, or conversations were accessed.",
+  "reproduce": "scripts/render-zotero-guide (requires macOS, local Zotero, and Codex bundled Playwright/reportlab; all PDF fixtures are generated from make_demo.py, without downloads or a user library)",
+  "sidebarAdapter": "Current sidebar.js runs without modification; Gecko-only XUL nodes are mapped to native HTML controls for Chromium. See guide.js. The surrounding right pane is a demonstration host.",
+  "runtimeArchive": {
+    "path": "/Applications/Zotero.app/Contents/Resources/app/omni.ja",
+    "sha256": "351e013a5c2d24c3b7b5d9e4423481ff5cc91e5b781954b481f7825572a2f968"
+  },
+  "sources": {
+    "docs/demo-source/zotero/make_demo.py": "b2cb049f0ebb3fdb54b67f86ed80ddd7c750ddeace9d7c080ddbd60ec598b4e4",
+    "docs/demo-source/zotero/guide.js": "05673c81ebe3fac8ba39dd5a0b0377a78f59b94965760803d7739576df03eb9e",
+    "docs/demo-source/zotero/guide.css": "d57a977159dc42e4a5656fea990b80ac7578428f0d50a08bd21cb3d37f1dcb7a",
+    "docs/demo-source/zotero/render.cjs": "efc48e82ad68a7cdd39eabcdf5a04de99bd2e685e7588f442ef23e4faee1b26d",
+    "scripts/render-zotero-guide": "60439dcbd4b3ccdb2070b8c2c82d353eea1cf85065008f52cca1e46ffbe048cb",
+    "Integrations/Zotero/content/pdf-layout.js": "b27bde01e9d4063ef5c94ee7e503dbe35e7e92a1bcb1dfac11a81724ed794137",
+    "Integrations/Zotero/content/pdf-pane-gestures.js": "f13b3eda511cf41934b85032967bfec3421912ad5f419af9db7d0f3f9cba8a92",
+    "Integrations/Zotero/content/pdf-scroll-sync.js": "6dcd5c533f09863eb67ad1aa20976a30c343b2317a1f58b6c377ab812fca3435",
+    "Integrations/Zotero/content/pdf-reading-tools.js": "356b9347d7a34e09e7befe9f05f2cb98dde5c801000edccf336a616a37d954c2",
+    "Integrations/Zotero/content/pdf-selection-link.js": "3a57b60b57bd72e03ec3a52ca6080e4d51945faeecd8985576882f21ae34b26f",
+    "Integrations/Zotero/content/pdf-figure-navigation.js": "7188718bfc8c0ff0e8c4a3c38e5014701a5c369490643555dd80171b6ed26709",
+    "Integrations/Zotero/content/pdf-figure-panel.js": "1e5f977179938b2f8475cacce72f2ab30131957ba2ffc81fc3feb0ee52afea06",
+    "Integrations/Zotero/content/pdf-native-view.js": "25b369121a6cf0a98b63ff4990b99f5427bdf2bb346244182f10db576abc2ee2",
+    "Integrations/Zotero/content/sidebar.js": "dab0548f666b365ee7d405af35b223f033e06c1fdbaf082fab309f0fc86defbc"
+  },
+  "generatedFixtures": {
+    "work/github-zotero-visuals/demo/original.pdf": {
+      "sha256": "3834b92db8a7153deb9f3d59b5165d10988fd16de653a358db2f6bfb9e742b18",
+      "bytes": 37056
+    },
+    "work/github-zotero-visuals/demo/translation.pdf": {
+      "sha256": "76d9b7e18303ea397d6f9295409a37b9ed3e8781e29c214ee1d520f3c9633af2",
+      "bytes": 76972
+    },
+    "work/github-zotero-visuals/demo/alignment.json": {
+      "sha256": "3f1a6b33b5d76bcd5319d8d02de72d0946b6eca2732527bcefa47494f3f43e51",
+      "bytes": 17955
+    },
+    "work/github-zotero-visuals/rendered-glyph-alignment.json": {
+      "sha256": "55d6b8250da8b576838ebfa39ca6ffc5f691a530301e7251cdf35a09d56d3402",
+      "bytes": 63251
+    }
+  },
+  "images": {
+    "01-overview.png": {
+      "sha256": "823efab0f7a46fe76349bab346e5b6f82d55284f724cd28e9c39c739ef2b9d8a",
+      "bytes": 304184
+    },
+    "02-views.png": {
+      "sha256": "31e4c000fb3796c9758bbb228a117112947ef95ca7aff31710e025f20851a1d0",
+      "bytes": 184302
+    },
+    "03-selection.png": {
+      "sha256": "6537ba5308ab4ccec1d17468247eba4cfa3f6e012d7654172661acc0ce83710b",
+      "bytes": 305164
+    },
+    "04-annotations.png": {
+      "sha256": "0161f7950d06b0a43175236309647914c54ddba7e1995b6e6f299c4b87737585",
+      "bytes": 305452
+    },
+    "05-reading-tools.png": {
+      "sha256": "37b84e114fccf8fc42f3d39bf2d511c6064170eb010cde344eae55edde486db4",
+      "bytes": 314346
+    },
+    "06-navigation.png": {
+      "sha256": "aade27abbbaabc0399092d2f8ae22ffb47582e3f83f855f0e123c814a5b55417",
+      "bytes": 324245
+    }
+  }
+}

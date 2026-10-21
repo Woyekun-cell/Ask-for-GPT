@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Ask for GPT Inline",
-  "version": "0.3.24",
+  "version": "0.3.27",
   "description": "Layout-preserving PDF translation in the current Zotero reader tab, using local Ask for GPT.",
   "author": "Ask for GPT",
   "applications": {

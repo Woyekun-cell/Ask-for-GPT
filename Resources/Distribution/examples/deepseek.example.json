@@ -1,0 +1,6 @@
+{
+  "provider": "openai-compatible",
+  "endpoint": "https://api.deepseek.com/chat/completions",
+  "model": "YOUR_MODEL_ID",
+  "apiKeyFile": "/Users/YOUR_NAME/Library/Application Support/AskGPTReader/Translation/deepseek.key"
+}

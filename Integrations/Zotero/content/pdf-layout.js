@@ -5,7 +5,7 @@
   const MAX_OUTPUT_BYTES = 450 * 1024 * 1024;
   const MAX_ALIGNMENT_BYTES = 32 * 1024 * 1024;
   const XHTML = 'http://www.w3.org/1999/xhtml';
-  const knownErrors = new Set(['connection', 'permissions', 'runtime_missing', 'translation_failed', 'gpt_unavailable', 'batch_invalid', 'batch_limit', 'translation_timeout', 'formula_placeholder_mismatch', 'invalid_pdf', 'pdf', 'direction', 'response', 'stopped', 'timeout', 'compatibility', 'limit', 'bridge', 'alignment_unavailable', 'alignment_timeout', 'alignment_invalid', 'annotation_sentence', 'annotation_mapping', 'rendered', 'recycled', 'layout']);
+  const knownErrors = new Set(['connection', 'permissions', 'runtime_missing', 'translation_failed', 'gpt_unavailable', 'batch_invalid', 'batch_limit', 'translation_timeout', 'formula_placeholder_mismatch', 'invalid_pdf', 'pdf', 'direction', 'response', 'stopped', 'timeout', 'compatibility', 'limit', 'bridge', 'alignment_unavailable', 'alignment_timeout', 'alignment_invalid', 'selection_busy', 'selection_timeout', 'selection_invalid', 'selection_unavailable', 'annotation_sentence', 'annotation_mapping', 'rendered', 'recycled', 'layout']);
   const validationDetails=new Set(['jsonObject','count','rowShape','id','empty','formula','content','notFunction','missingProperty','permission','other']);
   const nativeErrorProperties=new Set(['map','flatMap','some','apply','cloneInto','setSelectedAnnotationIDs','_onSelectAnnotations','setAnnotations','_onAddAnnotation','_onUpdateAnnotations','_onDeleteAnnotations','_getPageLabel','getAnnotations','then','slice','filter','find','every','other']);
   class PDFError extends Error { constructor(code) { super(code); this.code = code; } }
@@ -14,7 +14,7 @@
       runtime_missing: '保版翻译组件尚未就绪', translation_failed: '保版翻译失败，请重试', invalid_pdf: '无法读取这份 PDF', pdf: '无法读取这份 PDF',
       gpt_unavailable: 'GPT 翻译连接不可用，请在 Ask for GPT 设置中测试连接', batch_invalid: '页面翻译校验失败，请重试', batch_limit: '当前页文字超出批量翻译上限', translation_timeout: 'GPT 翻译超时，请重试', formula_placeholder_mismatch:'公式标记校验失败，请重试',
       direction: '仅支持英语与中文互译', response: 'PDF 翻译结果无效，请重试', stopped: '', timeout: 'PDF 翻译连接超时，请重试',
-      alignment_unavailable: '词语对应尚未就绪，可重试', alignment_timeout: '词语对应准备超时，可重试', alignment_invalid: '词语对应校验失败，可重试', compatibility: 'PDF 阅读接口暂不可用，请重新打开 PDF', limit: '这份 PDF 超出本地处理上限', bridge: '无法连接本机 PDF 翻译服务' };
+      alignment_unavailable: '词语对应尚未就绪，可重试', alignment_timeout: '词语对应准备超时，可重试', alignment_invalid: '词语对应校验失败，可重试', selection_busy: '词语对应正在准备，请稍后重试', selection_timeout: '词语对应准备超时，可重试', selection_invalid: '词语对应校验失败，可重试', selection_unavailable: '这几个词暂无精确对应', compatibility: 'PDF 阅读接口暂不可用，请重新打开 PDF', limit: '这份 PDF 超出本地处理上限', bridge: '无法连接本机 PDF 翻译服务' };
     const page=Number.isInteger(error?.failedPage)&&error.failedPage>=1&&error.failedPage<=2000?'第 '+error.failedPage+' 页：':'';
     const text=error?.code==='batch_invalid'&&error?.errorDetail==='formula'?messages.formula_placeholder_mismatch:error?.code==='batch_invalid'&&error?.errorDetail==='content'?'译文数值与原文不一致，请重试':messages[error?.code] ?? messages.translation_failed;
     return text?page+text:'';
@@ -134,6 +134,36 @@
       const whole=counts(paragraph[side].text),mapped=counts(parts.join(''));return whole.size===mapped.size&&[...whole].every(([c,n])=>mapped.get(c)===n);
     }));
   }
+  function validateSelectionLinks(value,id,page,sourceSHA256){
+    const fail=()=>{throw new PDFError('response');},sha=value=>typeof value==='string'&&/^[0-9a-f]{64}$/.test(value);
+    if(!validID(id)||!Number.isInteger(page)||page<0||page>=2000||!value||value.jobID!==id||value.page!==page||!sha(value.sourceSHA256)||!sha(value.targetSHA256)||value.revision!=='pdf-selection-semantic-v1'||sourceSHA256!==undefined&&(!sha(sourceSHA256)||sourceSHA256!==value.sourceSHA256))return fail();
+    const single=Object.prototype.hasOwnProperty.call(value,'link'),multiple=Object.prototype.hasOwnProperty.call(value,'links');
+    if(single===multiple||single&&(!validID(value.key)||typeof value.cached!=='boolean')||multiple&&(!Array.isArray(value.links)||value.links.length>512)||value.key!==undefined&&!validID(value.key)||value.cached!==undefined&&typeof value.cached!=='boolean')return fail();
+    const normalize=text=>text.normalize('NFKC').replace(/[\s\u00ad\u200b-\u200d\ufeff]/gu,'').replace(/\u2010/g,'-');
+    const rect=value=>{if(!Array.isArray(value)||value.length!==4||!value.every(n=>Number.isFinite(n)&&Math.abs(n)<=1000000)||value[2]<=value[0]||value[3]<=value[1])return fail();return value.slice();};
+    let glyphCount=0;
+    const part=value=>{
+      if(!value||typeof value.text!=='string'||!value.text.length||value.text.length>8192||!normalize(value.text)||!Array.isArray(value.rects)||!value.rects.length||value.rects.length>4096||!Array.isArray(value.glyphs)||!value.glyphs.length||value.glyphs.length>8192)return fail();
+      const rects=value.rects.map(rect),seen=new Set(),runs=[];
+      const glyphs=value.glyphs.map(g=>{
+        if(!g||typeof g.text!=='string'||!g.text.length||g.text.length>256||!(g.line==null||Number.isSafeInteger(g.line)&&g.line>=0)||++glyphCount>100000)return fail();
+        const meaningful=normalize(g.text),box=g.rect===null?null:rect(g.rect);if(!box&&meaningful)return fail();
+        if(meaningful){const key=meaningful+'|'+box.map(n=>Math.round(n*10000)).join(',');if(seen.has(key))return fail();seen.add(key);}
+        if(box){const previous=runs.at(-1);if(previous&&previous.line===g.line){const r=previous.rect;r[0]=Math.min(r[0],box[0]);r[1]=Math.min(r[1],box[1]);r[2]=Math.max(r[2],box[2]);r[3]=Math.max(r[3],box[3]);}else runs.push({line:g.line,rect:box.slice()});}
+        return {text:g.text,rect:box,...(g.line!==undefined?{line:g.line}:{})};
+      });
+      if(normalize(glyphs.map(g=>g.text).join(''))!==normalize(value.text)||!seen.size||runs.length!==rects.length||runs.some((run,i)=>run.rect.some((n,j)=>Math.abs(n-rects[i][j])>.02+1e-9)))return fail();
+      return {text:value.text,rects,glyphs};
+    };
+    const ids=new Set(),link=value=>{
+      if(!value||typeof value.id!=='string'||!value.id.length||value.id.length>320||/[\x00-\x1f\x7f]/.test(value.id)||ids.has(value.id)||value.method!=='semantic-phrase-model'||!['sourceTokenCount','targetTokenCount'].every(key=>Number.isInteger(value[key])&&value[key]>0&&value[key]<=10000)||value.key!==undefined&&!validID(value.key)||value.paragraph!==undefined&&(typeof value.paragraph!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(value.paragraph)))return fail();ids.add(value.id);
+      const source=part(value.source),target=part(value.target),dual={};
+      for(const [key,actual] of [['dualSource',source],['dualTarget',target]]){const positioned=value[key];if(!positioned||!Array.isArray(positioned.rects)||positioned.rects.length!==actual.rects.length)return fail();dual[key]={rects:positioned.rects.map(rect)};}
+      return {id:value.id,method:value.method,sourceTokenCount:value.sourceTokenCount,targetTokenCount:value.targetTokenCount,source,target,...dual,...(value.key!==undefined?{key:value.key}:{}),...(value.paragraph!==undefined?{paragraph:value.paragraph}:{})};
+    };
+    if(single&&value.link?.key!==undefined&&value.link.key!==value.key)return fail();
+    return {jobID:id,page,sourceSHA256:value.sourceSHA256,targetSHA256:value.targetSHA256,revision:value.revision,...(value.key!==undefined?{key:value.key}:{}),...(value.cached!==undefined?{cached:value.cached}:{}),...(single?{link:value.link===null?null:link(value.link)}:{links:value.links.map(link)})};
+  }
   function validateAlignment(value,sourcePages){
     const fail=()=>{throw new PDFError('response');};
     if(!value||value.schema!==1||value.coordinateSpace!=='pdf'||!['paragraph','sentence'].includes(value.granularity)
@@ -201,7 +231,7 @@
       entry.active++;entry.latest=token;alignmentIntents.set(id,entry);
       return {current:()=>entry.latest===token,release:()=>{if(!--entry.active)alignmentIntents.delete(id);}};
     }
-    async function request(method, suffix, connection, body, headers = {}, control = null, binary = false, jsonLimit = 65536) {
+    async function request(method, suffix, connection, body, headers = {}, control = null, binary = false, jsonLimit = 65536, selectionHandshake = false) {
       if (control?.aborted) throw new PDFError('stopped');
       if(control)control.requestMethod=method;
       try {
@@ -209,7 +239,7 @@
           ...(body ? {body} : {}), headers: {Authorization: 'Bearer ' + connection.token, ...headers},
           timeout: binary ? 60000 : 20000, responseType: binary ? 'arraybuffer' : 'text',
           anon: true, noCache: true, debug: false, logBodyLength: 0, followRedirects: false,
-          errorDelayMax: 0, successCodes: [200,202,204],
+          errorDelayMax: 0, successCodes: [200,202,204,...(selectionHandshake?[409]:[])],
           cancellerReceiver(cancel) { if (control) { control.abortRequest = cancel; if (control.aborted && method !== 'POST') cancel(); } }
         });
         if (control?.aborted && method !== 'POST') throw new PDFError('stopped');
@@ -219,6 +249,7 @@
           return output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
         }
         if (method === 'DELETE' && response.status === 204) return null;
+        if(selectionHandshake&&response.status===409){let code;if(typeof response.responseText!=='string'||response.responseText.length>65536)throw new PDFError('response');try{const parsed=JSON.parse(response.responseText);code=typeof parsed.error==='string'?parsed.error:parsed.error?.code;}catch(_){}throw new PDFError(['selection_source_required','selection_busy'].includes(code)?code:'response');}
         if (![200,202].includes(response.status) || typeof response.responseText !== 'string' || response.responseText.length > jsonLimit) throw new PDFError('response');
         try { return JSON.parse(response.responseText); } catch (_) { throw new PDFError('response'); }
       } catch (error) {
@@ -228,6 +259,7 @@
         if (xhr?.status === 401) throw new PDFError('connection');
         let code;
         try { const parsed = JSON.parse(xhr?.responseText || '{}'); code = typeof parsed.error === 'string' ? parsed.error : parsed.error?.code; } catch (_) {}
+        if(selectionHandshake&&xhr?.status===409)throw new PDFError(['selection_source_required','selection_busy'].includes(code)&&typeof xhr.responseText==='string'&&xhr.responseText.length<=65536?code:'response');
         if (knownErrors.has(code)) throw new PDFError(code);
         if (error?.name === 'TimeoutException') throw new PDFError('timeout');
         throw new PDFError('bridge');
@@ -256,6 +288,13 @@
       if(!Array.isArray(value)||value.length>8||new Set(value).size!==value.length)throw new PDFError('response');
       for(let index=0;index<value.length;index++)if(typeof value[index]!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(value[index]))throw new PDFError('response');
       return value.slice();
+    }
+    function selectionQuery(value,sourcePages){
+      if(!value||typeof value!=='object'||Array.isArray(value)||!Number.isInteger(value.page)||!sourcePages.includes(value.page)||typeof value.paragraph!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(value.paragraph)||!['source','target'].includes(value.side)||typeof value.text!=='string'||!value.text.trim()||Array.from(value.text).length>2048||Array.from(value.text).some(c=>{const n=c.codePointAt(0);return n>=0xd800&&n<=0xdfff;})||!Array.isArray(value.rects)||!value.rects.length||value.rects.length>32)throw new PDFError('response');
+      const rects=value.rects.map(r=>{if(!Array.isArray(r)||r.length!==4||!r.every(n=>Number.isFinite(n)&&Math.abs(n)<=1000000)||r[2]<=r[0]||r[3]<=r[1])throw new PDFError('response');return r.slice();});
+      const selected={page:value.page,paragraph:value.paragraph,side:value.side,rects,text:value.text},json=JSON.stringify(selected);
+      let bytes=0;for(const c of json){const point=c.codePointAt(0);bytes+=point<=0x7f?1:point<=0x7ff?2:point<=0xffff?3:4;}if(bytes>8192)throw new PDFError('response');
+      return {selected,json};
     }
     function validateUpgradeState(value,id,sourcePages){
       if(!value||value.id!==id||!['idle','running','complete','failed'].includes(value.state)||!Array.isArray(value.sourcePages)||!value.sourcePages.every(page=>Number.isInteger(page)&&sourcePages.includes(page))||!Array.isArray(value.completedPages)||!value.completedPages.every(page=>Number.isInteger(page)&&sourcePages.includes(page))||!Number.isInteger(value.mappedSentences)||value.mappedSentences<0||value.mappedSentences>200000)throw new PDFError('response');
@@ -325,6 +364,28 @@
         if(!validID(id)||!Array.isArray(sourcePages)||!sourcePages.length)throw new PDFError('response');
         const connection=await readConnection(dependencies);
         return validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},null,false,MAX_ALIGNMENT_BYTES),sourcePages);
+      },
+      async selectionAlignment(id,value,query,sourcePages,setCancel=()=>{}){
+        if(!validID(id)||!validSourcePages(sourcePages)||typeof setCancel!=='function')throw new PDFError('response');
+        const {selected,json}=selectionQuery(query,sourcePages),control={aborted:false,abortRequest:null},suffix='/'+id+'/selection-alignment';
+        setCancel(()=>{control.aborted=true;try{control.abortRequest?.();}catch(_){}});
+        const connection=await readConnection(dependencies);if(control.aborted)throw new PDFError('stopped');
+        let response;
+        try{response=await request('POST',suffix,connection,json,{'Content-Type':'application/json'},control,false,4*1024*1024,true);}
+        catch(error){
+          if(error?.code!=='selection_source_required'||control.aborted)throw error;
+          const data=validPDF(value);if(control.aborted)throw new PDFError('stopped');
+          const header=json.replace(/[\u007f-\uffff]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0'));
+          if(header.length>8192)throw new PDFError('response');
+          response=await request('POST',suffix,connection,data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength),{'Content-Type':'application/pdf','X-AskGPT-Selection':header},control,false,4*1024*1024);
+        }
+        if(control.aborted)throw new PDFError('stopped');
+        const result=validateSelectionLinks(response,id,selected.page);if(!Object.prototype.hasOwnProperty.call(result,'link'))throw new PDFError('response');return result;
+      },
+      async selectionLinks(id,page,sourcePages){
+        if(!validID(id)||!validSourcePages(sourcePages)||!Number.isInteger(page)||!sourcePages.includes(page))throw new PDFError('response');
+        const connection=await readConnection(dependencies),result=validateSelectionLinks(await request('GET','/'+id+'/selection-alignment?page='+page,connection,null,{},null,false,4*1024*1024),id,page);
+        if(!Object.prototype.hasOwnProperty.call(result,'links'))throw new PDFError('response');return result;
       },
       async prioritizeAlignment(id,page,sourcePages,units=[]){
         if(!validID(id)||!validSourcePages(sourcePages)||!Number.isInteger(page)||!sourcePages.includes(page))throw new PDFError('response');
@@ -741,6 +802,6 @@
       dispose(restorePosition=true){if(disposed)return;disposed=true;generation++;for(const remove of listeners.splice(0))remove();cancelRendering();restoreOriginal();frame.remove();progressHUD.remove();progressStyle.remove();if(restorePosition){original.scrollTop=initial.top;original.scrollLeft=initial.left;}}
     };
   }
-  const api={PDFError,errorMessage,createTransport,mount,validPDF,validateStatus,validateProgress,transfer,diagnostic,copyOpenPDFData,MAX_INPUT_BYTES,MAX_OUTPUT_BYTES,MAX_ALIGNMENT_BYTES,validateAlignment,sentenceCoverage};
+  const api={PDFError,errorMessage,createTransport,mount,validPDF,validateStatus,validateProgress,transfer,diagnostic,copyOpenPDFData,MAX_INPUT_BYTES,MAX_OUTPUT_BYTES,MAX_ALIGNMENT_BYTES,validateAlignment,sentenceCoverage,validateSelectionLinks};
   root.AskGPTPDFLayout=api;if(typeof module!=='undefined')module.exports=api;
 })(this);

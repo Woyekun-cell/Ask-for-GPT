@@ -4,6 +4,8 @@
 No credentials, installation, network requests, or application changes.
 """
 import argparse
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import hashlib
 import json
 from pathlib import Path
@@ -15,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = Path("docs/release-manifest.json")
 TOP_FILES = ("Package.swift", "README.md", "README.en.md", "NOTICE.md", ".gitignore")
 TREES = ("Sources", "Tests", "Integrations", "Resources", "scripts")
-DOC_FILES = ("docs/HANDBOOK.zh-CN.md", "docs/GALLERY.md")
+DOC_FILES = ("docs/HANDBOOK.zh-CN.md", "docs/GALLERY.md", "docs/ZOTERO.zh-CN.md", "docs/INSTALL.macOS.zh-CN.md", "docs/TRANSLATION-BACKENDS.zh-CN.md")
 DOC_TREES = ("docs/images", "docs/demo-source")
 IGNORED = {".git", ".build", "work", "dist", ".superpowers", "__pycache__", "node_modules", ".venv"}
 FORBIDDEN_SUFFIXES = {".pyc", ".pyo", ".p12", ".pfx", ".pem", ".key", ".keychain-db", ".pdf"}
@@ -80,7 +82,7 @@ def prepare(destination):
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
-    manifest = {"schemaVersion": 1, "project": "Ask for GPT", "snapshotDate": "2026-10-20",
+    manifest = {"schemaVersion": 1, "project": "Ask for GPT", "snapshotDate": datetime.now(ZoneInfo("Asia/Shanghai")).date().isoformat(),
                 "distribution": "source", "files": records,
                 "excluded": ["work", ".build", "runtime credentials", "research documents", "historical internal reports"],
                 "scope": "File integrity and credential-pattern checks; not a clean-machine installation or live-host acceptance test."}

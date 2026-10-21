@@ -91,7 +91,7 @@ private struct DemoWordProvider: WordLookupProviding {
             .defaultAppStorage(preferences), name: "translation", width: 420, height: 240,
             directory: output)
         try await capture(SettingsView(store: store).defaultAppStorage(preferences),
-            name: "settings", width: 544, height: 372, directory: output)
+            name: "settings", width: 544, height: 472, directory: output)
         let issue = WritingIssue(id: "demo-spelling", category: "spelling",
             original: "writting", replacement: "writing", reason: "拼写错误",
             range: .init(start: 0, length: 8), requiresAuthorConfirmation: true)

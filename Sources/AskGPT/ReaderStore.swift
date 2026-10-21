@@ -693,7 +693,10 @@ import os
     }
 
     func saveSettings() {
-        guard !settings.cliPath.isEmpty, !settings.model.isEmpty else { errorMessage = "CLI 路径和模型名称不能为空。"; return }
+        settings.translationConfigurationPath = settings.translationConfigurationPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !settings.translationConfigurationPath.isEmpty || (!settings.cliPath.isEmpty && !settings.model.isEmpty) else {
+            errorMessage = "请填写 Codex 路径和提问模型，或选择翻译配置文件。"; return
+        }
         do { try onHotKeyChanged?(hotKey) }
         catch { hotKey = appliedHotKey; errorMessage = error.localizedDescription; return }
         appliedHotKey = hotKey
@@ -718,9 +721,10 @@ import os
         Task { [weak self] in
             await cleanup.value
             guard let self, generation == self.connectionGeneration else { return }
-            self.connect()
+            if self.appliedSettings.translationConfigurationPath.isEmpty { self.connect() }
         }
-        status = "正在检查 ChatGPT 登录…"
+        status = settings.translationConfigurationPath.isEmpty ? "正在检查 ChatGPT 登录…" : "翻译配置已保存；重启应用后生效"
+
         errorMessage = nil
     }
 

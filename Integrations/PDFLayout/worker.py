@@ -76,6 +76,9 @@ class NativeHelper:
         self.lifecycle_lock = threading.RLock()
         self.cancelled = False
         self.batch_pool_cancelled = None
+        self._selection_reapers = set()
+        self._selection_reap_callbacks = []
+        self.selection_timing = {}
 
     def __enter__(self): return self
     def __exit__(self, *args): self.close()
@@ -99,6 +102,10 @@ class NativeHelper:
         process, self.process = self.process, None
         self.process_mode = None
         self.buffer.clear()
+        self._reap_process(process)
+
+    @staticmethod
+    def _reap_process(process):
         if process:
             if process.poll() is None:
                 # A completed Swift batch can release its ephemeral CLI
@@ -116,23 +123,69 @@ class NativeHelper:
             for handle in [process.stdin, process.stdout]:
                 if handle: handle.close()
 
-    def _start(self, *, batch=False, alignment=False, phrases=False):
+    def _retire_selection_process(self):
+        # HTTP failure latency excludes the existing graceful child cleanup.
+        # Detach first: neither this failed child nor its buffered reply can
+        # re-enter the interactive pool. The owned reaper still closes EOF,
+        # gives the native helper time to retire Codex, then TERM/KILL + waits.
+        with self.lifecycle_lock:
+            process, self.process = self.process, None
+            self.process_mode = None
+            self.buffer.clear()
+        if process is None: return
+        def reap():
+            try: self._reap_process(process)
+            except (OSError, ValueError):
+                for handle in (process.stdin, process.stdout):
+                    try:
+                        if handle: handle.close()
+                    except (OSError, ValueError): pass
+            finally:
+                with self.lifecycle_lock:
+                    self._selection_reapers.discard(threading.current_thread())
+                    callbacks=self._selection_reap_callbacks[:] if not self._selection_reapers else []
+                    if callbacks:self._selection_reap_callbacks.clear()
+                for callback in callbacks:callback()
+        # A normal interpreter exit must finish owned child retirement. This
+        # controlled non-daemon thread is bounded by _reap_process's waits.
+        thread=threading.Thread(target=reap,name="askgpt-selection-reap",daemon=False)
+        with self.lifecycle_lock:
+            self._selection_reapers.add(thread)
+            thread.start()
+
+    def when_selection_retired(self, callback):
+        with self.lifecycle_lock:
+            if self._selection_reapers:
+                self._selection_reap_callbacks.append(callback);return
+        callback()
+
+    def wait_selection_retired(self, timeout=4.5):
+        deadline=time.monotonic()+timeout
+        while True:
+            with self.lifecycle_lock:threads=list(self._selection_reapers)
+            if not threads:return True
+            for thread in threads:
+                remaining=deadline-time.monotonic()
+                if remaining<=0:return False
+                thread.join(remaining)
+
+    def _start(self, *, batch=False, alignment=False, phrases=False, selection=False):
         # Installation and cancellation share a lock, including Popen itself:
         # cancellation either prevents a child or joins and closes that child.
         with self.lifecycle_lock:
             if self.cancelled or (self.batch_pool_cancelled is not None and self.batch_pool_cancelled.is_set()):
                 raise ProtocolFailure("gpt_unavailable")
-            return self._start_process(batch=batch, alignment=alignment, phrases=phrases)
+            return self._start_process(batch=batch, alignment=alignment, phrases=phrases, selection=selection)
 
-    def _start_process(self, *, batch=False, alignment=False, phrases=False):
-        mode = "phrase_alignment" if phrases else "alignment" if alignment else batch
+    def _start_process(self, *, batch=False, alignment=False, phrases=False, selection=False):
+        mode = "selection_alignment" if selection else "phrase_alignment" if phrases else "alignment" if alignment else batch
         if self.process is not None and self.process.poll() is None and self.process_mode == mode: return self.process
         self.close()
         environment = dict(os.environ)
         # BabelDOC's private asset HOME must not hide the user's installed Apple
         # language packs from the dedicated native helper.
         environment["HOME"] = pwd.getpwuid(os.getuid()).pw_dir
-        flags = ["--gpt-phrase-align"] if phrases else ["--gpt-align"] if alignment else (["--gpt-batch"] if batch else [])
+        flags = ["--gpt-selection-align"] if selection else ["--gpt-phrase-align"] if phrases else ["--gpt-align"] if alignment else (["--gpt-batch"] if batch else [])
         self.process = subprocess.Popen([str(self.executable)] + flags, stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0, env=environment)
         self.process_mode = mode
@@ -334,6 +387,81 @@ class NativeHelper:
                 self.close();raise
             except (OSError,ValueError,TypeError):
                 self.close();raise ProtocolFailure("alignment_invalid") from None
+
+    def _selection_exchange(self, message, timeout):
+        from phrase_alignment import MAX_PHRASE_MESSAGE
+        process = self._start(selection=True)
+        identity = uuid.uuid4().hex
+        encoded = (json.dumps({"id":identity, **message, "source":self.source, "target":self.target},
+            ensure_ascii=False, separators=(",",":"))+"\n").encode()
+        if len(encoded) > MAX_PHRASE_MESSAGE: raise ProtocolFailure("selection_invalid")
+        deadline = time.monotonic()+timeout
+        descriptor = process.stdin.fileno(); os.set_blocking(descriptor,False)
+        pending = memoryview(encoded)
+        with selectors.DefaultSelector() as selector:
+            selector.register(descriptor,selectors.EVENT_WRITE)
+            while pending:
+                remaining=deadline-time.monotonic()
+                if remaining<=0 or not selector.select(remaining): raise ProtocolFailure("selection_timeout")
+                try: written=os.write(descriptor,pending[:65536])
+                except BlockingIOError: continue
+                if written<=0: raise ProtocolFailure("gpt_unavailable")
+                pending=pending[written:]
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout,selectors.EVENT_READ)
+            while b"\n" not in self.buffer:
+                remaining=deadline-time.monotonic()
+                if remaining<=0 or not selector.select(remaining): raise ProtocolFailure("selection_timeout")
+                data=os.read(process.stdout.fileno(),65536)
+                if not data or len(self.buffer)+len(data)>MAX_PHRASE_MESSAGE: raise ProtocolFailure("selection_invalid")
+                self.buffer.extend(data)
+        line,_,extra=self.buffer.partition(b"\n");self.buffer=bytearray(extra)
+        response=json.loads(line)
+        if not isinstance(response,dict) or response.get("id")!=identity: raise ProtocolFailure("selection_invalid")
+        return response
+
+    def warm_selection(self, *, timeout=20.0):
+        """Prepare an isolated native session; this frame contains no document."""
+        with self.lock:
+            try:
+                response = self._selection_exchange({"warmup":True}, timeout)
+                if set(response)-{"id","ready","error","errorDetail"}: raise ProtocolFailure("selection_invalid")
+                if response.get("error"):
+                    raise ProtocolFailure("gpt_unavailable" if response["error"]=="gpt_unavailable" else "selection_invalid")
+                if response.get("ready") is not True: raise ProtocolFailure("selection_invalid")
+            except ProtocolFailure:
+                self._retire_selection_process(); raise
+            except (OSError,ValueError,TypeError):
+                self._retire_selection_process(); raise ProtocolFailure("selection_invalid") from None
+
+    def align_selection(self, unit, side, start, end):
+        """One bounded selection turn; no sentence worker, mode switch or retry."""
+        from selection_service import validate_selection_request, validate_selection_match
+        validate_selection_request(unit, side, start, end)
+        with self.lock:
+            self.selection_timing = {}
+            try:
+                response = self._selection_exchange({"unit":unit, "side":side, "range":[start,end]}, self.batch_timeout)
+                if set(response)-{"id","match","error","errorDetail","totalSeconds","firstDeltaSeconds"}:
+                    raise ProtocolFailure("selection_invalid")
+                if response.get("error"):
+                    code=response["error"]
+                    raise ProtocolFailure(code if code in {"selection_timeout","gpt_unavailable"} else "selection_invalid")
+                if "match" not in response: raise ProtocolFailure("selection_invalid")
+                match = validate_selection_match(unit,side,start,end,response["match"],
+                    language=self.source if side=="source" else self.target)
+                # Diagnostic numbers never affect an otherwise valid mapping.
+                # Reset each turn and allowlist finite durations only.
+                total, first = response.get("totalSeconds"), response.get("firstDeltaSeconds")
+                valid = lambda n: type(n) in (int,float) and 0 <= n <= 86400 and math.isfinite(n)
+                if valid(total) and (first is None or valid(first) and first <= total):
+                    self.selection_timing = {"totalSeconds":float(total)}
+                    if first is not None: self.selection_timing["firstDeltaSeconds"] = float(first)
+                return match
+            except ProtocolFailure:
+                self._retire_selection_process(); raise
+            except (OSError,ValueError,TypeError):
+                self._retire_selection_process(); raise ProtocolFailure("selection_invalid") from None
 
 
 def _source_page_prose(page):

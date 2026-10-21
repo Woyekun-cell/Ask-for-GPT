@@ -933,8 +933,28 @@ async function figurePreparationFixture(){
   await check('closing during native PDF initialization cannot revive the retired view',async()=>{
     const f=await fixture();const release=f.hold(),pending=f.show();await tick();f.close();release();await pending;assert.equal(f.layer.visible,false);assert(f.views[0].destroyed);assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');
   });
-  await check('native PDF initialization remains visible behind the original so its first animation frame can run',async()=>{
-    const f=await fixture();try{f.sourceFrame.style.setProperty('z-index','7','important');const release=f.hold(),pending=f.show();await tick();assert.equal(f.layer.visible,false);assert.equal(f.layer.host.style.getPropertyValue('visibility'),'visible','a hidden ancestor would suspend PDF.js animationStarted');assert.equal(f.layer.host.style.getPropertyValue('z-index'),'0');assert.equal(f.sourceFrame.style.getPropertyValue('z-index'),'1');assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');release();await pending;assert.equal(f.layer.host.style.getPropertyValue('z-index'),'0','the reader React selection/annotation/find popups use z-index:1 and must remain above the PDF host');assert(f.layer.visible);f.layer.dispose();assert.equal(f.sourceFrame.style.getPropertyValue('z-index'),'','mount-time stacking state must be restored');assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');}finally{f.close();}
+  await check('native construction and pending scope replacement expose the translated viewport without early navigation or fit',async()=>{
+    for(const mode of ['dual','mono']){
+      const snapshots=[],f=await fixture({},({source})=>{const Base=source.constructor;source.constructor=class extends Base{constructor(options){const viewport=options.container,host=viewport.parentNode;snapshots.push({host:host.style.getPropertyValue('visibility'),left:viewport.style.getPropertyValue('left'),sourceWidth:source._iframe.style.getPropertyValue('width'),sourceVisibility:source._iframe.style.getPropertyValue('visibility')});super(options);}};});
+      try{
+        const assertExposed=()=>{const snapshot=snapshots.at(-1);assert.equal(snapshot.host,'visible');assert.equal(snapshot.left,mode==='dual'?'50%':'0');if(mode==='dual'){assert.equal(snapshot.sourceWidth,'50%','the original must leave the translated half unobstructed before construction');assert.equal(snapshot.sourceVisibility,'visible');}else assert.equal(snapshot.sourceVisibility,'hidden','the original must not cover a pending mono viewport');};
+        let release=f.hold(),pending=f.show([8],mode);await tick();assertExposed();assert.equal(f.layer.visible,false);release();await pending;
+        const previous=f.layer.nativeView,navigation=f.states.filter(value=>value.navigation).length,fits=f.source.calls.filter(value=>value[0]==='fitWidth').length;
+        release=f.hold();pending=f.show([0,1,2,3,4,5,6,7,8,9],mode);await tick();assertExposed();assert(previous.destroyed);assert.equal(f.layer.visible,false);assert.equal(f.states.filter(value=>value.navigation).length,navigation,'pre-layout cannot publish a navigation');assert.equal(f.source.calls.filter(value=>value[0]==='fitWidth').length,fits,'pre-layout cannot fit either view');release();await pending;
+      }finally{f.close();}
+    }
+  });
+  await check('a first-render failure restores every original iframe style after pending mono or dual layout',async()=>{
+    for(const mode of ['dual','mono']){
+      let rejectRender;const rendered=new Promise((resolve,reject)=>{rejectRender=reject;}),f=await fixture({},({source})=>{source._iframe.style.setProperty('width','83%','important');source._iframe.style.setProperty('top','11px');source._iframe.style.setProperty('z-index','7','important');const Base=source.constructor;source.constructor=class extends Base{constructor(options){super(options);this._iframeWindow.PDFViewerApplication.pdfViewer.onePageRendered=rendered;}};});
+      try{
+        const pending=f.show([8],mode);await tick();const candidate=f.layer.nativeView;assert.equal(f.layer.host.style.getPropertyValue('visibility'),'visible');if(mode==='dual')assert.equal(f.sourceFrame.style.getPropertyValue('width'),'50%');else assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'hidden');const error=new Error('first render failed'),failure=assert.rejects(pending,error);rejectRender(error);await failure;
+        assert.equal(f.layer.nativeView,null);assert(candidate.destroyed);assert.equal(f.layer.host.style.getPropertyValue('visibility'),'hidden');assert.equal(f.sourceFrame.style.getPropertyValue('width'),'83%');assert.equal(f.sourceFrame.style.getPropertyPriority('width'),'important');assert.equal(f.sourceFrame.style.getPropertyValue('top'),'11px');assert.equal(f.sourceFrame.style.getPropertyValue('z-index'),'7');assert.equal(f.sourceFrame.style.getPropertyPriority('z-index'),'important');assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');assert.equal(f.states.filter(value=>value.navigation).length,0);assert.equal(f.writes.length,0);
+      }finally{f.close();}
+    }
+  });
+  await check('an options-construction failure restores the source before a native iframe can be created',async()=>{
+    for(const mode of ['mono','dual']){const f=await fixture();try{await assert.rejects(f.layer.showOutput(null,[8],mode,alignment([8])),{code:'compatibility'});assert.equal(f.views.length,0);assert.equal(f.layer.host.style.getPropertyValue('visibility'),'hidden');assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');assert.equal(f.sourceFrame.style.getPropertyValue('width'),'');}finally{f.close();}}
   });
   await check('disposal removes all method hooks and leaves another reader independent',async()=>{
     const first=await fixture(),second=await fixture();try{await first.show([0]);await second.show([3]);first.close();assert(!Object.hasOwn(first.source,'setFindState'));first.source.setFindState({query:'English'});assert.equal(first.source.findState.query,'English');second.layer.nativeView._options.onAddAnnotation(highlight(),true);assert.equal(first.writes.length,0);assert.equal(second.writes[0].value.position.pageIndex,3);assert(second.layer.visible);}finally{first.close();second.close();}
@@ -960,6 +980,143 @@ async function figurePreparationFixture(){
     }finally{f.close();}
     const ready=[],complete=await fixture({},()=>{},{align:(page,options)=>{ready.push({page,options});return 'pending';}});
     try{await complete.layer.showOutput(new Uint8Array([1,2,3]).buffer,[0],'dual',selectionAlignment());assert.deepEqual(ready,[],'a truly complete cache must not start another upgrade');assert.equal(complete.writes.length,0);}finally{complete.close();}
+  });
+  await check('cold native selections identify one real paragraph without requesting a sentence or inventing unseen glyphs',()=>{
+    const value=selectionAlignment([4]),row=value.pages[0].paragraphs[0].sentences[0],source={_pdfPages:{4:{chars:row.source.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}}},target={_pdfPages:{0:{chars:row.target.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}}};
+    delete value.pages[0].paragraphs[0].sentences;const mapper=Native.createMapper(value,'mono',source,target);
+    assert.deepEqual(mapper.selectionRequest({...highlight(4,[[94,690,130,710]]),text:'genome'},'source'),{page:4,paragraph:'p0_0',side:'source',rects:[[94,690,130,710]],text:'genome'});
+    assert.deepEqual(mapper.selectionRequest({...highlight(0,[[60,690,90,710]]),text:'基因组'},'target'),{page:4,paragraph:'p0_0',side:'target',rects:[[60,690,90,710]],text:'基因组'});
+    assert.equal(mapper.selectionRequest({...highlight(4,[[94,690,130,710]]),text:'foreign'},'source'),null);
+    assert.equal(mapper.selectionRequest(highlight(4,[[10,20,30,40]]),'source'),null);
+    assert.equal(Native.createMapper(value,'mono').selectionRequest({...highlight(4,[[94,690,130,710]]),text:'genome'},'source'),null);
+  });
+  await check('independent verified word links map and save in both directions before any sentence sidecar exists',()=>{
+    const value=selectionAlignment([4]),row=value.pages[0].paragraphs[0].sentences[0],link=clone(row.phrases[1]);delete value.pages[0].paragraphs[0].sentences;
+    const mapper=Native.createMapper(value,'mono',null,null,()=>[link]),english={...highlight(4,[[94,690,130,710]]),text:'genome'};
+    assert.equal(mapper.hasExactSourceSelection(english),true);assert.deepEqual(mapper.projectAnnotation(english).position.rects,[[60,690,90,710]]);
+    const saved=mapper.toSourceAnnotation({...highlight(0,[[70,690,90,710]]),text:'因组'});assert.equal(saved.text,'genome');assert.deepEqual(saved.position.rects,[[94,690,130,710]]);assert.deepEqual(mapper.projectAnnotation(saved).position.rects,[[70,690,90,710]]);
+    assert.throws(()=>mapper.toSourceAnnotation({...highlight(0,[[40,690,90,710]]),text:'人类基因组'}),{code:'annotation_sentence'});
+    const conflicting=clone(link);conflicting.id='conflict';conflicting.target=clone(row.phrases[0].target);conflicting.dualTarget=clone(row.phrases[0].dualTarget);conflicting.targetTokenCount=2;
+    assert.equal(Native.createMapper(value,'mono',null,null,()=>[link,conflicting]).hasExactSourceSelection(english),false,'conflicting exact correspondences must not choose an arbitrary result');
+    const reversed=Native.createMapper(value,'mono',null,null,()=>[link,clone(row.phrases[0])]),mixed=reversed.toSourceAnnotation({...highlight(0,[[40,690,60,710],[70,690,90,710]]),text:'人类因组'});assert.equal(mixed.text,'human genome');assert.deepEqual(reversed.projectAnnotation(mixed).position.rects,[[40,690,60,710],[70,690,90,710]],'partial selection evidence follows actual glyph order rather than cache insertion order');
+    const combined=selectionAlignment(),known=combined.pages[0].paragraphs[0].sentences[0];known.phrases=[known.phrases[0]];const merged=Native.createMapper(combined,'mono',null,null,()=>[link]).toSourceAnnotation({...highlight(0,[[40,690,90,710]]),text:'人类基因组'});assert.equal(merged.text,'human genome','old exact word units combine with a new independent link without a sentence fallback');
+  });
+  await check('selection-only metadata restores counterpart and saved highlights without setting sentence readiness or rebuilding the view',async()=>{
+    const value=selectionAlignment(),paragraph=value.pages[0].paragraphs[0],row=paragraph.sentences[0],key='c'.repeat(64),link={...clone(row.phrases[1]),id:'sel_'+key,key,paragraph:paragraph.id},requests=[];delete paragraph.sentences;
+    const f=await fixture({},({source,reader})=>{source._pdfPages={0:{chars:row.source.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};reader._state.annotations=[{...highlight(0,[[94,690,130,710]]),text:'genome',id:'OLDWORD'}];},{align:(page,options)=>{requests.push({page,options});return 'started';}});
+    try{await f.show([0],'dual',value);const target=f.layer.nativeView;assert.equal(target._annotations.length,0);f.source._iframeWindow.emit('pointermove',{});f.source._onSetSelectionPopup({rect:[1,2,3,4],annotation:{...highlight(0,[[94,690,130,710]]),text:'genome'}});assert.deepEqual(requests.at(-1).options.selection,{page:0,paragraph:'p0_0',side:'source',rects:[[94,690,130,710]],text:'genome'});
+      const div=new DOM.Element(target._iframeWindow.document,'div');target._iframeWindow.document.body.appendChild(div);target._iframeWindow.PDFViewerApplication.pdfViewer.getPageView=()=>({div,viewport:{convertToViewportPoint:(x,y)=>[x,y]}});target._iframeWindow.emit('pointermove',{});
+      const result={jobID:'job_fixture-1',page:0,sourceSHA256:'a'.repeat(64),targetSHA256:'b'.repeat(64),revision:'pdf-selection-semantic-v1',key,link,cached:false};assert.equal(f.layer.updateSelectionLinks(result),true);assert.equal(f.layer.nativeView,target);assert.equal(f.views.length,1);assert.equal(target._annotations[0].text,'基因组');assert.deepEqual(target._annotations[0].position.rects,[[60,690,90,710]]);assert.equal(div.children.length,1,'hovering another pane cannot redirect the completed selection counterpart');assert.equal(value.pages[0].paragraphs[0].sentences,undefined);assert.equal(f.writes.length,0);
+      const invalid=clone(result);invalid.link.dualTarget.rects[0][0]+=2;assert.throws(()=>f.layer.updateSelectionLinks(invalid));assert.equal(target._annotations[0].text,'基因组');const before=requests.length;f.source._onSetSelectionPopup(null);f.source._onSetSelectionPopup({rect:[1,2,3,4],annotation:{...highlight(0,[[94,690,130,710]]),text:'genome'}});assert.equal(requests.length,before,'a local exact link prevents another interaction request');
+      f.layer.updateAlignment(clone(value));assert.equal(target._annotations[0].text,'基因组','later whole-page checkpoints must retain independently committed exact links');assert.equal(div.children.length,1);for(const mutate of [r=>r.sourceSHA256='d'.repeat(64),r=>r.targetSHA256='d'.repeat(64),r=>r.jobID='other_job',r=>r.link.paragraph='other_paragraph']){const bad=clone(result);mutate(bad);assert.throws(()=>f.layer.updateSelectionLinks(bad));}assert.equal(target._annotations[0].text,'基因组');
+    }finally{f.close();}
+  });
+  await check('clearing source annotation IDs through the real native target popup side effect cannot suppress the next source word request',async()=>{
+    const value=selectionAlignment([4]),paragraph=value.pages[0].paragraphs[0],row=paragraph.sentences[0],calls=[];delete paragraph.sentences;
+    const f=await fixture({},({source})=>{source._pdfPages={4:{chars:row.source.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};},{align:(page,options)=>{calls.push({page,options});return 'started';}});
+    try{
+      await f.show([4],'dual',value);const target=f.layer.nativeView;
+      // PDFView.setSelectedAnnotationIDs calls _setSelectionRanges(), whose
+      // empty range synchronously emits _onSetSelectionPopup(undefined).
+      target.setSelectedAnnotationIDs=function(ids){this.selected=ids;this._options.onSetSelectionPopup();};
+      f.source._iframeWindow.emit('pointerdown',{button:0});f.source.setSelectedAnnotationIDs([]);calls.length=0;
+      const popup={rect:[1,2,3,4],annotation:{...highlight(4,[[94,690,130,710]]),text:'genome'}};f.source._onSetSelectionPopup(popup);
+      assert.deepEqual(calls,[{page:4,options:{explicit:true,units:['p0_0'],selection:{page:4,paragraph:'p0_0',side:'source',rects:[[94,690,130,710]],text:'genome'}}}]);assert.equal(f.source._selectionPopup.annotation.text,'genome');assert.equal(f.popups.at(-1).annotation.text,'genome');assert.equal(f.writes.length,0);
+    }finally{f.close();}
+  });
+  await check('nonempty native popup callbacks own their actual pane while empty follower callbacks and target bridging cannot change ownership',async()=>{
+    const value=selectionAlignment([4]),paragraph=value.pages[0].paragraphs[0],row=paragraph.sentences[0],calls=[];delete paragraph.sentences;
+    const f=await fixture({},({source})=>{source._pdfPages={4:{chars:row.source.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};},{align:(page,options)=>{calls.push({page,options});return 'started';}});
+    try{
+      await f.show([4],'dual',value);const target=f.layer.nativeView;target._pdfPages={0:{chars:row.target.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};
+      const english={rect:[1,2,3,4],annotation:{...highlight(4,[[94,690,130,710]]),text:'genome'}},chinese={rect:[1,2,3,4],annotation:{...highlight(0,[[60,690,90,710]]),text:'基因组'}};
+      f.source._iframeWindow.emit('pointermove',{});target._options.onSetSelectionPopup(chinese);assert.equal(target._selectionPopup.annotation.text,'基因组');assert.equal(target._selectionPopup.annotation.position.pageIndex,0);assert.deepEqual(calls.filter(c=>c.options.explicit).map(c=>c.options.selection?.side),['target'],'the bridged source callback must not reinterpret a target selection as a physical source selection');assert.equal(f.source._selectionPopup,undefined);
+      calls.length=0;f.source._onSetSelectionPopup(null);f.source.navigateToNextPage();assert.equal(target.calls.at(-1)[0],'next','an empty source callback cannot claim a live target selection');assert.deepEqual(calls,[]);
+      f.source._onSetSelectionPopup(english);assert.equal(f.source._selectionPopup.annotation.text,'genome','a real source callback must claim its pane before ReaderUI synchronously sets the popup');assert.deepEqual(calls.filter(c=>c.options.explicit).map(c=>c.options.selection?.side),['source']);
+      calls.length=0;target._options.onSetSelectionPopup(null);const before=target.calls.length;f.source.navigateToNextPage();assert.equal(target.calls.length,before,'an empty target callback cannot claim the source pane');assert.equal(f.source.calls.at(-1)[0],'next');assert.deepEqual(calls,[]);assert.equal(f.writes.length,0);assert.equal(f.reader._state.tool.type,'pointer');
+    }finally{f.close();}
+  });
+  await check('inactive saved native popup repositioning cannot replace the current selection in either direction',async()=>{
+    for(const inactive of ['source','target']){
+      const value=selectionAlignment([4]),paragraph=value.pages[0].paragraphs[0],row=paragraph.sentences[0],calls=[];delete paragraph.sentences;
+      const f=await fixture({},({source})=>{source._pdfPages={4:{chars:row.source.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};},{align:(page,options)=>{calls.push({page,options});return 'started';}});
+      try{
+        await f.show([4],'dual',value);const target=f.layer.nativeView;target._pdfPages={0:{chars:row.target.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};
+        const active=inactive==='source'?'target':'source',views={source:f.source,target},popups={source:{rect:[1,2,3,4],annotation:{...highlight(4,[[94,690,130,710]]),text:'genome'}},target:{rect:[10,20,30,40],annotation:{...highlight(0,[[60,690,90,710]]),text:'基因组'}}},emit=(lane,popup)=>lane==='source'?f.source._onSetSelectionPopup(popup):target._options.onSetSelectionPopup(popup);
+        views[inactive]._iframeWindow.emit('pointerdown',{button:0});emit(inactive,popups[inactive]);const stale=clone(views[inactive]._selectionPopup);
+        // Shift selection leaves the other native view's saved ranges alive.
+        views[active]._iframeWindow.emit('pointerdown',{button:0,shiftKey:true});emit(active,popups[active]);const current=clone(f.reader._state.primaryViewSelectionPopup),count=f.popups.length,requests=calls.length;
+        // PDFView's scroll listener replays its saved popup with only rect changed.
+        emit(inactive,{...stale,rect:[50,60,70,80]});assert.deepEqual(f.reader._state.primaryViewSelectionPopup,current,'passive follower scrolling cannot replace the active palette');assert.equal(f.popups.length,count);assert.equal(calls.length,requests);const before=views[inactive].calls.length;f.source.navigateToNextPage();assert.equal(views[inactive].calls.length,before,'passive popup positioning cannot take navigation ownership');assert.equal(views[active].calls.at(-1)[0],'next');
+        views[inactive]._iframeWindow.emit('pointermove',{});emit(inactive,{...stale,rect:[55,65,75,85]});assert.deepEqual(f.reader._state.primaryViewSelectionPopup,current,'hovering the old pane cannot authorize its passive popup replay');assert.equal(f.popups.length,count);assert.equal(calls.length,requests);
+        views[inactive]._iframeWindow.emit('pointerdown',{button:0});emit(inactive,undefined);emit(inactive,popups[inactive]);assert.equal(f.reader._state.primaryViewSelectionPopup.annotation.text,inactive==='source'?'genome':'基因组','a deliberate same-word selection still owns its native palette');assert.equal(calls.at(-1).options.selection.side,inactive);assert.equal(f.writes.length,0);
+      }finally{f.close();}
+    }
+  });
+  await check('inactive native range clearing preserves the active palette, retires its own saved state and allows same-word retry',async()=>{
+    for(const active of ['source','target']){
+      const value=selectionAlignment([4]),paragraph=value.pages[0].paragraphs[0],row=paragraph.sentences[0],calls=[];delete paragraph.sentences;
+      const f=await fixture({},({source})=>{source._pdfPages={4:{chars:row.source.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};},{align:(page,options)=>{calls.push({page,options});return 'started';}});
+      try{
+        await f.show([4],'dual',value);const target=f.layer.nativeView;target._pdfPages={0:{chars:row.target.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};
+        const inactive=active==='source'?'target':'source',views={source:f.source,target},popups={source:{rect:[1,2,3,4],annotation:{...highlight(4,[[94,690,130,710]]),text:'genome'}},target:{rect:[10,20,30,40],annotation:{...highlight(0,[[60,690,90,710]]),text:'基因组'}}},emit=(lane,popup)=>lane==='source'?f.source._onSetSelectionPopup(popup):target._options.onSetSelectionPopup(popup);
+        views[inactive]._iframeWindow.emit('pointerdown',{button:0});emit(inactive,popups[inactive]);const oldPending=inactive==='target'?clone(f.reader._state.primaryViewSelectionPopup.annotation):null;
+        views[active]._iframeWindow.emit('pointerdown',{button:0,shiftKey:true});emit(active,popups[active]);const current=clone(f.reader._state.primaryViewSelectionPopup),count=f.popups.length,requests=calls.length;
+        // Native _setSelectionRanges([]) synchronously emits an undefined popup.
+        emit(inactive,undefined);assert.deepEqual(f.reader._state.primaryViewSelectionPopup,current,'clearing an inactive native range cannot clear the active pane palette');assert.equal(f.popups.length,count);assert.equal(views[inactive]._selectionPopup,null,'the cleared native view must not retain a popup that its next scroll can replay');assert.equal(views[active]._selectionPopup.annotation.text,active==='source'?'genome':'基因组');
+        if(views[inactive]._selectionPopup)emit(inactive,{...views[inactive]._selectionPopup,rect:[50,60,70,80]});assert.deepEqual(f.reader._state.primaryViewSelectionPopup,current);assert.equal(calls.length,requests);if(oldPending)assert.throws(()=>f.reader._annotationManager.addAnnotation(oldPending),{code:'annotation_mapping'},'clearing the inactive target must retire its pending save credential');
+        views[inactive]._iframeWindow.emit('pointerdown',{button:0});emit(inactive,popups[inactive]);assert.equal(calls.length,requests+1,'clearing the inactive raw popup must allow a fresh same-word request');assert.equal(calls.at(-1).options.selection.side,inactive);assert.equal(f.writes.length,0);
+        f.layer.showOriginal();assert.equal(f.reader._state.primaryViewSelectionPopup,null);assert.equal(target._selectionPopup,null);assert.equal(f.layer.visible,false);assert.equal(f.sourceFrame.style.getPropertyValue('visibility'),'');assert.equal(f.writes.length,0);
+      }finally{f.close();}
+    }
+  });
+  await check('hovering another pane cannot prevent the actual selection owner from clearing its native range',async()=>{
+    for(const owner of ['source','target']){
+      const f=await fixture();try{
+        await f.show([4],'dual',selectionAlignment([4]));const target=f.layer.nativeView,views={source:f.source,target},other=owner==='source'?'target':'source',popups={source:{rect:[1,2,3,4],annotation:{...highlight(4,[[94,690,130,710]]),text:'genome'}},target:{rect:[10,20,30,40],annotation:{...highlight(0,[[60,690,90,710]]),text:'基因组'}}},emit=(lane,popup)=>lane==='source'?f.source._onSetSelectionPopup(popup):target._options.onSetSelectionPopup(popup);
+        views[other]._iframeWindow.emit('pointerdown',{button:0});emit(other,popups[other]);views[owner]._iframeWindow.emit('pointerdown',{button:0,shiftKey:true});emit(owner,popups[owner]);assert(f.reader._state.primaryViewSelectionPopup);views[other]._iframeWindow.emit('pointermove',{});emit(owner,undefined);assert.equal(f.reader._state.primaryViewSelectionPopup,undefined,'hover alone cannot turn the real selection owner into a passive empty callback');assert.equal(views[owner]._selectionPopup,null);assert.equal(f.writes.length,0);
+      }finally{f.close();}
+    }
+  });
+  await check('a primary pointerdown can reclaim a retained native range without a preceding clear, and its permission is consumed once',async()=>{
+    for(const lane of ['source','target']){
+      const value=selectionAlignment([4]),row=value.pages[0].paragraphs[0].sentences[0];delete value.pages[0].paragraphs[0].sentences;const f=await fixture();
+      try{
+        await f.show([4],'dual',value);const target=f.layer.nativeView,views={source:f.source,target},other=lane==='source'?'target':'source',popups={source:{rect:[1,2,3,4],annotation:{...highlight(4,[[94,690,130,710]]),text:'genome'}},target:{rect:[10,20,30,40],annotation:{...highlight(0,[[60,690,90,710]]),text:'基因组'}}},alternate={source:{rect:[2,3,4,5],annotation:{...highlight(4,[[61,690,91,710]]),text:'human'}},target:{rect:[20,30,40,50],annotation:{...highlight(0,[[40,690,60,710]]),text:'人类'}}},emit=(side,popup)=>side==='source'?f.source._onSetSelectionPopup(popup):target._options.onSetSelectionPopup(popup);
+        f.source._pdfPages={4:{chars:row.source.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};target._pdfPages={0:{chars:row.target.glyphs.filter(g=>g.rect).map(g=>({c:g.text,rect:g.rect}))}};
+        emit(lane,popups[lane]);emit(other,popups[other]);const previous=clone(f.reader._state.primaryViewSelectionPopup);views[lane]._iframeWindow.emit('pointermove',{});emit(lane,{...popups[lane],rect:[50,60,70,80]});assert.deepEqual(f.reader._state.primaryViewSelectionPopup,previous);
+        // Native getActionAtPosition returns drag/selection:true here: no
+        // undefined popup or range clearing precedes the saved popup replay.
+        views[lane]._iframeWindow.emit('pointerdown',{button:0,pointerType:'mouse'});emit(lane,{...popups[lane],rect:[60,70,80,90]});assert.equal(f.reader._state.primaryViewSelectionPopup.annotation.text,lane==='source'?'genome':'基因组','clicking the retained range must reclaim its palette');
+        emit(other,alternate[other]);const current=clone(f.reader._state.primaryViewSelectionPopup);emit(lane,{...popups[lane],rect:[70,80,90,100]});assert.deepEqual(f.reader._state.primaryViewSelectionPopup,current,'one pointerdown cannot authorize a later passive replay');assert.equal(f.writes.length,0);
+      }finally{f.close();}
+    }
+  });
+  await check('retained-range input permission expires with its event turn and only explicit selection keys can renew it',async()=>{
+    for(const lane of ['source','target']){
+      const value=selectionAlignment([4]);delete value.pages[0].paragraphs[0].sentences;const f=await fixture();
+      try{
+        await f.show([4],'dual',value);const target=f.layer.nativeView,views={source:f.source,target},other=lane==='source'?'target':'source',popups={source:{rect:[1,2,3,4],annotation:{...highlight(4,[[94,690,130,710]]),text:'genome'}},target:{rect:[10,20,30,40],annotation:{...highlight(0,[[60,690,90,710]]),text:'基因组'}}},emit=(side,popup)=>side==='source'?f.source._onSetSelectionPopup(popup):target._options.onSetSelectionPopup(popup);
+        emit(lane,popups[lane]);emit(other,popups[other]);const previous=clone(f.reader._state.primaryViewSelectionPopup);views[lane]._iframeWindow.emit('pointerdown',{button:0});await new Promise(resolve=>setTimeout(resolve,0));emit(lane,popups[lane]);assert.deepEqual(f.reader._state.primaryViewSelectionPopup,previous,'an unused input permission must not survive into a later scroll task');
+        for(const event of [{code:'KeyC',key:'c',ctrlKey:true},{code:'ArrowLeft',key:'ArrowLeft'},{code:'KeyQ',key:'q'}]){views[lane]._iframeWindow.emit('keydown',event);emit(lane,popups[lane]);assert.deepEqual(f.reader._state.primaryViewSelectionPopup,previous,'copy, navigation and ordinary typing do not authorize an old popup');}
+        views[lane]._iframeWindow.emit('keydown',{code:'ArrowLeft',key:'ArrowLeft',shiftKey:true});emit(lane,popups[lane]);assert.equal(f.reader._state.primaryViewSelectionPopup.annotation.text,lane==='source'?'genome':'基因组');assert.equal(f.writes.length,0);
+      }finally{f.close();}
+    }
+  });
+  await check('unchanged native selection popups retain their counterpart node instead of clearing it before reuse',async()=>{
+    const f=await fixture();try{await f.show([0],'dual',selectionAlignment());const target=f.layer.nativeView,doc=target._iframeWindow.document,div=new DOM.Element(doc,'div');doc.body.appendChild(div);target._iframeWindow.PDFViewerApplication.pdfViewer.getPageView=()=>({div,viewport:{convertToViewportPoint:(x,y)=>[x,y]}});f.source._iframeWindow.emit('pointermove',{});const popup={rect:[1,2,3,4],annotation:{...highlight(0,[[94,690,130,710]]),text:'genome'}};f.source._onSetSelectionPopup(popup);const first=div.children[0];assert(first);f.source._onSetSelectionPopup({...popup,rect:[5,6,7,8]});assert.equal(div.children[0],first);assert.equal(div.children.length,1);assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('a repeated cross-page selection invalidates counterpart cache when the second native page evidence changes',async()=>{
+    const value=selectionAlignment([4,5]),counter={reads:0},f=await fixture({},({source})=>{source._pdfPages=trackedGlyphPages(value,'source',counter);});
+    try{await f.show([4,5],'dual',value);const target=f.layer.nativeView,doc=target._iframeWindow.document,divs=[new DOM.Element(doc,'div'),new DOM.Element(doc,'div')];for(const div of divs)doc.body.appendChild(div);target._iframeWindow.PDFViewerApplication.pdfViewer.getPageView=index=>({div:divs[index],viewport:{convertToViewportPoint:(x,y)=>[x,y]}});f.source._iframeWindow.emit('pointermove',{});const annotation={...highlight(4,[[94,690,130,710]]),text:'genome\ngenome'};annotation.position.nextPageRects=[[94,690,130,710]];const popup={rect:[1,2,3,4],annotation};f.source._onSetSelectionPopup(popup);assert.equal(divs[1].children.length,1);f.source._pdfPages[5].chars=[{c:'X',rect:[100,690,106,710]}];f.source._onSetSelectionPopup(popup);assert.equal(divs[1].children.length,0,'new evidence on page two cannot retain the old cached counterpart');assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('native cached-word selection does not rescan once for geometry and again for identical translated text',async()=>{
+    const value=selectionAlignment(),counter={reads:0},pages=trackedGlyphPages(value,'source',counter),length=pages[0].chars.length,f=await fixture({},({source})=>{source._pdfPages=pages;});try{await f.show([0],'dual',value);f.source._iframeWindow.emit('pointermove',{});const popup={rect:[1,2,3,4],annotation:{...highlight(0,[[94,690,130,710]]),text:'genome'}};counter.reads=0;f.source._onSetSelectionPopup(popup);assert(counter.reads<=length*2,'the same proven map supplies both geometry and counterpart text');counter.reads=0;f.source._onSetSelectionPopup({...popup,rect:[4,5,6,7]});assert.equal(counter.reads,0,'scroll-only popup repositioning reuses the proven current selection');assert.equal(f.writes.length,0);}finally{f.close();}
+  });
+  await check('a verified nested word refines its compound without discarding an existing longer selection or saved mark',()=>{
+    const value=selectionAlignment(),row=value.pages[0].paragraphs[0].sentences[0],word=clone(row.phrases[1]),compound={...clone(row.phrases[0]),id:'compound',sourceTokenCount:2,targetTokenCount:5,source:{text:'human genome',rects:[[61,690,130,710]],glyphs:clone(row.source.glyphs.slice(4,16))},target:{text:'人类基因组',rects:[[40,690,90,710]],glyphs:clone(row.target.glyphs.slice(0,5))},dualSource:{rects:[[61,690,130,710]]},dualTarget:{rects:[[640,690,690,710]]}};row.phrases=[compound,row.phrases[2],row.phrases[3]];
+    const mapper=Native.createMapper(value,'mono',null,null,()=>[word]),source={...highlight(0,[[61,690,190,710]]),text:'human genome is complex'};
+    assert.equal(mapper.hasExactSourceSelection(source),true);assert.deepEqual(mapper.projectAnnotation(source).position.rects,[[40,690,90,710],[90,690,120,710]]);assert.equal(mapper.toSourceAnnotation({...highlight(0,[[40,690,120,710]]),text:'人类基因组很复杂'}).text,'human genome is complex');assert.equal(mapper.toSourceAnnotation({...highlight(0,[[60,690,90,710]]),text:'基因组'}).text,'genome');
   });
   process.stdout.write(checks+' native PDF bridge tests passed\n');
 })().catch(error=>{process.stderr.write(error.stack+'\n');process.exitCode=1;});

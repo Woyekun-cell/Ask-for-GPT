@@ -132,7 +132,7 @@
   const signature=value=>sha256(JSON.stringify(value));
   const mappingSignature=mapped=>signature({rects:mapped.rects,text:mapped.text,identity:!!mapped.identity});
   const glyphSignature=mapped=>signature((mapped.selectedGlyphs||[]).map(g=>[glyphKey(g),g.text]));
-  function createMapper(alignment,mode,sourceView,targetView){
+  function createMapper(alignment,mode,sourceView,targetView,selectionLinks=()=>[]){
     const pages=alignment.pages,bySource=new Map(pages.map(page=>[page.sourcePage,page]));
     const sentences=page=>page.paragraphs.flatMap(paragraph=>paragraph.sentences||[]);
     const nativeGlyphRect=value=>{if(!Array.isArray(value)||value.length!==4)return null;const local=[value[0],value[1],value[2],value[3]];return rect(local)?local:null;};
@@ -163,7 +163,29 @@
       const top=topRect&&page?Math.max(0,page.source.mediaBox[3]-page.source.mediaBox[1]-topRect[3]):0;
       return [String(position.pageIndex).padStart(5,'0'),String(offset).padStart(6,'0'),String(Math.floor(top)).padStart(5,'0')].join('|');
     }
+    function directText(page,position,from){
+      const independent=selectionLinks(page.sourcePage)||[],to=from==='source'?'target':'source';if(!independent.length)return null;const links=[...independent,...sentences(page).flatMap(row=>row.phrases||[])];
+      const candidates=links.filter(link=>link[from]?.rects?.some(r=>position.rects.some(s=>intersects(r,s))));if(!candidates.length)return null;
+      const pool=[...new Map(candidates.flatMap(link=>link[from].glyphs.filter(meaningful)).map(g=>[glyphKey(g),g])).values()].sort((a,b)=>(a.line??0)-(b.line??0)||b.rect[3]-a.rect[3]||a.rect[0]-b.rect[0]),selected=new Map();
+      const active=typeof targetView==='function'?targetView():targetView,native=from==='source'?sourceView:active,chars=native?._pdfPages?.[from==='source'?page.sourcePage:page.outputPage]?.chars;
+      if(chars?.length){for(let i=0;i<chars.length;i++){const char=chars[i],local=nativeGlyphRect(char.rect),r=from==='target'&&mode==='dual'&&local?transformRect(invert(page.targetToDual),local):local;if(typeof char.c!=='string'||!glyphText(char.c)||!r||!position.rects.some(s=>centerIn(r,s)))continue;const matches=pool.filter(g=>glyphText(g.text)===glyphText(char.c)&&Math.abs((g.rect[0]+g.rect[2]-r[0]-r[2])/2)<=1&&intersects(g.rect,r));if(matches.length!==1)return null;selected.set(glyphKey(matches[0]),matches[0]);}}
+      else for(const glyph of pool)if(position.rects.some(r=>centerIn(glyph.rect,r)))selected.set(glyphKey(glyph),glyph);
+      if(!selected.size)return null;
+      const lexical=/^[\p{Script=Latin}\p{M}\p{N}]+(?:[-'’][\p{Script=Latin}\p{M}\p{N}]+)*$/u,atomic=link=>link.sourceTokenCount<=16&&link.targetTokenCount<=16&&(link.sourceTokenCount===1&&/\p{Script=Latin}/u.test(link.source.text)&&lexical.test(link.source.text.trim())||link.targetTokenCount===1&&/\p{Script=Latin}/u.test(link.target.text)&&lexical.test(link.target.text.trim()));
+      const eligible=candidates.filter(link=>{const keys=link[from].glyphs.filter(meaningful).map(glyphKey);return keys.some(key=>selected.has(key))&&(keys.every(key=>selected.has(key))||atomic(link));});
+      if(!eligible.length)return null;
+      const exact=eligible.filter(link=>{const keys=link[from].glyphs.filter(meaningful).map(glyphKey);return keys.length===selected.size&&keys.every(key=>selected.has(key));});
+      let chosen=exact.length?exact:eligible;
+      const unique=new Map();for(const link of chosen){const binding=JSON.stringify([link[from].glyphs.filter(meaningful).map(glyphKey),link[to].glyphs.filter(meaningful).map(glyphKey)]);if(!unique.has(binding))unique.set(binding,link);}chosen=[...unique.values()];
+      const ownership=new Map(chosen.map(link=>[link,{from:new Set(link[from].glyphs.filter(meaningful).map(glyphKey)),to:new Set(link[to].glyphs.filter(meaningful).map(glyphKey))}]));
+      chosen=chosen.filter(child=>!chosen.some(parent=>{if(parent===child)return false;const a=ownership.get(parent),b=ownership.get(child);return a.from.size>b.from.size&&[...a.from].every(key=>selected.has(key))&&[...b.from].every(key=>a.from.has(key))&&[...b.to].every(key=>a.to.has(key));}));
+      const owners=new Map();for(const link of chosen)for(const g of link[from].glyphs.filter(meaningful)){const key=glyphKey(g);if(!selected.has(key))continue;if(owners.has(key))throw sentenceFailure('unowned_glyph',{outputPage:page.outputPage,sourcePage:page.sourcePage,selectionRects:position.rects.length,matchedSentences:0,uncoveredRects:1});owners.set(key,link);}
+      if([...selected.keys()].some(key=>!owners.has(key))||position.rects.some(r=>!coveredByRects(r,chosen.flatMap(link=>link[from].rects))))return null;
+      const ordered=chosen.sort((a,b)=>a[to].glyphs.find(meaningful).line-b[to].glyphs.find(meaningful).line||b[to].rects[0][3]-a[to].rects[0][3]||a[to].rects[0][0]-b[to].rects[0][0]);
+      return {rects:ordered.flatMap(link=>copy(link[to].rects)),text:ordered.map(link=>link[to].text).join(' '),partial:chosen.some(link=>!link[from].glyphs.filter(meaningful).every(g=>selected.has(glyphKey(g)))),selectedGlyphs:copy(pool.filter(g=>selected.has(glyphKey(g))))};
+    }
     function exactText(page,position,from,knownOnly=false){
+      const direct=directText(page,position,from);if(direct)return direct;
       // Projection of an existing original mark can show its proven words
       // while missing correspondence is prepared. Saving a new target mark
       // always uses the strict, whole-selection path.
@@ -299,12 +321,23 @@
         return candidates(page.paragraphs,false);
       }catch(_){return [];}
     }
-    function projectPart(position,type,side){
+    function selectionRequest(annotation,side='source'){
+      try{
+        annotation=copy(annotation);const position=annotation?.position;if(!['source','target'].includes(side)||!['highlight','underline'].includes(annotation?.type)||!Number.isInteger(position?.pageIndex)||position.nextPageRects!==undefined||!Array.isArray(position.rects)||!position.rects.length||position.rects.length>32||!position.rects.every(rect)||typeof annotation.text!=='string'||!glyphText(annotation.text)||[...annotation.text].length>2048)return null;
+        const page=side==='source'?bySource.get(position.pageIndex):pages[position.pageIndex];if(!page)return null;
+        const matches=page.paragraphs.filter(p=>p[side].rects.some(r=>position.rects.some(s=>intersects(r,s))));if(matches.length!==1||!/^[A-Za-z0-9_-]{1,64}$/.test(matches[0].id)||position.rects.some(r=>!coveredByRects(r,matches[0][side].rects)))return null;
+        const active=typeof targetView==='function'?targetView():targetView,native=side==='source'?sourceView:active,chars=native?._pdfPages?.[side==='source'?page.sourcePage:page.outputPage]?.chars;if(!chars?.length)return null;
+        let text='';for(let i=0;i<chars.length;i++){const char=chars[i],local=nativeGlyphRect(char.rect),r=side==='target'&&mode==='dual'&&local?transformRect(invert(page.targetToDual),local):local;if(typeof char.c==='string'&&r&&position.rects.some(s=>centerIn(r,s)))text+=char.c;}
+        if(glyphText(text)!==glyphText(annotation.text))return null;
+        return {page:page.sourcePage,paragraph:matches[0].id,side,rects:copy(position.rects),text:annotation.text};
+      }catch(_){return null;}
+    }
+    function projectPart(position,type,side,evidence){
       const page=bySource.get(position.pageIndex);if(!page)return null;
       if(side==='source'){const result={...transformPosition(position,page.sourceToDual),pageIndex:page.outputPage};delete result.nextPageRects;return result;}
       let result;
       if(['highlight','underline'].includes(type)){
-        let mapped;try{mapped=exactText(page,position,'source',true);}catch(_){return null;}
+        let mapped;try{mapped=exactText(page,position,'source',true);}catch(_){return null;}if(evidence)evidence.mapped=mapped;
         result={...copy(position),pageIndex:page.outputPage,rects:mapped.rects.map(r=>mode==='dual'?transformRect(page.targetToDual,r):r)};delete result.nextPageRects;
       }else{
         try{spatial(page);const mapped=spatialMapping(page,position,type,'source','target');result={...transformPosition(mapped,mode==='dual'?page.targetToDual:identity),pageIndex:page.outputPage};delete result.nextPageRects;}catch(_){return null;}
@@ -317,11 +350,11 @@
         const restored=restoreAuthoredSelection(annotation);if(!restored)return null;
         return {...copy(annotation),position:restored.position,text:restored.text,id:canonicalID(annotation.id)};
       }
-      if(!annotation?.position)return null;const result=copy(annotation),position=projectPart(annotation.position,annotation.type,side);if(!position)return null;
+      if(!annotation?.position)return null;const result=copy(annotation),evidence={},position=projectPart(annotation.position,annotation.type,side,evidence);if(!position)return null;
       result.position=position;result.id=canonicalID(result.id)+(side==='source'?ORIGINAL_SUFFIX:'');
       if(annotation.position.nextPageRects){const next=projectPart({pageIndex:annotation.position.pageIndex+1,rects:annotation.position.nextPageRects},annotation.type,side);if(next?.pageIndex===position.pageIndex+1)position.nextPageRects=next.rects;}
       if(side==='target'&&['highlight','underline'].includes(annotation.type)){
-        const page=bySource.get(annotation.position.pageIndex),mapped=exactText(page,annotation.position,'source',true);if(!mapped.identity)result.text=mapped.text;
+        const page=bySource.get(annotation.position.pageIndex),mapped=evidence.mapped||exactText(page,annotation.position,'source',true);if(!mapped.identity)result.text=mapped.text;
       }
       return result;
     }
@@ -362,7 +395,7 @@
       return {pageIndex:toSource?page.sourcePage:page.outputPage,left:coordinates[0],top:coordinates[1]};
     }
     const toSourceViewportState=state=>viewportState(state,true),toOutputViewportState=state=>viewportState(state,false);
-    return {toSourceAnnotation,projectAnnotation,projectAnnotations,hasExactSourceSelection,selectionUnits,toSourceState,toSourceViewportState,toOutputViewportState,toOutputLocation,toOutputState,canonicalID,annotationSide:annotation=>lane(pages[annotation.position.pageIndex],annotation.position)};
+    return {toSourceAnnotation,projectAnnotation,projectAnnotations,hasExactSourceSelection,selectionUnits,selectionRequest,toSourceState,toSourceViewportState,toOutputViewportState,toOutputLocation,toOutputState,canonicalID,annotationSide:annotation=>lane(pages[annotation.position.pageIndex],annotation.position)};
   }
   function element(doc,name,className,text){const node=doc.createElementNS(XHTML,name);if(className)node.className=className;if(text!=null)node.textContent=text;return node;}
   function canMount(context){const source=context?.sourceView,reader=context?.reader?._internalReader||context?.reader;return Boolean(source&&reader&&source._iframe&&source._options?.container?.ownerDocument?.body&&typeof source.constructor==='function'&&source.constructor!==Object&&typeof source._onAddAnnotation==='function'&&typeof source._onChangeViewState==='function'&&typeof source.setAnnotations==='function');}
@@ -399,12 +432,27 @@
     const enteringTool=copy(reader._state?.tool||source._tool||{type:'pointer'}),legacyAutoTool=['highlight','underline'].includes(enteringTool.type),originalTool=legacyAutoTool?{type:'pointer'}:enteringTool;
     const removers=[],viewRemovers=[],hooks=[],initializers=new Set(),embedded=new Map(),embeddedPending=new Set(),sourceFrame=source._iframe;let disposed=false,visible=false,view=null,mapper=null,rawSelectionPopup=null,rawSourceSelectionPopup=null,rawAnnotationPopup=null,rawOverlayPopup=null,displayedAlignment=null,displayedSourcePages=[],requestedAlignmentPages=new Set(),annotationStatus=null,annotationHintTimer=null,epoch=0,forwarding=false,mappedUpdate=false,toolOverride=false,sourceState=copy(reader._state?.primaryViewState||{}),direction='en-zh',mode='mono';
     let desiredMode='mono',activeLane='target',scrollLeader='target',displayedBytes=null,sourceMoved=false,syncing=false,applyingScale=false,panSession=null,independentZoomUntil=0,dualFitDone=false,dualFitPending=null,toolbarTarget=null,toolbarReason='missingProperty',toolbarReportKey='',scrollLinked=true,figurePanel=null,figureScanner=null,figureScanning=null;const sourceStyles=new Map(['position','top','left','right','width','height','flex','max-width','visibility','z-index'].map(name=>[name,[sourceFrame?.style?.getPropertyValue(name)||'',sourceFrame?.style?.getPropertyPriority(name)||'']]));
-    const sourceScroll=source._iframeWindow?.document?.getElementById('viewerContainer'),sourceScrollbar=[sourceScroll?.style?.getPropertyValue('scrollbar-width')||'',sourceScroll?.style?.getPropertyPriority('scrollbar-width')||''];
+    const sourceScroll=source._iframeWindow?.document?.getElementById('viewerContainer'),sourceScrollbar=[sourceScroll?.style?.getPropertyValue('scrollbar-width')||'',sourceScroll?.style?.getPropertyPriority('scrollbar-width')||''],sourcePopupSetter=source.setSelectionPopup;
     const selectionLinks=SelectionLink?.create({sourceView:source,targetView:()=>view,exportCallback:readerFunction});let presentingTargetSelection=false;
     removers.push(()=>selectionLinks?.dispose());
+    let linkedSelection=null,selectionLane='target',selectionIntent=null;
+    function clearSelectionIntent(){const previous=selectionIntent;selectionIntent=null;if(previous)win.clearTimeout(previous.timer);}
+    function recordSelectionIntent(lane,event){
+      const pointer=event.type==='pointerdown'&&event.button===0&&event.isPrimary!==false,key=event.type==='keydown'&&(event.shiftKey&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(event.code)||!event.altKey&&(event.ctrlKey||event.metaKey)&&event.code==='KeyA');
+      if(!visible||mode!=='dual'||event.defaultPrevented||!pointer&&!key)return;clearSelectionIntent();const intent={lane,epoch,timer:null};selectionIntent=intent;
+      // Native mouse selection follows pointerdown with mousedown in this task.
+      // A retained range may replay once; later scroll tasks get no permission.
+      intent.timer=win.setTimeout(()=>{if(selectionIntent===intent)clearSelectionIntent();},0);
+    }
+    function takeSelectionIntent(lane){if(selectionIntent?.lane!==lane||selectionIntent.epoch!==epoch)return false;clearSelectionIntent();return true;}
     function linkSelection(popup,side){
-      selectionLinks?.clear();if(!visible||mode!=='dual'||!mapper||!popup?.annotation)return;
-      try{const linked=side==='source'?mapper.projectAnnotation(copy(popup.annotation)):mapper.toSourceAnnotation(popup.annotation);if(linked)selectionLinks?.show(side==='source'?'target':'source',linked);}catch(_){/* Missing exact links never block native selection or guess a sentence. */}
+      if(!visible||!mapper||!popup?.annotation){linkedSelection=null;selectionLinks?.clear();return null;}
+      try{
+        const input=popup.annotation,position=input.position,physical=side==='source'?position?.pageIndex:displayedSourcePages[position?.pageIndex],related=[physical,...(position?.nextPageRects?[side==='source'?physical+1:displayedSourcePages[position.pageIndex+1]]:[])],refs=[];for(const page of related)refs.push(source._pdfPages?.[page]?.chars,view?._pdfPages?.[displayedSourcePages.indexOf(page)]?.chars);const key=side+'|'+JSON.stringify(input),cached=linkedSelection;
+        let linked;if(cached?.mapper===mapper&&cached.key===key&&refs.every((value,i)=>value===cached.refs[i]&&(value?.length||0)===cached.lengths[i]))linked=cached.linked;
+        else{linked=side==='source'?mapper.projectAnnotation(copy(input)):mapper.toSourceAnnotation(input);linkedSelection=linked?{mapper,key,refs,lengths:refs.map(value=>value?.length||0),linked:copy(linked)}:null;}
+        if(mode==='dual'&&linked){selectionLinks?.clear(side);selectionLinks?.show(side==='source'?'target':'source',linked);}else selectionLinks?.clear();return linked?copy(linked):null;
+      }catch(_){linkedSelection=null;selectionLinks?.clear();return null;/* Missing exact links never block native selection or guess a sentence. */}
     }
     const initialVisibility=sourceFrame?.style?.getPropertyValue('visibility')||'',initialPriority=sourceFrame?.style?.getPropertyPriority('visibility')||'',initialZIndex=sourceFrame?.style?.getPropertyValue('z-index')||'',initialZPriority=sourceFrame?.style?.getPropertyPriority('z-index')||'';
     function listen(node,type,callback,options){node.addEventListener(type,callback,options);removers.push(()=>node.removeEventListener(type,callback,options));}
@@ -512,7 +560,24 @@
     const scrollSync=ScrollSync?.create({win,getView:lane=>lane==='source'?source:view,isEnabled:()=>visible&&mode==='dual'&&scrollLinked&&Date.now()>independentZoomUntil,
       isLeader:lane=>scrollLeader===lane,mapState:(lane,state)=>lane==='source'?mapper?.toOutputViewportState(state):mapper?.toSourceViewportState(state),invoke:callReader,onError:error=>appearance.reportDiagnostic?.('nativeState',diagnosticError(error))});
     function leadScroll(lane){if(scrollLeader!==lane)scrollSync?.reset();scrollLeader=lane;}
-    let annotationProjectionCache=new Map();
+    let annotationProjectionCache=new Map();const selectionLinkPages=new Map();let selectionBinding=null;
+    const selectionWords=physical=>selectionLinkPages.get(physical)||[];
+    function updateSelectionLinks(value){
+      if(disposed||!view||!displayedAlignment)return false;
+      const page=displayedAlignment.pages.find(page=>page.sourcePage===value?.page);if(!page)throw mappingFailure();
+      const checked=Layout.validateSelectionLinks(value,value.jobID,page.sourcePage,displayedAlignment.sourceSHA256);
+      const binding=[checked.jobID,checked.sourceSHA256,checked.targetSHA256,checked.revision].join('|');if(selectionBinding!==null&&selectionBinding!==binding)throw mappingFailure();
+      const incoming=checked.links||[checked.link].filter(Boolean);
+      for(const link of incoming){
+        const parent=page.paragraphs.find(p=>p.id===link.paragraph);if(!parent||!/^[a-f0-9]{64}$/.test(link.key||'')||link.id!=='sel_'+link.key)throw mappingFailure();
+        for(const side of ['source','target']){
+          if(link[side].rects.some(r=>!coveredByRects(r,parent[side].rects))||page.paragraphs.some(p=>p!==parent&&link[side].glyphs.filter(meaningful).some(g=>p[side].rects.some(r=>centerIn(g.rect,r)))))throw mappingFailure();
+          const paired=link[side==='source'?'dualSource':'dualTarget'].rects,matrix=page[side==='source'?'sourceToDual':'targetToDual'];if(link[side].rects.some((r,i)=>transformRect(matrix,r).some((n,j)=>Math.abs(n-paired[i][j])>.02+1e-9)))throw mappingFailure();
+        }
+      }
+      const merged=new Map((selectionLinkPages.get(page.sourcePage)||[]).map(link=>[link.id,link]));for(const link of incoming)merged.set(link.id,copy(link));selectionBinding=binding;selectionLinkPages.set(page.sourcePage,[...merged.values()]);
+      annotationProjectionCache.clear();linkedSelection=null;callReader(view,'setAnnotations',projectForDisplay());if(selectionLane==='target')linkSelection(rawSelectionPopup,'target');else linkSelection(rawSourceSelectionPopup,'source');return true;
+    }
     function projectForDisplay(values=annotations()){
       const next=new Map(),pageKeys=new Map(),byPhysical=new Map((displayedAlignment?.pages||[]).map(page=>[page.sourcePage,page]));
       const revision=[displayedAlignment?.sourceSHA256,displayedAlignment?.sentenceAlignmentRevision,displayedAlignment?.phraseAlignmentRevision,displayedAlignment?.phraseExtractionRevision].join('|');
@@ -530,7 +595,7 @@
       annotationProjectionCache=next;return copy(result);
     }
     function restoreSourceStyles(){restoreSourceScrollbar();for(const [name,[value,priority]] of sourceStyles){if(value)sourceFrame?.style?.setProperty(name,value,priority);else sourceFrame?.style?.removeProperty(name);}}
-    function showSource(){scrollSync?.reset();closePanels();cancelInitialDualFit();selectionLinks?.clear();host.style.setProperty('visibility','hidden');visible=false;restoreSourceStyles();if(toolOverride){toolOverride=false;setReaderTool(originalTool);}}
+    function showSource(){clearSelectionIntent();scrollSync?.reset();closePanels();cancelInitialDualFit();selectionLinks?.clear();host.style.setProperty('visibility','hidden');visible=false;restoreSourceStyles();if(toolOverride){toolOverride=false;setReaderTool(originalTool);}}
     function navigateNative(candidate,state){const viewer=candidate?._iframeWindow?.PDFViewerApplication?.pdfViewer;if(!viewer||!Number.isInteger(state?.pageIndex))return;callReader(viewer,'scrollPageIntoView',{pageNumber:state.pageIndex+1,destArray:[null,{name:'XYZ'},state.left,state.top,null],allowNegativeOffset:true});}
     function snapshotSourceState(){
       const viewer=source._iframeWindow?.PDFViewerApplication?.pdfViewer,location=viewer?._location,parent=copy(reader._state?.primaryViewState||{}),previous=copy(sourceState||{}),validPage=value=>Number.isInteger(value)&&value>=1;
@@ -621,9 +686,12 @@
       }
       desiredMode='original';rawSelectionPopup=null;rawAnnotationPopup=null;rawOverlayPopup=null;pendingSelection=null;for(const name of ['setSelectionPopup','setAnnotationPopup','setOverlayPopup'])callReader(view,name,null);for(const name of ['_onSetSelectionPopup','_onSetAnnotationPopup','_onSetOverlayPopup'])callReader(source,name,null);for(const handle of readingHandles)handle.clear?.(false);showSource();mode='original';activeLane='source';leadScroll('source');matchZoomButton.disabled=true;linkedButton.disabled=true;figurePanel?.refresh();host.style.setProperty('visibility','visible');host.style.setProperty('pointer-events','none');viewport.style.setProperty('display','none');header.style.setProperty('pointer-events','auto');originalButton.setAttribute('aria-pressed','true');monoButton.setAttribute('aria-pressed','false');dualButton.setAttribute('aria-pressed','false');if(moveSource)navigateNative(source,sourceState);setProgress(null);setStatus('');
     }
-    function layoutPanes(nextMode){scrollSync?.reset();if(nextMode!=='dual')cancelInitialDualFit();selectionLinks?.clear();for(const handle of readingHandles)handle.clear?.(false);mode=nextMode;visible=true;restoreSourceStyles();host.style.setProperty('background','transparent');host.style.setProperty('visibility','visible');host.style.setProperty('pointer-events','none');host.style.setProperty('z-index','0');header.style.setProperty('pointer-events','auto');viewport.style.setProperty('pointer-events','auto');viewport.style.removeProperty('display');viewport.style.setProperty('left',mode==='dual'?'50%':'0');viewport.style.setProperty('background','Canvas');
-      if(mode==='dual'){sourceScroll?.style?.setProperty('scrollbar-width','none');for(const [name,value] of Object.entries({position:'absolute',top:'0',left:'0',width:'50%',height:'100%',visibility:'visible','z-index':'0'}))sourceFrame?.style?.setProperty(name,value);}
+    function layoutViewport(nextMode){
+      restoreSourceStyles();host.style.setProperty('background','transparent');host.style.setProperty('visibility','visible');host.style.setProperty('pointer-events','none');host.style.setProperty('z-index','0');header.style.setProperty('pointer-events','auto');viewport.style.setProperty('pointer-events','auto');viewport.style.removeProperty('display');viewport.style.setProperty('left',nextMode==='dual'?'50%':'0');viewport.style.setProperty('background','Canvas');
+      if(nextMode==='dual'){sourceScroll?.style?.setProperty('scrollbar-width','none');for(const [name,value] of Object.entries({position:'absolute',top:'0',left:'0',width:'50%',height:'100%',visibility:'visible','z-index':'0'}))sourceFrame?.style?.setProperty(name,value);}
       else sourceFrame?.style?.setProperty('visibility','hidden');
+    }
+    function layoutPanes(nextMode){scrollSync?.reset();if(nextMode!=='dual')cancelInitialDualFit();selectionLinks?.clear();for(const handle of readingHandles)handle.clear?.(false);mode=nextMode;visible=true;layoutViewport(nextMode);
       originalButton.setAttribute('aria-pressed','false');monoButton.setAttribute('aria-pressed',String(mode==='mono'));dualButton.setAttribute('aria-pressed',String(mode==='dual'));matchZoomButton.disabled=mode!=='dual';linkedButton.disabled=mode!=='dual';figurePanel?.refresh();if(mode==='dual'){if(scrollLinked)navigateNative(source,sourceState);scheduleInitialDualFit();}
     }
     function setProgress(value){
@@ -637,10 +705,10 @@
       const physical=displayedSourcePages[outputPage];if(!visible||!view||!Number.isInteger(physical))return 'unavailable';
       const explicit=options.explicit===true;if(!explicit)actions.page?.(physical);
       const precise=displayedAlignment?.phraseExtractionRevision==='pdf-glyph-boundary-v2'&&displayedAlignment?.phraseExtractedPages?.includes(physical)&&displayedAlignment?.phrasePages?.includes(physical)&&Layout?.sentenceCoverage(displayedAlignment.pages.find(page=>page.sourcePage===physical))===true;
-      if(precise)return 'ready';if(typeof actions.align!=='function'||!explicit&&requestedAlignmentPages.has(physical))return 'pending';
+      if(precise&&!options.selection)return 'ready';if(typeof actions.align!=='function'||!explicit&&requestedAlignmentPages.has(physical))return 'pending';
       const requestEpoch=epoch;requestedAlignmentPages.add(physical);
       try{
-        const result=actions.align(physical,{explicit,...(options.units?.length?{units:options.units}:{})});
+        const result=actions.align(physical,{explicit,...(options.units?.length?{units:options.units}:{}),...(options.selection?{selection:options.selection}:{})});
         if(['retry_wait','retry_limited','failed'].includes(result))setAnnotationStatus(result);
         else if(!['ready','started','pending','queued'].includes(result))setAnnotationStatus('preparing');
         if(result&&typeof result.then==='function')void Promise.resolve(result).catch(()=>{if(current(requestEpoch))setAnnotationStatus('failed');});return result;
@@ -655,6 +723,14 @@
       // Ignore a delayed follower event at that boundary; intentional canonical
       // target-to-source publications enter with syncing/forwarding enabled.
       if(name==='_onChangeViewState'&&(applyingScale||mode==='dual'&&scrollLeader==='target'&&!syncing&&!forwarding))return;
+      // A genuine source selection must own synchronous ReaderUI popup setters.
+      // Target selections use this callback only while presentingTargetSelection.
+      // Ignore an inactive saved range's scroll repositioning before ReaderUI.
+      if(name==='_onSetSelectionPopup'&&!presentingTargetSelection){
+        const popup=args[0],intent=takeSelectionIntent('source');if(!popup?.annotation){
+          rawSourceSelectionPopup=null;if(typeof sourcePopupSetter==='function')Reflect.apply(sourcePopupSetter,source,[null]);if(selectionLane==='target'&&rawSelectionPopup?.annotation)return;
+        }else{if(selectionLane==='target'&&!intent&&!changedSelection(rawSourceSelectionPopup,popup))return;activeLane='source';}
+      }
       const value=Reflect.apply(original,this,args.map(readerRealm));if(view&&(visible||name==='_onChangeViewState')&&!forwarding){forwarding=true;try{forward(...args);}finally{forwarding=false;}}return readerRealm(value);
     });source[name]=wrapper;hooks.push(()=>{if(source[name]===wrapper){if(own)source[name]=original;else delete source[name];}});}
     function redirect(name,convert){if(typeof source[name]!=='function')return;const own=Object.prototype.hasOwnProperty.call(source,name),original=source[name];const wrapper=readerRealm(function(...args){if(!forwarding&&!syncing&&(name.startsWith('navigate')||name==='findNext'||name==='findPrevious')){independentZoomUntil=0;leadScroll(activeLane);scrollSync?.reset();for(const handle of gestureHandles)handle.reset?.();}if(view&&visible&&!forwarding&&(mode!=='dual'||activeLane==='target')){const values=convert?convert(args):args;if(values===null)return;return readerRealm(callReader(view,name,...values));}return readerRealm(Reflect.apply(original,this,args.map(readerRealm)));});source[name]=wrapper;hooks.push(()=>{if(source[name]===wrapper){if(own)source[name]=original;else delete source[name];}});}
@@ -703,7 +779,7 @@
         source[name]=wrapper;hooks.push(()=>{if(source[name]===wrapper){if(own)source[name]=original;else delete source[name];}});
       }
       hook('_onChangeViewState',state=>{if(syncing||mode==='mono'||mode==='dual'&&scrollLeader!=='source')return;sourceState=copy(state);sourceMoved=true;if(scrollLinked&&mode==='dual'&&Date.now()>independentZoomUntil){if(!displayedSourcePages.includes(state.pageIndex)){setScrollLinked(false);setStatus('本页尚无译文');return;}scrollSync?.schedule('source',state);sourceMoved=false;}});
-      hook('_onSetSelectionPopup',popup=>{if(presentingTargetSelection||activeLane!=='source')return;const changed=changedSelection(rawSourceSelectionPopup,popup);rawSourceSelectionPopup=popup?copy(popup):null;linkSelection(popup,'source');if(changed&&popup?.annotation&&!mapper.hasExactSourceSelection(copy(popup.annotation)))requestAlignment(displayedSourcePages.indexOf(popup.annotation.position.pageIndex),{explicit:true,units:mapper.selectionUnits(copy(popup.annotation),'source')});});
+      hook('_onSetSelectionPopup',popup=>{if(presentingTargetSelection||!popup?.annotation&&selectionLane!=='source')return;const changed=changedSelection(rawSourceSelectionPopup,popup);rawSourceSelectionPopup=popup?copy(popup):null;if(popup?.annotation)selectionLane='source';linkSelection(popup,'source');if(changed&&popup?.annotation&&!mapper.hasExactSourceSelection(copy(popup.annotation)))requestAlignment(displayedSourcePages.indexOf(popup.annotation.position.pageIndex),{explicit:true,units:mapper.selectionUnits(copy(popup.annotation),'source'),selection:mapper.selectionRequest(copy(popup.annotation),'source')});});
       hook('_onChangeViewStats',stats=>{if(mode!=='dual'||scrollLeader!=='source')return;const number=source._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber,physical=Number.isInteger(number)&&number>=1?number-1:stats.pageIndex;requestAlignment(displayedSourcePages.indexOf(physical));});
       hook('setAnnotations',value=>callReader(view,'setAnnotations',projectForDisplay(withEmbedded(copy(value)))));
       hook('setSelectedAnnotationIDs',ids=>callReader(view,'setSelectedAnnotationIDs',copy(ids)));
@@ -745,16 +821,20 @@
       options.onDeleteAnnotations=protect(ids=>{const permitted=[...new Set(copy(ids).map(canonicalID))].filter(id=>canonicalAnnotations().some(annotation=>annotation.id===id&&!annotation.readOnly));if(permitted.length)return callReader(source,'_onDeleteAnnotations',permitted);});
       options.onSelectAnnotations=protect((value,event)=>{const ids=copy(value),canonicalIDs=[...new Set(copy(ids).map(canonicalID))].filter(id=>canonicalAnnotations().some(annotation=>annotation.id===id));if(canonicalIDs.length||!ids.length)return callReader(source,'_onSelectAnnotations',canonicalIDs,event);callReader(view,'setSelectedAnnotationIDs',ids);},undefined,'nativeSelection');
       options.onSetSelectionPopup=protect(popup=>{
-        const changed=changedSelection(rawSelectionPopup,popup);activeLane='target';linkSelection(popup,'target');
+        // A follower's old popup cannot take over the active selection palette.
+        const intent=takeSelectionIntent('target');
+        if(!popup?.annotation){rawSelectionPopup=null;pendingSelection=null;callReader(view,'setSelectionPopup',null);if(selectionLane==='source'&&rawSourceSelectionPopup?.annotation)return;}
+        else if(selectionLane==='source'&&!intent&&!changedSelection(rawSelectionPopup,popup))return;
+        const changed=changedSelection(rawSelectionPopup,popup);if(popup?.annotation){activeLane='target';selectionLane='target';}const linked=linkSelection(popup,'target');
         const present=value=>{presentingTargetSelection=true;try{return callReader(source,'_onSetSelectionPopup',value);}finally{presentingTargetSelection=false;}};
         if(!popup){rawSelectionPopup=null;pendingSelection=null;return present(popup);}
-        let annotation;try{annotation=mapper.toSourceAnnotation(popup.annotation);pendingSelection=null;}
+        let annotation;try{annotation=linked||mapper.toSourceAnnotation(popup.annotation);pendingSelection=null;}
         catch(error){
           if(!pendingSaveGuard||!['annotation_mapping','annotation_sentence'].includes(error?.code)){const previous=rawSelectionPopup||reader._state?.primaryViewSelectionPopup;rawSelectionPopup=null;pendingSelection=null;if(previous)callReader(source,'_onSetSelectionPopup',null);throw error;}
           // Selecting and copying translated text never waits for a model.
           // Keep Zotero's own palette; only its explicit save action needs the
           // semantic mapping. No annotation is created by this callback.
-          appearance.reportDiagnostic?.('nativeSelection',error);if(changed)requestAlignment(popup.annotation.position.pageIndex,{explicit:true,units:mapper.selectionUnits(copy(popup.annotation),'target')});annotation=pendingAnnotation(popup.annotation);
+          appearance.reportDiagnostic?.('nativeSelection',error);if(changed)requestAlignment(popup.annotation.position.pageIndex,{explicit:true,units:mapper.selectionUnits(copy(popup.annotation),'target'),selection:mapper.selectionRequest(copy(popup.annotation),'target')});annotation=pendingAnnotation(popup.annotation);
         }
         rawSelectionPopup=copy(popup);return present({...popupCoordinates(popup),annotation});
       },undefined,'nativePopup');
@@ -811,7 +891,7 @@
       const nativeListen=(target,type,callback,settings)=>{const listener=readerFunction(callback),options=readerRealm(settings);Reflect.apply(target.addEventListener,target,[type,listener,options]);return ()=>Reflect.apply(target.removeEventListener,target,[type,listener,options]);};
       viewRemovers.push(nativeListen(target,'pointerdown',closePanels,true));
       const isolateViewport=()=>{if(mode==='dual'&&dualFitPending){cancelInitialDualFit();dualFitDone=true;}independentZoomUntil=Infinity;};
-      for(const [candidateView,lane] of [[source,'source'],[candidate,'target']]){const gestures=PaneGestures?.install(candidateView,{enabled:()=>lane==='source'?(mode==='dual'||mode==='original'):visible,activate:()=>{activeLane=lane;},onZoom:()=>{leadScroll(lane);scrollSync?.reset();isolateViewport();},onPan:()=>{leadScroll(lane);scrollSync?.reset();isolateViewport();},onNormalInput:()=>{leadScroll(lane);independentZoomUntil=0;},zoom:payload=>zoomPanes(candidateView,lane,payload),pan:payload=>panPanes(candidateView,lane,payload),listen:nativeListen,invoke:callReader});if(gestures){gestureHandles.add(gestures);viewRemovers.push(()=>{gestures.dispose();gestureHandles.delete(gestures);});}}
+      for(const [candidateView,lane] of [[source,'source'],[candidate,'target']]){for(const type of ['pointerdown','keydown'])viewRemovers.push(nativeListen(candidateView._iframeWindow,type,event=>recordSelectionIntent(lane,event),true));const gestures=PaneGestures?.install(candidateView,{enabled:()=>lane==='source'?(mode==='dual'||mode==='original'):visible,activate:()=>{activeLane=lane;},onZoom:()=>{leadScroll(lane);scrollSync?.reset();isolateViewport();},onPan:()=>{leadScroll(lane);scrollSync?.reset();isolateViewport();},onNormalInput:()=>{leadScroll(lane);independentZoomUntil=0;},zoom:payload=>zoomPanes(candidateView,lane,payload),pan:payload=>panPanes(candidateView,lane,payload),listen:nativeListen,invoke:callReader});if(gestures){gestureHandles.add(gestures);viewRemovers.push(()=>{gestures.dispose();gestureHandles.delete(gestures);});}}
     }
     const readingHandles=[];
     function installReading(candidate){
@@ -879,18 +959,21 @@
       // owns its mapped reading position while the hidden original stays put.
       const sourceOwns=!view||!visible||mode==='original'||mode==='dual'&&activeLane==='source',readingState=sourceOwns?snapshotSourceState():copy(sourceState);
       if(view&&displayedBytes===bytes&&JSON.stringify(sourcePages)===JSON.stringify(displayedSourcePages)){
-        mapper=createMapper(validated,'mono',source,()=>view);displayedAlignment=validated;const moved=mode==='original'||sourceMoved;sourceState=readingState;layoutPanes(nextMode);if(moved){navigateNative(view,mapper.toOutputState(sourceState));sourceMoved=false;}callReader(view,'setAnnotations',projectForDisplay());setProgress(null);setStatus('');appearance.reportDiagnostic?.('nativeReused');requestAlignment((view._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber||1)-1);return;
+        mapper=createMapper(validated,'mono',source,()=>view,selectionWords);displayedAlignment=validated;const moved=mode==='original'||sourceMoved;sourceState=readingState;layoutPanes(nextMode);if(moved){navigateNative(view,mapper.toOutputState(sourceState));sourceMoved=false;}callReader(view,'setAnnotations',projectForDisplay());setProgress(null);setStatus('');appearance.reportDiagnostic?.('nativeReused');requestAlignment((view._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber||1)-1);return;
       }
-      const generation=++epoch;showSource();removeView();mapper=createMapper(validated,'mono',source,()=>view);mode=nextMode;displayedAlignment=validated;displayedSourcePages=sourcePages.slice();requestedAlignmentPages=new Set();setAnnotationStatus(null);sourceState=readingState;
-      host.style.setProperty('z-index','0');host.style.setProperty('visibility','visible');host.style.setProperty('background','transparent');viewport.style.removeProperty('display');viewport.style.setProperty('left',nextMode==='dual'?'50%':'0');sourceFrame?.style?.setProperty('z-index','1');
-      let options=readerRealm(makeOptions(bytes,sourcePages)),candidate;
-      try{candidate=new source.constructor(options);view=candidate;appearance.reportDiagnostic?.('nativeConstructed');await initialized(candidate.initializedPromise);if(!current(generation)){if(view===candidate)removeView();else {candidate.destroy?.();candidate._iframe?.remove?.();}return;}appearance.reportDiagnostic?.('nativeInitialized');if(!candidate._iframeWindow?.PDFViewerApplication?.pdfDocument)throw failure();
+      const generation=++epoch;showSource();removeView();selectionLinkPages.clear();selectionBinding=null;mapper=createMapper(validated,'mono',source,()=>view,selectionWords);mode=nextMode;displayedAlignment=validated;displayedSourcePages=sourcePages.slice();requestedAlignmentPages=new Set();setAnnotationStatus(null);sourceState=readingState;
+      // Gecko may suspend painting a fully occluded iframe. Establish its real
+      // mono/dual viewport before construction, without navigating or fitting.
+      layoutViewport(nextMode);
+      let candidate;
+      try{const options=readerRealm(makeOptions(bytes,sourcePages));candidate=new source.constructor(options);view=candidate;appearance.reportDiagnostic?.('nativeConstructed');await initialized(candidate.initializedPromise);if(!current(generation)){if(view===candidate)removeView();else {candidate.destroy?.();candidate._iframe?.remove?.();}return;}appearance.reportDiagnostic?.('nativeInitialized');if(!candidate._iframeWindow?.PDFViewerApplication?.pdfDocument)throw failure();
         const rendered=candidate._iframeWindow.PDFViewerApplication.pdfViewer?.onePageRendered;if(rendered&&typeof rendered.then==='function')await initialized(rendered);if(!current(generation))return;appearance.reportDiagnostic?.('nativePainted');
         setReaderTool({type:'pointer'});toolOverride=true;syncTools(candidate,{type:'pointer'});callReader(candidate,'setAnnotations',projectForDisplay());callReader(candidate,'setTool',{type:'pointer'});callReader(candidate,'setSelectedAnnotationIDs',copy(reader._state?.selectedAnnotationIDs||[]));displayedBytes=bytes;activeLane='target';leadScroll('target');layoutPanes(desiredMode==='original'?nextMode:desiredMode);installWheel(candidate);installReading(candidate);installEmbedded(candidate,sourcePages,generation);warmPages(candidate);if(desiredMode==='original')showOriginal();setProgress(null);setStatus('');appearance.reportDiagnostic?.('nativeReady',toolbarSnapshot());requestAlignment((candidate._iframeWindow.PDFViewerApplication.pdfViewer.currentPageNumber||1)-1);
       }catch(error){if(current(generation)){showSource();removeView();}throw error;}
     }
     const result={host,frame:host,doc,body:viewport,header,menu,figurePanel,setScrollLinked,jumpFigure,get scrollLinked(){return scrollLinked;},attachToolbar,get visible(){return visible;},get nativeView(){return view;},get currentSourcePage(){const candidate=mode==='dual'&&activeLane==='source'||!visible?source:view,number=candidate?._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber;return Number.isInteger(number)?candidate===source?number-1:displayedSourcePages[number-1]:sourceState.pageIndex;},setStatus,setProgress,setAnnotationStatus,
-      updateAlignment(value){if(disposed||!view||!displayedSourcePages.length)return false;const validated=validateAlignment(value,displayedSourcePages);mapper=createMapper(validated,'mono',source,()=>view);displayedAlignment=validated;callReader(view,'setAnnotations',projectForDisplay());setAnnotationStatus(null);if(activeLane==='target')linkSelection(rawSelectionPopup,'target');else linkSelection(rawSourceSelectionPopup,'source');return true;},
+      updateSelectionLinks,
+      updateAlignment(value){if(disposed||!view||!displayedSourcePages.length)return false;const validated=validateAlignment(value,displayedSourcePages);mapper=createMapper(validated,'mono',source,()=>view,selectionWords);displayedAlignment=validated;callReader(view,'setAnnotations',projectForDisplay());setAnnotationStatus(null);if(selectionLane==='target')linkSelection(rawSelectionPopup,'target');else linkSelection(rawSourceSelectionPopup,'source');return true;},
       prepareOutput(){setStatus('');warmFigures();},showOutput,showOriginal,
       restoreOriginal(){epoch++;showSource();removeView();setProgress(null);},
       dispose(){if(disposed)return;disposed=true;epoch++;showSource();scrollSync?.dispose();removeView();figureScanner?.cancel();figurePanel?.dispose();for(const remove of removers.splice(0))remove();for(const restore of hooks.reverse())restore();host.remove();header.remove();menu.remove();style.remove();}

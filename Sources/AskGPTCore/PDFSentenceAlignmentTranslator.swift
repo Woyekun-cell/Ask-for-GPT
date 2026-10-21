@@ -26,7 +26,7 @@ public actor PDFSentenceAlignmentTranslator {
     private var stopped = false
     public private(set) var lastValidationReason: PDFSentenceAlignmentValidationReason?
 
-    public init(settings: CodexSettings) { backend = CodexBackend(settings: PassageRefinementConfiguration.settings(from: settings)) }
+    public init(settings: CodexSettings) { backend = TranslationBackendFactory.make(settings: PassageRefinementConfiguration.settings(from: settings)) }
     init(backend: any PassageRefinementBackend) { self.backend = backend }
 
     public func align(_ paragraphs: [PDFSentenceAlignmentParagraph], source: String, target: String) async throws -> PDFSentenceAlignmentResult {

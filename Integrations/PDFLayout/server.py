@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import OrderedDict
 from dataclasses import dataclass, field
 import fcntl
 import hashlib
@@ -30,6 +31,8 @@ from alignment import MAX_ALIGNMENT_BYTES, subset_alignment, validate_alignment
 
 JOB_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})(?:/(mono\.pdf|dual\.pdf|alignment\.json))?")
 ALIGNMENT_UPGRADE_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/alignment-upgrade")
+SELECTION_ALIGNMENT_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/selection-alignment")
+SELECTION_LINKS_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/selection-alignment\?page=(0|[1-9][0-9]{0,3})")
 MAX_CACHE_BYTES = 768 * 1024 * 1024
 MAX_INACTIVE_JOBS = 64
 MAX_JOB_AGE = 7 * 24 * 60 * 60
@@ -42,6 +45,8 @@ CACHE_SCHEMA = 1
 PROCESS_GROUP_GRACE = 3.5
 MAX_RUNNING_JOBS = 2
 MAX_CONCURRENT_UPLOADS = 2
+MAX_ALIGNMENT_SNAPSHOT_JOBS = 2
+MAX_ALIGNMENT_SNAPSHOT_BYTES = 32 * 1024 * 1024
 
 
 def _finish_owned_group(process, *, grace=PROCESS_GROUP_GRACE):
@@ -208,8 +213,12 @@ class JobManager:
         self.permanent: set[str] = set()
         self.active: set[str] = set()
         self.stopping = False
+        self._alignment_snapshots = OrderedDict()
+        self._alignment_snapshot_bytes = 0
         from sentence_service import SentenceUpgradeService
         self.sentence_upgrades = SentenceUpgradeService(self)
+        from selection_service import SelectionAlignmentService
+        self.selection_alignments = SelectionAlignmentService(self)
         self._load_completed()
         self.prune()
 
@@ -247,17 +256,21 @@ class JobManager:
                     if value["outputs"][kind] != {"sha256": digest, "bytes": signature[2]}:
                         raise ValueError("changed_cache_file")
                     signatures[kind] = signature
+                alignment_raw = None
                 if "alignment" in value:
                     signature, raw = _private_file(_alignment_path(directory,value), MAX_ALIGNMENT_BYTES)
                     if value["alignment"] != {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": signature[2]}:
                         raise ValueError("changed_cache_file")
                     validate_alignment(json.loads(raw), pages, count, value["sourceSHA256"])
                     signatures["alignment"] = signature
+                    alignment_raw = raw
                 job = Job(directory.name, directory, state="complete", source_pages=pages,
                           page_count=count, cache_info=value, output_signatures=signatures)
                 self.jobs[job.id] = job
                 self.completed[key] = job.id
                 self.permanent.add(job.id)
+                if alignment_raw is not None:
+                    self._remember_alignment_snapshot(job,alignment_raw)
             except (OSError, ValueError, TypeError, KeyError):
                 continue
 
@@ -304,40 +317,84 @@ class JobManager:
         value = {**job.cache_info, "schema": CACHE_SCHEMA, "state": "complete", "outputs": outputs}
         value.pop("alignment", None)
         alignment_path = job.directory / "alignment.json"
+        alignment_raw = None
         if alignment_path.exists() or alignment_path.is_symlink():
             signature, raw = _private_file(alignment_path, MAX_ALIGNMENT_BYTES)
             validate_alignment(json.loads(raw), job.source_pages, job.page_count, job.cache_info["sourceSHA256"])
             value["alignment"] = {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": signature[2]}
             signatures["alignment"] = signature
+            alignment_raw = raw
         atomic_json(job.directory / "cache.json", value)
         job.cache_info, job.output_signatures = value, signatures
         self.completed[value["cacheKey"]] = job.id
         self.permanent.add(job.id)
+        if alignment_raw is not None:
+            self._remember_alignment_snapshot(job,alignment_raw)
+
+    def _alignment_snapshot_binding(self,job):
+        metadata=job.cache_info["alignment"]
+        return (str(_alignment_path(job.directory,job.cache_info)),tuple(job.output_signatures["alignment"]),
+            tuple(job.source_pages),job.page_count,job.cache_info["sourceSHA256"],metadata["sha256"],metadata["bytes"])
+
+    def _forget_alignment_snapshot(self,identity):
+        entry=self._alignment_snapshots.pop(identity,None)
+        if entry is not None:self._alignment_snapshot_bytes-=len(entry[1])
+
+    def _remember_alignment_snapshot(self,job,raw):
+        # Only bytes whose complete semantic/geometry validation has already
+        # succeeded enter here. Immutable JSON gives every reader a private
+        # deep tree without caching hundreds of thousands of mutable objects.
+        self._forget_alignment_snapshot(job.id)
+        if len(raw)>MAX_ALIGNMENT_SNAPSHOT_BYTES or MAX_ALIGNMENT_SNAPSHOT_JOBS<1:return
+        while self._alignment_snapshots and (len(self._alignment_snapshots)>=MAX_ALIGNMENT_SNAPSHOT_JOBS
+                or self._alignment_snapshot_bytes+len(raw)>MAX_ALIGNMENT_SNAPSHOT_BYTES):
+            self._forget_alignment_snapshot(next(iter(self._alignment_snapshots)))
+        self._alignment_snapshots[job.id]=(self._alignment_snapshot_binding(job),bytes(raw))
+        self._alignment_snapshot_bytes+=len(raw)
 
     def read_alignment(self,job):
         with self.lock:
             if job.state!="complete" or "alignment" not in job.output_signatures:
+                self._forget_alignment_snapshot(job.id)
                 raise ProtocolFailure("alignment_unavailable")
-            signature,raw=_private_file(_alignment_path(job.directory,job.cache_info),MAX_ALIGNMENT_BYTES)
-            if signature!=job.output_signatures["alignment"]: raise ProtocolFailure("alignment_unavailable")
-            return validate_alignment(json.loads(raw),job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
+            try:
+                binding=self._alignment_snapshot_binding(job);path=Path(binding[0]);expected=binding[1]
+                if _output_signature(path,MAX_ALIGNMENT_BYTES)!=expected:raise ValueError("changed_alignment")
+                cached=self._alignment_snapshots.get(job.id)
+                if cached is not None and cached[0]==binding:
+                    value=json.loads(cached[1]);self._alignment_snapshots.move_to_end(job.id)
+                else:
+                    signature,raw=_private_file(path,MAX_ALIGNMENT_BYTES)
+                    if (signature!=expected or len(raw)!=binding[6]
+                            or hashlib.sha256(raw).hexdigest()!=binding[5]):raise ValueError("changed_alignment")
+                    value=validate_alignment(json.loads(raw),job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
+                    self._remember_alignment_snapshot(job,raw)
+                # Changes while copying/validating must not return a stale
+                # trusted tree, even when size or mtime was restored.
+                if _output_signature(path,MAX_ALIGNMENT_BYTES)!=expected:raise ValueError("changed_alignment")
+                return value
+            except (OSError,ValueError,TypeError,KeyError):
+                self._forget_alignment_snapshot(job.id)
+                raise ProtocolFailure("alignment_unavailable") from None
 
     def publish_alignment(self,job,value):
         """One atomic metadata pointer commits a generation; PDF bytes stay put."""
         with self.lock:
             if self._cached_job(job.cache_info["cacheKey"]) is not job: raise ProtocolFailure("alignment_unavailable")
-            validate_alignment(value,job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
             raw=json.dumps(value,ensure_ascii=False,separators=(",",":")).encode()
             if len(raw)>MAX_ALIGNMENT_BYTES: raise ProtocolFailure("alignment_invalid")
+            snapshot=validate_alignment(json.loads(raw),job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
             digest=hashlib.sha256(raw).hexdigest();name="alignment-"+digest+".json"
             path=job.directory/name
-            atomic_json(path,value)
+            atomic_json(path,snapshot)
             signature,saved=_private_file(path,MAX_ALIGNMENT_BYTES)
+            if saved!=raw:raise ProtocolFailure("alignment_unavailable")
             metadata={**job.cache_info,"alignmentFile":name,
                 "alignment":{"sha256":hashlib.sha256(saved).hexdigest(),"bytes":signature[2]}}
             previous=job.cache_info.get("alignmentFile")
             atomic_json(job.directory/"cache.json",metadata)
             job.cache_info=metadata;job.output_signatures["alignment"]=signature
+            self._remember_alignment_snapshot(job,saved)
             if previous and previous!=name:
                 old=_alignment_path(job.directory,{"alignmentFile":previous})
                 try: old.unlink(missing_ok=True)
@@ -655,6 +712,7 @@ class JobManager:
         with self.lock:
             self.stopping = True
         self.sentence_upgrades.shutdown()
+        self.selection_alignments.shutdown()
         with self.lock: jobs = list(self.jobs.values())
         for job in jobs:
             if job.state == "running": self.cancel(job)
@@ -672,7 +730,7 @@ class PDFHTTPServer(ThreadingHTTPServer):
 def create_server(manager: JobManager, token: str, *, port: int = PORT, extension_origin: str | None = None):
     if extension_origin is not None and not re.fullmatch(r"chrome-extension://[a-p]{32}", extension_origin):
         raise ProtocolFailure("invalid_configuration")
-    cors_headers = {"authorization", "content-type", "x-askgpt-pages", "x-askgpt-source", "x-askgpt-target", "x-askgpt-units"}
+    cors_headers = {"authorization", "content-type", "x-askgpt-pages", "x-askgpt-source", "x-askgpt-target", "x-askgpt-units", "x-askgpt-selection"}
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "AskGPTPDF/1"
@@ -730,6 +788,13 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
             if self.path == "/v1/pdf/health":
                 return self.reply(200, {"status": "ready" if manager.ready() else "runtime_missing",
                                        "protocolVersion": 1})
+            selected=SELECTION_LINKS_ROUTE.fullmatch(self.path)
+            if selected:
+                try:
+                    parent=manager.get(selected[1])
+                    return self.reply(200,manager.selection_alignments.links(parent,int(selected[2])))
+                except ProtocolFailure as error: return self.selection_error(error)
+                except (OSError,ValueError,TypeError,KeyError): return self.reply(400,{"error":"selection_invalid"})
             upgrade=ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path)
             if upgrade:
                 try: return self.reply(200,manager.sentence_upgrades.status(manager.get(upgrade[1])))
@@ -766,6 +831,8 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
 
         def do_POST(self):
             if not self.authorize(): return
+            selected=SELECTION_ALIGNMENT_ROUTE.fullmatch(self.path)
+            if selected: return self.post_selection_alignment(selected[1])
             upgrade=ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path)
             if upgrade: return self.post_alignment_upgrade(upgrade[1])
             if self.path != "/v1/pdf/jobs": return self.reply(404, {"error": "not_found"})
@@ -810,6 +877,47 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
                 return self.reply(400, {"error": "incomplete_upload"})
             finally:
                 manager.upload_slots.release()
+
+        def selection_error(self,error):
+            code=str(error)
+            status={"selection_source_required":409,"selection_busy":409,"job_not_complete":409,
+                "job_not_found":404,"selection_timeout":504,"gpt_unavailable":503,"service_stopping":503}.get(code,400)
+            allowed={"selection_source_required","selection_busy","selection_invalid","selection_unavailable",
+                "job_not_complete","job_not_found","selection_timeout","gpt_unavailable","service_stopping","source_changed","incomplete_upload"}
+            return self.reply(status,{"error":code if code in allowed else "selection_invalid"})
+
+        def post_selection_alignment(self,identity):
+            from selection_service import MAX_QUERY_BYTES, parse_query
+            try: parent=manager.get(identity)
+            except ProtocolFailure: return self.reply(404,{"error":"job_not_found"})
+            if parent.state!="complete": return self.reply(409,{"error":"job_not_complete"})
+            if self.headers.get("Transfer-Encoding") is not None:
+                return self.reply(400,{"error":"unsupported_transfer_encoding"})
+            lengths=self.headers.get_all("Content-Length") or []
+            if len(lengths)!=1 or not lengths[0].isdigit(): return self.reply(411,{"error":"content_length_required"})
+            length=int(lengths[0]);types=self.headers.get_all("Content-Type") or []
+            if len(types)!=1: return self.reply(400,{"error":"invalid_content_type"})
+            content_type=types[0].split(";",1)[0].strip().lower()
+            selection_headers=self.headers.get_all("X-AskGPT-Selection") or []
+            try:
+                if content_type=="application/json":
+                    if selection_headers or not 1<=length<=MAX_QUERY_BYTES: raise ProtocolFailure("selection_invalid")
+                    raw=self.rfile.read(length)
+                    if len(raw)!=length: raise ProtocolFailure("incomplete_upload")
+                    query=parse_query(raw)
+                elif content_type=="application/pdf":
+                    if not 5<=length<=MAX_PDF_BYTES: return self.reply(413,{"error":"pdf_too_large"})
+                    if len(selection_headers)!=1 or len(selection_headers[0])>MAX_QUERY_BYTES:
+                        raise ProtocolFailure("selection_invalid")
+                    header=selection_headers[0]
+                    query=parse_query(header.encode("ascii"))
+                    if not manager.upload_slots.acquire(blocking=False): raise ProtocolFailure("selection_busy")
+                    try: manager.selection_alignments.install_source(parent,self.rfile,length)
+                    finally: manager.upload_slots.release()
+                else: return self.reply(415,{"error":"invalid_content_type"})
+                return self.reply(200,manager.selection_alignments.align(parent,query))
+            except ProtocolFailure as error: return self.selection_error(error)
+            except (OSError,TimeoutError,ValueError,TypeError,KeyError): return self.reply(400,{"error":"selection_invalid"})
 
         def post_alignment_upgrade(self,identity):
             try: parent=manager.get(identity)
@@ -924,7 +1032,13 @@ def main():
         root = private_directory(args.cache_root)
         lock_file = os.open(root / "server.lock", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        manager = JobManager(args.cache_root, args.translator)
+        # An optional backend configuration has its own permanent result namespace.
+        # Keep the historical Codex namespace unchanged when no override is selected.
+        backend_identity = os.environ.get("ASKGPT_TRANSLATION_CACHE_ID", "")
+        if backend_identity and not re.fullmatch(r"[0-9a-f]{64}", backend_identity):
+            raise ValueError("invalid_translation_backend_identity")
+        revision = TRANSLATION_REVISION + ("-backend-" + backend_identity if backend_identity else "")
+        manager = JobManager(args.cache_root, args.translator, translation_revision=revision)
         token, extension_origin = load_connection(args.config)
         service = create_server(manager, token, extension_origin=extension_origin)
     except Exception:

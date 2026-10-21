@@ -10,7 +10,7 @@ import tempfile
 root = Path(__file__).resolve().parent.parent
 source = root / "Integrations/PDFLayout"
 destination = Path(sys.argv[1])
-names = ("server.py", "worker.py", "layout_common.py", "gpt_batch.py", "page_parallel.py", "batch_permits.py", "alignment.py", "sentence_alignment.py", "phrase_alignment.py", "sentence_service.py", "layout_quality.py", "paragraph_continuity.py", "prepare-assets.py", "install-runtime",
+names = ("server.py", "worker.py", "layout_common.py", "gpt_batch.py", "page_parallel.py", "batch_permits.py", "alignment.py", "sentence_alignment.py", "phrase_alignment.py", "sentence_service.py", "selection_service.py", "layout_quality.py", "paragraph_continuity.py", "prepare-assets.py", "install-runtime",
          "requirements.in", "requirements.lock", "UPSTREAM.json", "LICENSE-BabelDOC-AGPL-3.0.txt")
 for name in names:
     path = source / name

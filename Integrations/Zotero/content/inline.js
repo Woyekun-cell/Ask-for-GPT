@@ -93,8 +93,32 @@
         if(!valid()){report('stale');closeSession(context,{restorePosition:false});return;}
         session.busy=false;setProgress(context,session,null);
       }
+      function interactionState(){
+        if(!session.interaction||session.interaction.jobID!==session.job?.id)session.interaction={jobID:session.job?.id,latest:null,cache:new Map(),pending:new Map(),restored:new Set(),targetSHA256:null};
+        return session.interaction;
+      }
+      function acceptSelection(value,run){
+        const checked=PDF.validateSelectionLinks(value,run.jobID,value.page,session.alignment?.sourceSHA256);
+        if(run.targetSHA256!==null&&run.targetSHA256!==checked.targetSHA256)throw new PDF.PDFError('response');run.targetSHA256=checked.targetSHA256;return checked;
+      }
+      function restoreSelectionLinks(page){
+        if(!session.native||!session.job||!Number.isInteger(page)||!session.job.sourcePages.includes(page)||typeof session.layer?.updateSelectionLinks!=='function')return;
+        const run=interactionState();if(run.restored.has(page))return;run.restored.add(page);
+        void transport.selectionLinks(run.jobID,page,session.job.sourcePages).then(value=>{if(!valid()||session.interaction!==run||session.job?.id!==run.jobID)return;session.layer?.updateSelectionLinks(acceptSelection(value,run));}).catch(error=>{if(valid()&&session.interaction===run){run.restored.delete(page);report('nativeSelection',error);}});
+      }
+      function requestSelection(page,query){
+        if(!query||query.page!==page)return 'unavailable';const run=interactionState(),key=JSON.stringify(query);run.latest=key;
+        const current=()=>valid()&&session.interaction===run&&session.job?.id===run.jobID;
+        if(run.cache.has(key)){const value=run.cache.get(key);session.layer?.updateSelectionLinks?.(value);session.layer?.setAnnotationStatus?.(value.link?null:'failed');return value.link?'ready':'failed';}
+        if(run.pending.has(key))return 'pending';session.layer?.setAnnotationStatus?.('preparing');
+        const pending=transport.selectionAlignment(run.jobID,session.data,query,session.job.sourcePages).then(value=>{
+          if(!current())return;const checked=acceptSelection(value,run);run.cache.set(key,checked);if(run.latest!==key)return;session.layer?.updateSelectionLinks?.(checked);session.layer?.setAnnotationStatus?.(checked.link?null:'failed');
+        }).catch(error=>{if(current()&&run.latest===key){session.layer?.setAnnotationStatus?.('failed');report('nativeSelection',error);}}).finally(()=>{run.pending.delete(key);});
+        run.pending.set(key,pending);return 'started';
+      }
       function requestPrecision(page,options={}){
         if(!session.native||!session.job||!session.data||!Number.isInteger(page)||!session.job.sourcePages.includes(page))return 'unavailable';
+        if(options.selection)return requestSelection(page,options.selection);
         const explicit=options.explicit===true,units=Array.isArray(options.units)?options.units.slice(0,8):[];
         let run=session.precision;
         const ready=phraseReady(session.alignment,page),status=()=>session.layer?.setAnnotationStatus?.(phraseReady(session.alignment,run.visiblePage)?null:run.failed.has(run.visiblePage)?'failed':'preparing');
@@ -173,6 +197,7 @@
           if(!active(reader)){session.pendingDisplay=true;return;}
           session.pendingDisplay=false;report('outputReady');setProgress(context,session,{stage:'loading'});
           await session.layer.showOutput(output,session.job.sourcePages,mode,session.alignment);
+          if(valid()&&session.job?.id===jobID&&epoch===session.outputEpoch)restoreSelectionLinks(session.layer.currentSourcePage);
         }catch(error){report('output',error);if(valid()&&epoch===session.outputEpoch){session.layer.restoreOriginal();showError(context,error);}}
       }
       async function start(whole){
@@ -180,7 +205,7 @@
         const epoch=++session.epoch;
         const current=()=>valid()&&session.epoch===epoch;
         try{
-          report('startBegin');session.busy=true;session.whole=whole;session.outputEpoch++;session.precision?.cancel?.();session.precision=null;const retirement=retireWork(context,session);session.outputs.clear();session.alignment=null;
+          report('startBegin');session.busy=true;session.whole=whole;session.outputEpoch++;session.precision?.cancel?.();session.precision=null;session.interaction=null;const retirement=retireWork(context,session);session.outputs.clear();session.alignment=null;
           session.layer.prepareOutput();setProgress(context,session,{stage:'preparing'});context.error?.remove();context.error=null;
           await retirement;report('retired');if(!current())return;
           if(!session.dataPromise)session.dataPromise=pdf.pdfDocument.getData();
@@ -232,7 +257,7 @@
           stop:()=>{if(session.cancel){session.epoch++;void retireWork(context,session);session.busy=false;setProgress(context,session,null);}},exit:()=>closeSession(context),original:()=>instance.original(reader),mode:mode=>instance.setMode(reader,mode),
           direction:next=>{if(next===session.direction||!valid())return;session.direction=next;void start(session.whole);},
           failure:error=>{if(!session.native)report('render',error);if(valid())showError(context,error);},
-          align:(page,options)=>requestPrecision(page,options),page:page=>requestPrecision(page)
+          align:(page,options)=>requestPrecision(page,options),page:page=>{restoreSelectionLinks(page);return requestPrecision(page);}
         },{Components,reportDiagnostic:report,isCurrent:valid,toolbarHost:()=>context.toolbarSlot,setCancel:cancel=>{session.cancelMount=cancel;}});
         if(!valid()){layer.dispose();if(context.session===session)closeSession(context,{restorePosition:false});return;}session.layer=layer;attachToolbarControls(context);setProgress(context,session,session.progress);void start(session.whole);
       }catch(error){report('mount',error);if(context.session!==session)return;closeSession(context);showError(context,error);}

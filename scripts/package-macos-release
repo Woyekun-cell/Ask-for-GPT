@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Package the pinned signed app as drag-to-install DMG and ZIP.
+
+Packaging only: no installation, credential export, or network access.
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import plistlib
+import posixpath
+import re
+import shutil
+import stat
+import subprocess
+import zipfile
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def run(*args):
+    return subprocess.run(list(map(str, args)), check=True, text=True, capture_output=True).stdout
+
+
+def copy_guide(name, target):
+    text = (ROOT / "docs" / name).read_text()
+    def link(match):
+        destination = match[1]
+        if destination.startswith(("https://", "http://", "#", "images/")):
+            return match[0]
+        local = destination.split("#", 1)[0]
+        fragment = "#" + destination.split("#", 1)[1] if "#" in destination else ""
+        if local.endswith("TRANSLATION-BACKENDS.zh-CN.md"):
+            return "](翻译后端配置.md" + fragment + ")"
+        if local.endswith("INSTALL.macOS.zh-CN.md"):
+            return "](安装与配置.md" + fragment + ")"
+        if "/examples/" in local:
+            return "](examples/" + local.rsplit("/", 1)[1] + fragment + ")"
+        relative = posixpath.normpath("docs/" + local)
+        return "](https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/" + relative + fragment + ")"
+    target.write_text(re.sub(r"\]\(([^)]+)\)", link, text))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--version", required=True)
+    parser.add_argument("--codex-archive", type=Path, required=True)
+    args = parser.parse_args()
+    codex_sha = "b0344fc2e41f15e0071147e5869008047b8ff4bf2c4a8897975d3bae3f103b34"
+    if hashlib.sha256(args.codex_archive.read_bytes()).hexdigest() != codex_sha:
+        raise SystemExit("Official Codex package SHA-256 differs")
+    source = ROOT / ".build/AppPackage.noindex/Ask for GPT.app"
+    info = plistlib.loads((source / "Contents/Info.plist").read_bytes())
+    if info["CFBundleVersion"] != args.version:
+        raise SystemExit("Build version differs from requested release")
+    if info["CFBundleShortVersionString"] != args.version:
+        raise SystemExit("Display version differs from requested release")
+    run("python3", ROOT / "scripts/app-signing", "verify", source)
+    run("/usr/bin/codesign", "--verify", "--deep", "--strict", source)
+    for name in ("AskGPT", "AskGPTTranslate"):
+        if run("/usr/bin/lipo", "-archs", source / "Contents/MacOS" / name).strip() != "arm64":
+            raise SystemExit("This release must contain arm64 executables only")
+    for path in source.rglob("*"):
+        if path.is_symlink():
+            raise SystemExit("Unexpected application symlink: " + str(path.relative_to(source)))
+        if path.name in {"connection.local.json", "keychain.password", "auth.json"} or path.suffix.lower() in {".p12", ".pfx", ".pem", ".keychain-db"}:
+            raise SystemExit("Private runtime file in application")
+    output = args.output.expanduser().absolute()
+    if output.exists():
+        raise SystemExit("Use a new output directory")
+    output.mkdir(parents=True)
+    folder = output / "Ask for GPT"
+    folder.mkdir()
+    run("/usr/bin/ditto", source, folder / source.name)
+    for name in ("01-登录ChatGPT.command", "02-准备PDF翻译.command"):
+        target = folder / name
+        shutil.copy2(ROOT / "Resources/Distribution" / name, target)
+        target.chmod(0o755)
+    copy_guide("INSTALL.macOS.zh-CN.md", folder / "安装与配置.md")
+    copy_guide("TRANSLATION-BACKENDS.zh-CN.md", folder / "翻译后端配置.md")
+    shutil.copytree(ROOT / "Resources/Distribution/examples", folder / "examples")
+    (folder / "images").mkdir()
+    for name in ("translation.png", "settings.png"):
+        shutil.copy2(ROOT / "docs/images" / name, folder / "images" / name)
+    notice = (ROOT / "NOTICE.md").read_text()
+    notice = re.sub(r"\]\((?!https?://)([^)]+)\)",
+                    r"](https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/\1)", notice)
+    (folder / "来源与许可.md").write_text(notice)
+    (folder / "Tools").mkdir()
+    shutil.copy2(args.codex_archive, folder / "Tools/codex-package-aarch64-apple-darwin.tar.gz")
+    shutil.copy2(ROOT / "Resources/Distribution/LICENSE-Codex-Apache-2.0.txt", folder / "Tools/LICENSE-Codex-Apache-2.0.txt")
+    shutil.copy2(ROOT / "Resources/Distribution/NOTICE-Codex.txt", folder / "Tools/NOTICE-Codex.txt")
+    folder.joinpath("Applications").symlink_to("/Applications", target_is_directory=True)
+    basename = "Ask-for-GPT-" + args.version + "-macOS-arm64"
+    archive = output / (basename + ".zip")
+    # Python writes the ZIP UTF-8 filename flag explicitly. This keeps the
+    # Chinese setup entry names consistent across Archive Utility and unzip.
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as package:
+        for path in [folder, *sorted(folder.rglob("*"))]:
+            relative = path.relative_to(folder.parent).as_posix()
+            if path.is_symlink():
+                entry = zipfile.ZipInfo(relative)
+                entry.create_system = 3
+                entry.external_attr = (stat.S_IFLNK | 0o777) << 16
+                package.writestr(entry, str(path.readlink()))
+            else:
+                package.write(path, relative)
+    with zipfile.ZipFile(archive) as package:
+        if package.testzip() is not None:
+            raise SystemExit("ZIP integrity check failed")
+        names = set(package.namelist())
+        if not any(name.endswith("/Contents/MacOS/AskGPT") for name in names):
+            raise SystemExit("Application missing in ZIP")
+    dmg = output / (basename + ".dmg")
+    run("/usr/bin/hdiutil", "create", "-volname", "Ask for GPT " + args.version,
+        "-srcfolder", folder, "-format", "UDZO", "-ov", dmg)
+    run("/usr/bin/hdiutil", "verify", dmg)
+    hashes = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in (archive, dmg)}
+    (output / "SHA256SUMS.txt").write_text("".join(value + "  " + key + "\n" for key, value in hashes.items()))
+    report = {"version": args.version, "architecture": "arm64", "notarized": False,
+              "distribution": "prebuilt app and unchanged official Codex package; online PDF preparation and account login",
+              "bundledCodex": {"version": "0.163.0", "archiveSHA256": codex_sha},
+              "experimentalTranslationBackends": {"providers": ["openai-compatible", "claude-code"],
+                  "status": "configuration adapters included; no connectivity or translation-quality testing"},
+              "files": [{"name": path.name, "bytes": path.stat().st_size, "sha256": hashes[path.name]}
+                        for path in (archive, dmg)], "signatureVerified": True}
+    (output / "release-assets.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    print(json.dumps(report, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    main()
