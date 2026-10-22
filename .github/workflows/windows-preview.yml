@@ -45,10 +45,12 @@ jobs:
       - name: Prepare and verify isolated PDF runtime
         id: pdf
         if: success() || failure()
-        shell: pwsh
+        shell: powershell
         run: |
-          & scripts/windows/prepare-pdf.ps1 -CacheRoot "$env:RUNNER_TEMP\AskGPT PDF 中文"
-          $python = "$env:RUNNER_TEMP\AskGPT PDF 中文\runtime\Scripts\python.exe"
+          $label = [string][char]0x4E2D + [char]0x6587
+          $pdfRoot = Join-Path $env:RUNNER_TEMP ('AskGPT PDF ' + $label)
+          & scripts/windows/prepare-pdf.ps1 -CacheRoot $pdfRoot
+          $python = Join-Path $pdfRoot 'runtime\Scripts\python.exe'
           $failedSuites = @()
           try { & Integrations/PDFLayout/tests/test_prepare_pdf.ps1 }
           catch { Write-Host $_; $failedSuites += 'preparation security' }
@@ -60,15 +62,18 @@ jobs:
       - name: Verify full official Codex payload without login or model request
         id: codex
         if: success() || failure()
-        shell: pwsh
+        shell: powershell
         run: |
-          & scripts/windows/prepare-codex.ps1 -ToolsRoot "$env:RUNNER_TEMP\AskGPT tools 中文"
-          & "$env:RUNNER_TEMP\AskGPT tools 中文\codex-0.163.0\vendor\x86_64-pc-windows-msvc\bin\codex.exe" --version
+          $label = [string][char]0x4E2D + [char]0x6587
+          $toolsRoot = Join-Path $env:RUNNER_TEMP ('AskGPT tools ' + $label)
+          & scripts/windows/prepare-codex.ps1 -ToolsRoot $toolsRoot
+          & (Join-Path $toolsRoot 'codex-0.163.0\vendor\x86_64-pc-windows-msvc\bin\codex.exe') --version
           if ($LASTEXITCODE -ne 0) { throw 'Prepared Codex --version failed' }
           New-Item -ItemType Directory -Path work -Force | Out-Null
           @{
             javascript = '${{ steps.javascript.outcome }}'
             pdf = '${{ steps.pdf.outcome }}'
+            preparationPowerShell = $PSVersionTable.PSVersion.ToString()
             codex = 'Full fixed official Windows payload SHA512 verified and --version passed; no login or model request'
           } | ConvertTo-Json | Set-Content -LiteralPath work/windows-ci-checks.json -Encoding UTF8
       - name: Build, test and package Windows x64

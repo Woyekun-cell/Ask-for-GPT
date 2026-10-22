@@ -6,8 +6,8 @@
   "files": [
     {
       "path": ".github/workflows/windows-preview.yml",
-      "bytes": 3740,
-      "sha256": "eb92d4c7d5e541da4d49c2ef5cfd1eaf4b17f2c01a81f851d8e0bbd491166a7b"
+      "bytes": 3999,
+      "sha256": "e26cf9222b0ba41cff80a78d6d553ef5dfcf53332491dbe84ab8296344b85142"
     },
     {
       "path": ".gitignore",
@@ -281,8 +281,8 @@
     },
     {
       "path": "Integrations/PDFLayout/tests/test_prepare_pdf.ps1",
-      "bytes": 6614,
-      "sha256": "470dfcf20118c05310551c1245e3b8b8064ad20feb1ed8d5eca3d2c34c8286d1"
+      "bytes": 6671,
+      "sha256": "e6392ac8438f4d00201a6fee53a68f5768b496eb053c1d53a288f8df030bfc19"
     },
     {
       "path": "Integrations/PDFLayout/tests/test_progress.py",

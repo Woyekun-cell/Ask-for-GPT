@@ -10,7 +10,8 @@ foreach ($definition in $preparationAst.FindAll({ param($node) $node -is [Manage
 }
 $PythonVersion = '3.12.15'
 $CurrentUser = [Security.Principal.WindowsIdentity]::GetCurrent().User
-$temporary = Join-Path ([IO.Path]::GetTempPath()) ('AskGPT PDF test 中文 ' + [Guid]::NewGuid().ToString('N'))
+$unicode = [string][char]0x4E2D + [char]0x6587
+$temporary = Join-Path ([IO.Path]::GetTempPath()) ('AskGPT PDF test ' + $unicode + ' ' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($temporary)
 $checks = 0
 function Set-FixtureOwner([string]$Path) {
