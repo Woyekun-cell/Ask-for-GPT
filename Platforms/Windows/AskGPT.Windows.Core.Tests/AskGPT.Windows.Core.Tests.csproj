@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><RestorePackagesWithLockFile>true</RestorePackagesWithLockFile><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup><ProjectReference Include="../AskGPT.Windows.Core/AskGPT.Windows.Core.csproj" /><ProjectReference Include="../AskGPT.Translate/AskGPT.Translate.csproj" ReferenceOutputAssembly="false" /></ItemGroup>
+</Project>

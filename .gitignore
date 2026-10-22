@@ -20,3 +20,7 @@ connection.local.json
 translation.local.json
 *-api-key.txt
 *.secret
+
+# .NET build products (source-only Windows checkout)
+**/bin/
+**/obj/

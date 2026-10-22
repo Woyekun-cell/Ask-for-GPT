@@ -7,10 +7,13 @@ import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from layout_common import ProtocolFailure
 from worker import NativeHelper
+import worker
+from helper_fixture import enable_python_helpers
 
 
 class PhraseHelperTests(unittest.TestCase):
     def setUp(self):
+        enable_python_helpers(self, worker)
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)
         self.units=[{"id":"u0","sourceText":"alpha","targetText":"甲","source":[{"id":"s0","text":"alpha"}],
             "target":[{"id":"t0","text":"甲"}]}]
@@ -20,7 +23,7 @@ class PhraseHelperTests(unittest.TestCase):
     def helper(self,body):
         path=self.root/"helper"
         path.write_text("#!/usr/bin/env python3\nimport json,sys,time\n"
-            "assert sys.argv[1:]==['--gpt-phrase-align']\nfor line in sys.stdin:\n r=json.loads(line)\n"+body)
+            "assert sys.argv[1:]==['--gpt-phrase-align']\nfor line in sys.stdin:\n r=json.loads(line)\n"+body,encoding='utf-8')
         path.chmod(0o700);return path
 
     def test_phrase_mode_id_and_groups_are_independent_of_sentence_protocol(self):

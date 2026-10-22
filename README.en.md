@@ -25,6 +25,8 @@ The app works where you already read and write: your Zotero attachment and annot
 
 ## Download and install
 
+**Windows x64 reading preview:** [EXE installer and portable ZIP](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/windows-v0.1.0-preview.1) · [Installation and configuration (中文)](docs/INSTALL.Windows.zh-CN.md). Includes selection lookup, an offline dictionary, Chrome/Zotero integration, bilingual PDFs and configurable translation backends. Word/WPS writing support is planned for later. [Windows runner build and automated checks](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml) are recorded in the workflow; Windows 10/11 user-desktop acceptance has not been performed. Screenshots below show macOS.
+
 Choose an installer above to start using the app. The application itself is about **48 MB**, including roughly 400,000 English dictionary entries, the Chrome and Zotero integrations, and writing integration resources.
 
 | Download | How to use it |

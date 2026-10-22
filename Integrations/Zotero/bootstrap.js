@@ -21,6 +21,7 @@ async function startup(data, reason) {
   Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-scroll-sync.js', scope);
   Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-native-view.js', scope);
   Services.scriptloader.loadSubScript(data.rootURI + 'content/sidebar.js', scope);
+  Services.scriptloader.loadSubScript(data.rootURI + 'content/connection-security.js', scope);
   Services.scriptloader.loadSubScript(data.rootURI + 'content/inline.js', scope);
   const css = await Zotero.File.getContentsFromURLAsync(data.rootURI + 'content/inline.css');
   if (generation !== askGPTInlineGeneration) return;
@@ -28,19 +29,11 @@ async function startup(data, reason) {
   const reportDiagnostic = (stage, error) => {
     const record = scope.AskGPTPDFLayout.diagnostic(stage, error);
     diagnosticWrite = diagnosticWrite.then(async () => {
-      const directory = Services.dirsvc.get('Home', Components.interfaces.nsIFile).clone();
-      for (const part of ['Library', 'Application Support', 'AskGPTReader']) directory.append(part);
-      if (!directory.exists()) directory.create(Components.interfaces.nsIFile.DIRECTORY_TYPE, 0o700);
-      const file = directory.clone(); file.append('pdf-inline-diagnostic.json');
-      if (file.exists() && file.isSymlink()) return;
-      if (!file.exists()) file.create(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, 0o600);
-      file.permissions = 0o600;
-      await Zotero.File.putContentsAsync(file.path, JSON.stringify(record));
-      file.permissions = 0o600;
+      await scope.AskGPTConnectionSecurity.writeDiagnostic({ Zotero, Services, Components, ChromeUtils }, record);
     }).catch(() => {});
     return diagnosticWrite;
   };
-  scope.instance = scope.AskGPTInline.create({ Zotero, Services, Components, css, reportDiagnostic,
+  scope.instance = scope.AskGPTInline.create({ Zotero, Services, Components, ChromeUtils, css, reportDiagnostic,
     pluginID: data.id, rootURI: data.rootURI, readText: path => Zotero.File.getContentsAsync(path, 'UTF-8', 4096),
     setTimer: setTimeout, clearTimer: clearTimeout });
   askGPTInlineScope = scope;

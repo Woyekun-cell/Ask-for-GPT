@@ -268,7 +268,7 @@ class ServiceContractTests(unittest.TestCase):
         job = self.manager.begin()
         (job.directory / "input.pdf").write_bytes(self.pdf)
         old = self.manager.jobs_root / ("d" * 32)
-        old.mkdir()
+        server_module.private_directory(old)
         (old / "mono.pdf").write_bytes(self.pdf)
         outside = Path(self.folder.name) / "outside"
         outside.mkdir()
@@ -289,7 +289,7 @@ class ServiceContractTests(unittest.TestCase):
         try:
             for number in range(3):
                 path = self.manager.jobs_root / f"{number + 1:032x}"
-                path.mkdir()
+                server_module.private_directory(path)
                 (path / "mono.pdf").write_bytes(self.pdf)
             self.manager.prune()
             self.assertEqual(len(list(self.manager.jobs_root.iterdir())), 1)

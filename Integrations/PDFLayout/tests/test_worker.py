@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from helper_fixture import enable_python_helpers
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
@@ -15,6 +16,7 @@ except ModuleNotFoundError:
 class NativeHelperProtocolTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(worker, "PDF native helper adapter is not implemented")
+        enable_python_helpers(self, worker)
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / "helper"
 
@@ -22,7 +24,7 @@ class NativeHelperProtocolTests(unittest.TestCase):
         if worker is not None: self.temp.cleanup()
 
     def make_helper(self, body):
-        self.path.write_text("#!/usr/bin/env python3\nimport json,sys,time\n" + body)
+        self.path.write_text("#!/usr/bin/env python3\nimport json,sys,time\n" + body, encoding='utf-8')
         self.path.chmod(0o700)
         return worker.NativeHelper(self.path, "en", "zh-Hans", timeout=5)
 

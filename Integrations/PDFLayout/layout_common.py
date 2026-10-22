@@ -9,6 +9,7 @@ import re
 import stat
 import sys
 from typing import Callable
+import platform_ops as platform
 
 BABELDOC_VERSION = "0.6.4"
 MAX_PDF_BYTES = 150 * 1024 * 1024
@@ -23,22 +24,17 @@ class ProtocolFailure(Exception):
 
 
 def private_directory(path: Path) -> Path:
-    path = Path(path)
-    path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    info = path.lstat()
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
-        raise ProtocolFailure("unsafe_cache_directory")
-    path.chmod(0o700)
-    return path
+    try: return platform.private_directory(path)
+    except (OSError, ValueError): raise ProtocolFailure("unsafe_cache_directory") from None
 
 
 def load_connection(path: Path) -> tuple[str, str | None]:
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        descriptor = platform.secure_open(path, os.O_RDONLY)
         with os.fdopen(descriptor, "rb") as handle:
             info = os.fstat(handle.fileno())
-            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                    or info.st_mode & 0o077 or info.st_size > 8192):
+            platform.validate_file(handle.fileno())
+            if info.st_size > 8192:
                 raise ProtocolFailure("invalid_configuration")
             config = json.load(handle)
         token = config["token"]
@@ -153,6 +149,9 @@ def configure_asset_home(cache_root: Path) -> Path:
     home = private_directory(cache_root / "engine-home")
     private_directory(home / ".cache")
     private_directory(home / ".cache" / "babeldoc")
+    if platform.IS_WINDOWS:
+        os.environ.setdefault("ASKGPT_ORIGINAL_USERPROFILE", platform.actual_user_home())
+        os.environ["USERPROFILE"] = str(home)
     os.environ["HOME"] = str(home)
     os.environ["TIKTOKEN_CACHE_DIR"] = str(home / ".cache" / "babeldoc" / "tiktoken")
     return home / ".cache" / "babeldoc"
@@ -160,7 +159,7 @@ def configure_asset_home(cache_root: Path) -> Path:
 
 def atomic_json(path: Path, value: dict) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
-    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    descriptor = platform.secure_open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             json.dump(value, output, ensure_ascii=False, separators=(",", ":"))

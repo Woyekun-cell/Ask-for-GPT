@@ -4,15 +4,15 @@
   const PDF=root.AskGPTPDFLayout||(typeof require==='function'?require('./pdf-layout.js'):null);
   const Native=root.AskGPTPDFNativeView||(typeof require==='function'?require('./pdf-native-view.js'):null);
   const Sidebar=root.AskGPTSidebar||(typeof require==='function'?require('./sidebar.js'):null);
+  const ConnectionSecurity=root.AskGPTConnectionSecurity||(typeof require==='function'?require('./connection-security.js'):null);
   const XHTML='http://www.w3.org/1999/xhtml';
   function element(doc,name,className,text){const node=doc.createElementNS(XHTML,name);if(className)node.className=className;if(text!=null)node.textContent=text;return node;}
   async function readConnection(dependencies){
-    const {Services,Components,readText}=dependencies;
-    const file=Services.dirsvc.get('Home',Components.interfaces.nsIFile).clone();
-    for(const part of ['Library','Application Support','AskGPTReader','inline-connection.json'])file.append(part);
+    const {readText}=dependencies;
+    const file=ConnectionSecurity.readerDirectory(dependencies);file.append('inline-connection.json');
     if(!file.exists()||!file.isFile()||file.isSymlink()||file.fileSize>4096)throw new Core.InlineError('connection');
-    if((file.permissions&0o077)!==0)throw new Core.InlineError('permissions');
-    let value;try{value=JSON.parse(await readText(file.path));}catch(_){throw new Core.InlineError('connection');}
+    let text;try{text=await ConnectionSecurity.withPrivateFile(dependencies,file,readText);}catch(error){throw new Core.InlineError(error?.code==='permissions'?'permissions':'connection');}
+    let value;try{value=JSON.parse(text);}catch(_){throw new Core.InlineError('connection');}
     return Core.validateConnection(value);
   }
   function createPDFTransport(dependencies){return PDF.createTransport(dependencies,readConnection);}

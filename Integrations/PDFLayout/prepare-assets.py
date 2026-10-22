@@ -6,6 +6,7 @@ import importlib.metadata
 import logging
 from pathlib import Path
 import os
+from platform_ops import protect_path
 
 from layout_common import BABELDOC_VERSION, atomic_json, configure_asset_home, private_directory
 
@@ -28,11 +29,11 @@ def main():
         if path.relative_to(assets).parts[0] not in {"models", "fonts", "cmap", "tiktoken"}:
             continue
         if path.is_file():
-            path.chmod(0o600)
+            protect_path(path)
             records.append({"name": path.relative_to(assets).as_posix(), "bytes": path.stat().st_size,
                             "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
         elif path.is_dir():
-            path.chmod(0o700)
+            protect_path(path, directory=True)
     atomic_json(root / "assets-ready.json", {"babeldoc": BABELDOC_VERSION, "files": records,
         "bytes": sum(record["bytes"] for record in records)})
     print(f"Assets ready: {len(records)} files, {sum(record['bytes'] for record in records)} bytes.", flush=True)

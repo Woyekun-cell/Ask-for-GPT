@@ -25,6 +25,8 @@ Ask for GPT 是面向文献阅读和学术写作的 macOS 工具。阅读时，�
 
 ## 下载与安装
 
+**Windows x64 阅读预览版：** [EXE 安装器与便携 ZIP](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/windows-v0.1.0-preview.1) · [中文安装与配置](docs/INSTALL.Windows.zh-CN.md)。包含划词、离线词典、Chrome/Zotero 与 PDF 对照及可配置翻译后端；Word/WPS 写作辅助后续再做。[Windows runner 构建与自动检查](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml)结果见工作流；尚无 Windows 10/11 用户桌面实机验收。下方界面图片来自 macOS。
+
 普通使用直接下载上方安装包。应用本体约 **48 MB**，包含约 40 万条英文词条、Chrome/Zotero 插件和写作集成资源。
 
 | 下载 | 适合怎样安装 |

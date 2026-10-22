@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "dotnetSdk": "10.0.402",
+  "nsis": "3.11",
+  "codex": {
+    "version": "0.163.0",
+    "source": "https://registry.npmjs.org/@openai/codex/0.163.0-win32-x64",
+    "archive": "https://registry.npmjs.org/@openai/codex/-/codex-0.163.0-win32-x64.tgz",
+    "sha512": "410190feaf5d089e42e63aa1805af0c9ca561b7b3323214d4e13222a5ea162dbba37f78cdd077b4ad7ac82708501fcd5103f08904dcdde81fbd6ccf3725b9dab",
+    "executable": "vendor/x86_64-pc-windows-msvc/bin/codex.exe"
+  }
+}

@@ -24,6 +24,8 @@ PDF 适配使用 BabelDOC 0.6.4。macOS 安装包包含主程序、词典、插�
 
 一方代码的未指定许可状态不会覆盖第三方原有许可。修改和分发具体组件时，应按该组件附带的许可文本处理。
 
+Windows 阅读预览版沿用上述 PDF 上游及许可，使用独立的 [Windows 哈希锁文件](Integrations/PDFLayout/requirements.windows.lock)。自包含 .NET 10.0.13 运行环境的 [MIT 许可](Resources/Distribution/LICENSE-dotnet-runtime.txt)和[第三方声明](Resources/Distribution/NOTICE-dotnet-runtime.txt)随包保留；Microsoft.Data.Sqlite 及 SQLitePCLRaw 的依赖版本见各 Windows 项目的 `packages.lock.json`。
+
 ## 宿主与服务
 
 macOS 系统框架、Chrome、Zotero、Microsoft Word、WPS 及 Codex/ChatGPT 分别属于其权利人。Office.js 从 Microsoft 官方 CDN 加载；安装包仅按下文原样附带公开 Codex CLI 工具；不包含其他宿主软件或账号凭据。

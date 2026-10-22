@@ -1,0 +1,85 @@
+name: Windows reading preview
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/windows-reading-preview]
+    paths:
+      - 'Platforms/Windows/**'
+      - 'Integrations/**'
+      - 'scripts/windows/**'
+      - 'docs/INSTALL.Windows.zh-CN.md'
+      - '.github/workflows/windows-preview.yml'
+permissions:
+  contents: read
+concurrency:
+  group: windows-preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: '10.0.402'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12.15'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.22.0'
+      - name: Install fixed NSIS compiler
+        shell: pwsh
+        run: choco install nsis --version=3.11 --force --yes --no-progress
+      - name: JavaScript integration suites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tests = @(Get-ChildItem Integrations/Zotero/tests -Filter '*tests.cjs') + @(Get-ChildItem Integrations/Browser/tests -Filter '*.test.cjs')
+          foreach ($test in $tests) {
+            & node $test.FullName
+            if ($LASTEXITCODE -ne 0) { throw ('Failed: ' + $test.Name) }
+          }
+      - name: Prepare and verify isolated PDF runtime
+        shell: pwsh
+        run: |
+          & scripts/windows/prepare-pdf.ps1 -CacheRoot "$env:RUNNER_TEMP\AskGPT PDF 中文"
+          if ($LASTEXITCODE -ne 0) { throw 'PDF preparation failed' }
+          $python = "$env:RUNNER_TEMP\AskGPT PDF 中文\runtime\Scripts\python.exe"
+          & Integrations/PDFLayout/tests/test_prepare_pdf.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'PDF preparation security tests failed' }
+          foreach ($suite in @('test_platform_ops.py','test_batch_permits.py','test_portable_selection_source.py','test_portable_cached_pdf.py','test_worker.py','test_gpt_batch.py','test_phrase_helper.py','test_contract.py')) {
+            & $python -m unittest discover -s Integrations/PDFLayout/tests -p $suite -v
+            if ($LASTEXITCODE -ne 0) { throw ('PDF suite failed: ' + $suite) }
+          }
+      - name: Verify full official Codex payload without login or model request
+        shell: pwsh
+        run: |
+          & scripts/windows/prepare-codex.ps1 -ToolsRoot "$env:RUNNER_TEMP\AskGPT tools 中文"
+          if ($LASTEXITCODE -ne 0) { throw 'Codex preparation failed' }
+          & "$env:RUNNER_TEMP\AskGPT tools 中文\codex-0.163.0\vendor\x86_64-pc-windows-msvc\bin\codex.exe" --version
+          if ($LASTEXITCODE -ne 0) { throw 'Prepared Codex --version failed' }
+          New-Item -ItemType Directory -Path work -Force | Out-Null
+          @{
+            javascript = 'Zotero and Browser suites passed'
+            pdf = 'Pinned Windows runtime, assets, ACL/Job/pipe/permit/preparation and protocol suites passed'
+            codex = 'Full fixed official Windows payload SHA512 verified and --version passed; no login or model request'
+          } | ConvertTo-Json | Set-Content -LiteralPath work/windows-ci-checks.json -Encoding UTF8
+      - name: Build, test and package Windows x64
+        shell: pwsh
+        run: scripts/windows/build.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: success() || failure()
+        with:
+          name: Ask-for-GPT-Windows-preview
+          path: dist/windows-preview/*
+          if-no-files-found: ignore
+          retention-days: 1
+          compression-level: 0

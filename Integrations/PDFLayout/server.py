@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 from collections import OrderedDict
 from dataclasses import dataclass, field
-import fcntl
 import hashlib
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -23,6 +22,7 @@ import threading
 import time
 from types import SimpleNamespace
 import uuid
+import platform_ops as platform
 
 from layout_common import (BABELDOC_VERSION, MAX_OUTPUT_BYTES, MAX_PDF_BYTES, PORT,
     ProtocolFailure, atomic_json, load_connection, parse_pages, private_directory)
@@ -50,20 +50,8 @@ MAX_ALIGNMENT_SNAPSHOT_BYTES = 32 * 1024 * 1024
 
 
 def _finish_owned_group(process, *, grace=PROCESS_GROUP_GRACE):
-    """Only use with this service's Popen(start_new_session=True) workers.
-
-    The leader can exit before its Swift helper finishes closing an independent
-    Foundation CLI group. Waiting for the leader alone is not a cleanup grace.
-    """
-    try: os.killpg(process.pid, signal.SIGTERM)
-    except (ProcessLookupError, PermissionError): return
-    deadline = time.monotonic() + max(0, grace)
-    while time.monotonic() < deadline:
-        try: os.killpg(process.pid, 0)
-        except (ProcessLookupError, PermissionError): return
-        time.sleep(.025)
-    try: os.killpg(process.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError): pass
+    """Retire only the process object spawned and owned by this service."""
+    platform.finish_owned(process, grace=grace)
 
 
 def _cache_key(source_sha, pages, page_count, source, target, revision):
@@ -87,16 +75,11 @@ def _alignment_path(directory, metadata):
 
 def _private_file(path, maximum, *, checksum=False, repair_mode=False):
     """Read only an owned regular file, without following links or loading a PDF into RAM."""
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    descriptor = platform.secure_open(path, os.O_RDONLY, repair=repair_mode)
     with os.fdopen(descriptor, "rb") as handle:
         info = os.fstat(handle.fileno())
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_nlink != 1 or not 4 < info.st_size <= maximum):
-            raise ValueError("unsafe_cache_file")
-        if repair_mode:
-            os.fchmod(handle.fileno(), 0o600)
-            info = os.fstat(handle.fileno())
-        if stat.S_IMODE(info.st_mode) != 0o600:
+        info = platform.validate_file(handle.fileno(), repair=repair_mode)
+        if not 4 < info.st_size <= maximum:
             raise ValueError("unsafe_cache_file")
         if not checksum:
             data = handle.read(maximum + 1)
@@ -113,14 +96,29 @@ def _private_file(path, maximum, *, checksum=False, repair_mode=False):
 
 
 def _output_signature(path, maximum=MAX_OUTPUT_BYTES):
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    descriptor = platform.secure_open(path, os.O_RDONLY)
     with os.fdopen(descriptor, "rb") as handle:
         info = os.fstat(handle.fileno())
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
-                or not 4 < info.st_size <= maximum):
+        platform.validate_file(handle.fileno())
+        if not 4 < info.st_size <= maximum:
             raise ValueError("unsafe_cache_file")
         return _signature(info)
+
+
+def _open_pdf_descriptor(handle, *, windows=None):
+    """Keep the verified FD open; Windows MuPDF needs a bounded byte stream."""
+    import pymupdf
+    if windows is None:
+        windows = os.name == 'nt'
+    if not windows:
+        return pymupdf.open('/dev/fd/' + str(handle.fileno()))
+    before = os.fstat(handle.fileno())
+    if not 4 < before.st_size <= MAX_OUTPUT_BYTES:
+        raise ValueError('unsafe_cache_file')
+    data = handle.read(before.st_size + 1)
+    if len(data) != before.st_size or _signature(os.fstat(handle.fileno())) != _signature(before):
+        raise ValueError('changed_cache_file')
+    return pymupdf.open(stream=data, filetype='pdf')
 
 
 def _has_completed_record(directory):
@@ -227,8 +225,7 @@ class JobManager:
             if not re.fullmatch(r"[0-9a-f]{32}", directory.name): continue
             try:
                 info = directory.lstat()
-                if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
-                        or stat.S_IMODE(info.st_mode) != 0o700): continue
+                if not platform.directory_is_private(directory): continue
                 _, raw = _private_file(directory / "cache.json", 64 * 1024)
                 value = json.loads(raw)
                 pages, count = value["sourcePages"], value["pageCount"]
@@ -282,8 +279,7 @@ class JobManager:
             return None
         try:
             info = job.directory.lstat()
-            if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
-                    or stat.S_IMODE(info.st_mode) != 0o700): raise ValueError()
+            if not platform.directory_is_private(job.directory): raise ValueError()
             for kind in ("mono", "dual"):
                 # The full digest was checked at completion/restart. Changed inode,
                 # size, mtime or ctime invalidates the hit without rereading 900 MiB.
@@ -406,13 +402,13 @@ class JobManager:
         for kind in ("mono", "dual"):
             path = whole.directory / (kind + ".pdf")
             expected = whole.output_signatures[kind]
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            descriptor = platform.secure_open(path, os.O_RDONLY)
             with os.fdopen(descriptor, "rb") as handle:
                 if _signature(os.fstat(handle.fileno())) != expected:
                     raise ValueError("changed_cache_file")
                 # MuPDF opens this already-owned descriptor, not a path that
                 # could have been replaced between signature check and open.
-                with pymupdf.open("/dev/fd/" + str(handle.fileno())) as source, pymupdf.open() as output:
+                with _open_pdf_descriptor(handle) as source, pymupdf.open() as output:
                     if source.needs_pass or not source.is_pdf or len(source) != whole.page_count:
                         raise ValueError("invalid_cached_page_mapping")
                     geometry = []
@@ -422,7 +418,7 @@ class JobManager:
                         output.insert_pdf(source, from_page=physical, to_page=physical,
                                           final=int(index == len(selected) - 1))
                     destination = job.directory / (kind + ".pdf")
-                    target = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                    target = platform.secure_open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                     with os.fdopen(target, "wb") as saved:
                         # PyMuPDF treats a named file object's .name as a path.
                         # A nameless bounded stream keeps writes on this FD.
@@ -434,8 +430,8 @@ class JobManager:
                 if (_signature(os.fstat(handle.fileno())) != expected
                         or _output_signature(path) != expected):
                     raise ValueError("changed_cache_file")
-            target = os.open(destination, os.O_RDONLY | os.O_NOFOLLOW)
-            with os.fdopen(target, "rb") as saved, pymupdf.open("/dev/fd/" + str(saved.fileno())) as output:
+            target = platform.secure_open(destination, os.O_RDONLY)
+            with os.fdopen(target, "rb") as saved, _open_pdf_descriptor(saved) as output:
                 if len(output) != len(selected): raise ValueError("invalid_cached_page_mapping")
                 for index, expected_geometry in enumerate(geometry):
                     page = output[index]
@@ -505,7 +501,7 @@ class JobManager:
             for path in self.jobs_root.iterdir():
                 if not re.fullmatch(r"[0-9a-f]{32}", path.name): continue
                 info = path.lstat()
-                if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                if (not platform.directory_is_private(path)
                         or path.name in self.active or path.name == preserve): continue
                 # Older revisions are intentionally not eligible for today's
                 # layout/annotation mapping, but their completed PDFs remain
@@ -613,9 +609,9 @@ class JobManager:
                     raise ProtocolFailure("job_conflict")
                 atomic_json(job.directory / "request.json", {"sourcePages": selected,
                     "pageCount": page_count, "source": source, "target": target})
-                job.process = subprocess.Popen([sys.executable, str(self.worker_script),
+                job.process = platform.spawn_owned([sys.executable, str(self.worker_script),
                     "--job-dir", str(job.directory), "--cache-root", str(self.cache_root),
-                    "--translator", str(self.translator)], stdin=subprocess.PIPE,
+                    "--translator", str(self.translator)], popen=subprocess.Popen, stdin=subprocess.PIPE,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
                     env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1",
                          "ASKGPT_PDF_OFFLINE": "1"})
@@ -693,10 +689,11 @@ class JobManager:
             process = job.process
         if process:
             deadline = time.monotonic() + PROCESS_GROUP_GRACE
-            try: os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError: pass
-            try: process.wait(timeout=PROCESS_GROUP_GRACE)
-            except subprocess.TimeoutExpired: pass
+            if not platform.IS_WINDOWS:
+                try: os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError: pass
+                try: process.wait(timeout=PROCESS_GROUP_GRACE)
+                except subprocess.TimeoutExpired: pass
             # The worker may exit before a hung/TERM-ignoring native descendant.
             # A group can outlive its leader, so do not rely on wait(parent).
             _finish_owned_group(process, grace=deadline - time.monotonic())
@@ -809,7 +806,7 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
                     try: return self.reply(200,manager.read_alignment(job))
                     except ProtocolFailure: return self.reply(404,{"error":"alignment_unavailable"})
                 path = job.directory / match[2]
-                descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+                descriptor = platform.secure_open(path, os.O_RDONLY)
                 with os.fdopen(descriptor, "rb") as handle:
                     info = os.fstat(handle.fileno())
                     if not stat.S_ISREG(info.st_mode): raise OSError()
@@ -856,8 +853,8 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
             job = None
             try:
                 job = manager.begin()
-                descriptor = os.open(job.directory / "input.pdf",
-                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                descriptor = platform.secure_open(job.directory / "input.pdf",
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
                 with os.fdopen(descriptor, "wb") as output:
                     remaining = length
                     while remaining:
@@ -962,7 +959,7 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
             temporary=None
             try:
                 temporary=manager.begin()
-                descriptor=os.open(temporary.directory/"input.pdf",os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+                descriptor=platform.secure_open(temporary.directory/"input.pdf",os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
                 with os.fdopen(descriptor,"wb") as output:
                     remaining=length
                     while remaining:
@@ -1030,8 +1027,9 @@ def main():
     os.umask(0o077)
     try:
         root = private_directory(args.cache_root)
-        lock_file = os.open(root / "server.lock", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_file = platform.secure_open(root / "server.lock", os.O_RDWR | os.O_CREAT, 0o600)
+        platform.validate_file(lock_file)
+        platform.lock_exclusive(lock_file)
         # An optional backend configuration has its own permanent result namespace.
         # Keep the historical Codex namespace unchanged when no override is selected.
         backend_identity = os.environ.get("ASKGPT_TRANSLATION_CACHE_ID", "")

@@ -9,15 +9,14 @@ import logging
 import math
 import os
 from pathlib import Path
-import pwd
 import re
-import selectors
 import shutil
 import signal
 import subprocess
 import threading
 import time
 import uuid
+import platform_ops as platform
 from types import MappingProxyType
 
 from layout_common import (BABELDOC_VERSION, MAX_OUTPUT_BYTES, ProtocolFailure, atomic_json, configure_asset_home,
@@ -107,7 +106,11 @@ class NativeHelper:
     @staticmethod
     def _reap_process(process):
         if process:
-            if process.poll() is None:
+            if platform.IS_WINDOWS:
+                # Kill the owned job before closing anonymous pipes: a writer
+                # may be blocked after a timeout, and close must not wait on it.
+                platform.finish_owned(process, grace=.5)
+            elif process.poll() is None:
                 # A completed Swift batch can release its ephemeral CLI
                 # sessions on EOF before forced process cleanup is necessary.
                 if process.stdin: process.stdin.close()
@@ -184,12 +187,27 @@ class NativeHelper:
         environment = dict(os.environ)
         # BabelDOC's private asset HOME must not hide the user's installed Apple
         # language packs from the dedicated native helper.
-        environment["HOME"] = pwd.getpwuid(os.getuid()).pw_dir
+        environment["HOME"] = platform.actual_user_home()
+        if platform.IS_WINDOWS: environment["USERPROFILE"] = platform.actual_user_home()
         flags = ["--gpt-selection-align"] if selection else ["--gpt-phrase-align"] if phrases else ["--gpt-align"] if alignment else (["--gpt-batch"] if batch else [])
-        self.process = subprocess.Popen([str(self.executable)] + flags, stdin=subprocess.PIPE,
+        self.process = platform.spawn_owned([str(self.executable)] + flags, popen=subprocess.Popen, own_group=False, stdin=subprocess.PIPE,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0, env=environment)
         self.process_mode = mode
         return self.process
+
+    def _exchange(self, process, encoded, deadline, maximum, timeout_error, invalid_error):
+        try:
+            platform.write_pipe(process.stdin, encoded, deadline)
+            while b"\n" not in self.buffer:
+                data = platform.read_pipe(process.stdout, deadline)
+                if not data or len(self.buffer) + len(data) > maximum:
+                    raise ProtocolFailure(invalid_error)
+                self.buffer.extend(data)
+        except TimeoutError:
+            raise ProtocolFailure(timeout_error) from None
+        line, _, extra = self.buffer.partition(b"\n")
+        self.buffer = bytearray(extra)
+        return json.loads(line)
 
     def translate(self, text: str) -> str:
         if not text.strip(): return text
@@ -199,22 +217,9 @@ class NativeHelper:
                 process = self._start()
                 identity = uuid.uuid4().hex
                 message = {"id": identity, "text": text, "source": self.source, "target": self.target}
-                process.stdin.write((json.dumps(message, ensure_ascii=False) + "\n").encode())
-                process.stdin.flush()
-                deadline = time.monotonic() + self.timeout
-                with selectors.DefaultSelector() as selector:
-                    selector.register(process.stdout, selectors.EVENT_READ)
-                    while b"\n" not in self.buffer:
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0 or not selector.select(remaining):
-                            raise ProtocolFailure("translation_timeout")
-                        data = os.read(process.stdout.fileno(), 65536)
-                        if not data or len(self.buffer) + len(data) > 1024 * 1024:
-                            raise ProtocolFailure("translation_failed")
-                        self.buffer.extend(data)
-                line, _, extra = self.buffer.partition(b"\n")
-                self.buffer = bytearray(extra)
-                response = json.loads(line)
+                encoded = (json.dumps(message, ensure_ascii=False) + "\n").encode()
+                response = self._exchange(process, encoded, time.monotonic() + self.timeout,
+                                          1024 * 1024, "translation_timeout", "translation_failed")
                 if not isinstance(response, dict) or response.get("id") != identity or response.get("error"):
                     raise ProtocolFailure("translation_failed")
                 result = response.get("translation")
@@ -241,35 +246,8 @@ class NativeHelper:
             try:
                 process = self._start(batch=True)
                 deadline = time.monotonic() + self.batch_timeout
-                # A full-page request can exceed the kernel pipe capacity. A
-                # stalled native child must not block write() before the read
-                # deadline even starts. No document text enters argv or files.
-                descriptor = process.stdin.fileno()
-                os.set_blocking(descriptor, False)
-                pending = memoryview(encoded)
-                with selectors.DefaultSelector() as selector:
-                    selector.register(descriptor, selectors.EVENT_WRITE)
-                    while pending:
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0 or not selector.select(remaining):
-                            raise ProtocolFailure("translation_timeout")
-                        try: written = os.write(descriptor, pending[:65536])
-                        except BlockingIOError: continue
-                        if written <= 0: raise ProtocolFailure("gpt_unavailable")
-                        pending = pending[written:]
-                with selectors.DefaultSelector() as selector:
-                    selector.register(process.stdout, selectors.EVENT_READ)
-                    while b"\n" not in self.buffer:
-                        remaining = deadline - time.monotonic()
-                        if remaining <= 0 or not selector.select(remaining):
-                            raise ProtocolFailure("translation_timeout")
-                        data = os.read(process.stdout.fileno(), 65536)
-                        if not data or len(self.buffer) + len(data) > MAX_MESSAGE_BYTES:
-                            raise ProtocolFailure("batch_invalid")
-                        self.buffer.extend(data)
-                line, _, extra = self.buffer.partition(b"\n")
-                self.buffer = bytearray(extra)
-                response = json.loads(line)
+                response = self._exchange(process, encoded, deadline, MAX_MESSAGE_BYTES,
+                                          "translation_timeout", "batch_invalid")
                 if (not isinstance(response, dict) or response.get("id") != identity
                         or set(response) - {"id", "translations", "error", "errorDetail", "firstDeltaSeconds", "totalSeconds"}):
                     raise ProtocolFailure("batch_invalid")
@@ -303,27 +281,8 @@ class NativeHelper:
                     ensure_ascii=False,separators=(",",":"))+"\n").encode()
                 if len(encoded)>MAX_ALIGNMENT_MESSAGE: raise ProtocolFailure("alignment_invalid")
                 deadline=time.monotonic()+self.batch_timeout
-                descriptor=process.stdin.fileno();os.set_blocking(descriptor,False)
-                pending=memoryview(encoded)
-                with selectors.DefaultSelector() as selector:
-                    selector.register(descriptor,selectors.EVENT_WRITE)
-                    while pending:
-                        remaining=deadline-time.monotonic()
-                        if remaining<=0 or not selector.select(remaining): raise ProtocolFailure("alignment_timeout")
-                        try: written=os.write(descriptor,pending[:65536])
-                        except BlockingIOError: continue
-                        if written<=0: raise ProtocolFailure("gpt_unavailable")
-                        pending=pending[written:]
-                with selectors.DefaultSelector() as selector:
-                    selector.register(process.stdout,selectors.EVENT_READ)
-                    while b"\n" not in self.buffer:
-                        remaining=deadline-time.monotonic()
-                        if remaining<=0 or not selector.select(remaining): raise ProtocolFailure("alignment_timeout")
-                        data=os.read(process.stdout.fileno(),65536)
-                        if not data or len(self.buffer)+len(data)>MAX_ALIGNMENT_MESSAGE: raise ProtocolFailure("alignment_invalid")
-                        self.buffer.extend(data)
-                line,_,extra=self.buffer.partition(b"\n");self.buffer=bytearray(extra)
-                response=json.loads(line)
+                response = self._exchange(process, encoded, deadline, MAX_ALIGNMENT_MESSAGE,
+                                          "alignment_timeout", "alignment_invalid")
                 if (not isinstance(response,dict) or response.get("id")!=identity
                         or set(response)-{"id","alignments","error","errorDetail","firstDeltaSeconds","totalSeconds"}):
                     raise ProtocolFailure("alignment_invalid")
@@ -351,27 +310,8 @@ class NativeHelper:
                     ensure_ascii=False,separators=(",",":"))+"\n").encode()
                 if len(encoded)>MAX_PHRASE_MESSAGE:raise ProtocolFailure("alignment_invalid")
                 deadline=time.monotonic()+self.batch_timeout
-                descriptor=process.stdin.fileno();os.set_blocking(descriptor,False)
-                pending=memoryview(encoded)
-                with selectors.DefaultSelector() as selector:
-                    selector.register(descriptor,selectors.EVENT_WRITE)
-                    while pending:
-                        remaining=deadline-time.monotonic()
-                        if remaining<=0 or not selector.select(remaining):raise ProtocolFailure("alignment_timeout")
-                        try:written=os.write(descriptor,pending[:65536])
-                        except BlockingIOError:continue
-                        if written<=0:raise ProtocolFailure("gpt_unavailable")
-                        pending=pending[written:]
-                with selectors.DefaultSelector() as selector:
-                    selector.register(process.stdout,selectors.EVENT_READ)
-                    while b"\n" not in self.buffer:
-                        remaining=deadline-time.monotonic()
-                        if remaining<=0 or not selector.select(remaining):raise ProtocolFailure("alignment_timeout")
-                        data=os.read(process.stdout.fileno(),65536)
-                        if not data or len(self.buffer)+len(data)>MAX_PHRASE_MESSAGE:raise ProtocolFailure("alignment_invalid")
-                        self.buffer.extend(data)
-                line,_,extra=self.buffer.partition(b"\n");self.buffer=bytearray(extra)
-                response=json.loads(line)
+                response = self._exchange(process, encoded, deadline, MAX_PHRASE_MESSAGE,
+                                          "alignment_timeout", "alignment_invalid")
                 if (not isinstance(response,dict) or response.get("id")!=identity
                         or set(response)-{"id","alignments","error","errorDetail","firstDeltaSeconds","totalSeconds"}):
                     raise ProtocolFailure("alignment_invalid")
@@ -396,27 +336,8 @@ class NativeHelper:
             ensure_ascii=False, separators=(",",":"))+"\n").encode()
         if len(encoded) > MAX_PHRASE_MESSAGE: raise ProtocolFailure("selection_invalid")
         deadline = time.monotonic()+timeout
-        descriptor = process.stdin.fileno(); os.set_blocking(descriptor,False)
-        pending = memoryview(encoded)
-        with selectors.DefaultSelector() as selector:
-            selector.register(descriptor,selectors.EVENT_WRITE)
-            while pending:
-                remaining=deadline-time.monotonic()
-                if remaining<=0 or not selector.select(remaining): raise ProtocolFailure("selection_timeout")
-                try: written=os.write(descriptor,pending[:65536])
-                except BlockingIOError: continue
-                if written<=0: raise ProtocolFailure("gpt_unavailable")
-                pending=pending[written:]
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout,selectors.EVENT_READ)
-            while b"\n" not in self.buffer:
-                remaining=deadline-time.monotonic()
-                if remaining<=0 or not selector.select(remaining): raise ProtocolFailure("selection_timeout")
-                data=os.read(process.stdout.fileno(),65536)
-                if not data or len(self.buffer)+len(data)>MAX_PHRASE_MESSAGE: raise ProtocolFailure("selection_invalid")
-                self.buffer.extend(data)
-        line,_,extra=self.buffer.partition(b"\n");self.buffer=bytearray(extra)
-        response=json.loads(line)
+        response = self._exchange(process, encoded, deadline, MAX_PHRASE_MESSAGE,
+                                  "selection_timeout", "selection_invalid")
         if not isinstance(response,dict) or response.get("id")!=identity: raise ProtocolFailure("selection_invalid")
         return response
 
@@ -759,11 +680,11 @@ def translate_job(job_dir: Path, cache_root: Path, helper_path: Path):
                 if len(document) != len(selected): raise ProtocolFailure("invalid_output")
             target_path = job_dir / (kind + ".pdf")
             restore_mono_geometry(input_file, path, selected, target_path)
-            target_path.chmod(0o600)
+            platform.protect_path(target_path)
         compose_dual(input_file, job_dir / "mono.pdf", selected, job_dir / "dual.pdf")
         if (job_dir / "dual.pdf").stat().st_size > MAX_OUTPUT_BYTES:
             raise ProtocolFailure("invalid_output")
-        (job_dir / "dual.pdf").chmod(0o600)
+        platform.protect_path(job_dir / "dual.pdf")
         try:
             alignment.write(job_dir / "alignment.json", input_file,
                 job_dir / "mono.pdf", job_dir / "dual.pdf", selected, request["pageCount"])
@@ -791,6 +712,7 @@ def main():
         # Give the native helper its shutdown path: Foundation can place the
         # CLI in a separate group, which the helper must retire explicitly.
         # SIGKILL here would prevent that cleanup after a server crash.
+        if platform.IS_WINDOWS: os._exit(1)  # Job handles close and retire owned helpers.
         try: os.killpg(os.getpgrp(), signal.SIGTERM)
         except ProcessLookupError: pass
     threading.Thread(target=parent_watchdog, daemon=True).start()

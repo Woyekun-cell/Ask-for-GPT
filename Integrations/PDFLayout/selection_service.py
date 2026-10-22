@@ -12,6 +12,7 @@ import re
 import threading
 import time
 import uuid
+import platform_ops as platform
 
 from layout_common import MAX_PDF_BYTES, ProtocolFailure, atomic_json
 from sentence_alignment import (_normal, _inside, _exact_glyph_substring, page_glyphs,
@@ -175,7 +176,7 @@ class SelectionAlignmentService:
         self._bindings(job)
         temporary = job.directory/(".selection-source-"+uuid.uuid4().hex+".pdf")
         try:
-            descriptor = os.open(temporary, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)
+            descriptor = platform.secure_open(temporary, os.O_WRONLY|os.O_CREAT|os.O_EXCL, 0o600)
             with os.fdopen(descriptor, "wb") as output:
                 remaining = length
                 while remaining:

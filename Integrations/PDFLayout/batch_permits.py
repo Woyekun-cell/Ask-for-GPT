@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import errno
-import fcntl
 import os
 from pathlib import Path
 import stat
+import platform_ops as platform
 
 from layout_common import ProtocolFailure
 
@@ -29,9 +29,14 @@ class BatchPermits:
             for index in range(MAX_GLOBAL_BATCHES):
                 fd = self._open_slot(descriptor, index)
                 os.close(fd)
-        finally: os.close(descriptor)
+        finally: self._close_directory(descriptor)
 
     def _open_directory(self, *, create=False):
+        if platform.IS_WINDOWS:
+            try:
+                if create and not self.directory.exists(): platform.private_directory(self.directory)
+                return platform.open_private_directory(self.directory)
+            except (OSError, ValueError): raise ProtocolFailure("unsafe_cache_directory") from None
         try:
             if create: self.directory.mkdir(mode=0o700, exist_ok=True)
             descriptor = os.open(self.directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
@@ -47,15 +52,29 @@ class BatchPermits:
         return descriptor
 
     @staticmethod
+    def _close_directory(descriptor):
+        platform.close_directory(descriptor)
+
+    @staticmethod
     def _check_file(descriptor):
-        info = os.fstat(descriptor)
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
-            raise ProtocolFailure("unsafe_cache_directory")
-        return info
+        try: return platform.validate_file(descriptor)
+        except (OSError, ValueError): raise ProtocolFailure("unsafe_cache_directory") from None
 
     def _open_slot(self, directory, index):
         name = f"slot-{index}.lock"
+        if platform.IS_WINDOWS:
+            descriptor = None
+            try:
+                platform.check_directory_binding(directory, self.directory)
+                descriptor = platform.secure_open(self.directory / name, os.O_RDWR | os.O_CREAT)
+                self._check_file(descriptor)
+                platform.check_directory_binding(directory, self.directory)
+                return descriptor
+            except BaseException as error:
+                if descriptor is not None: os.close(descriptor)
+                if isinstance(error, (OSError, ValueError)):
+                    raise ProtocolFailure("unsafe_cache_directory") from None
+                raise
         try:
             descriptor = os.open(name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
                 0o600, dir_fd=directory)
@@ -79,7 +98,7 @@ class BatchPermits:
                     if cancelled.is_set(): raise ProtocolFailure("gpt_unavailable")
                     descriptor = self._open_slot(directory, index)
                     try:
-                        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        platform.lock_exclusive(descriptor)
                     except OSError as error:
                         os.close(descriptor)
                         if error.errno in {errno.EAGAIN, errno.EWOULDBLOCK, errno.EINTR}: continue
@@ -92,7 +111,7 @@ class BatchPermits:
                     return descriptor
                 # No blocked flock and no polling sleep that misses cancellation.
                 cancelled.wait(POLL_SECONDS)
-        finally: os.close(directory)
+        finally: self._close_directory(directory)
 
     @contextmanager
     def hold(self, cancelled):
@@ -101,5 +120,5 @@ class BatchPermits:
             if cancelled.is_set(): raise ProtocolFailure("gpt_unavailable")
             yield
         finally:
-            try: fcntl.flock(descriptor, fcntl.LOCK_UN)
+            try: platform.unlock(descriptor)
             finally: os.close(descriptor)

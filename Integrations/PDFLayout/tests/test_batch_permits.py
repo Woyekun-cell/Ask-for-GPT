@@ -3,8 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from pathlib import Path
 import os
-import fcntl
-import selectors
+import queue
 import stat
 import subprocess
 import sys
@@ -17,6 +16,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from layout_common import ProtocolFailure
+import platform_ops as platform
 from page_parallel import NativeHelperPool, MAX_PAGE_WORKERS
 try:
     from batch_permits import BatchPermits, MAX_GLOBAL_BATCHES
@@ -58,7 +58,10 @@ class BatchPermitTests(unittest.TestCase):
             for future in futures: future.result(3)
         self.assertEqual(maximum, 4)
         self.assertEqual(len(list(self.directory.glob('slot-*.lock'))), 4)
-        self.assertTrue(all(path.stat().st_mode & 0o777 == 0o600 for path in self.directory.iterdir()))
+        for path in self.directory.iterdir():
+            descriptor = platform.secure_open(path, os.O_RDONLY)
+            try: platform.validate_file(descriptor)
+            finally: os.close(descriptor)
     def test_two_four_helper_pools_share_only_four_global_io_slots(self):
         lock, release = threading.Lock(), threading.Event()
         active = maximum = entered = 0
@@ -138,9 +141,7 @@ class BatchPermitTests(unittest.TestCase):
             for _ in range(3): held.enter_context(permits.hold(threading.Event()))
             process = subprocess.Popen([sys.executable,'-c',script],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             try:
-                with selectors.DefaultSelector() as selector:
-                    selector.register(process.stdout, selectors.EVENT_READ)
-                    self.assertTrue(selector.select(3)); self.assertEqual(process.stdout.readline(),b'held\n')
+                self.assertEqual(platform.read_pipe(process.stdout, time.monotonic()+3), b'held\n')
                 with ThreadPoolExecutor(1) as executor:
                     def acquire():
                         with permits.hold(threading.Event()): return True
@@ -169,29 +170,32 @@ class BatchPermitTests(unittest.TestCase):
             " for future in futures:future.result(5)\n")
         processes=[subprocess.Popen([sys.executable,'-c',script],stdout=subprocess.PIPE,stderr=subprocess.PIPE)for _ in range(2)]
         entered=0
+        messages=queue.Queue()
+        def collect(process):
+            for line in process.stdout: messages.put(line)
+        readers=[threading.Thread(target=collect,args=(process,),daemon=True) for process in processes]
+        for reader in readers: reader.start()
         try:
-            with selectors.DefaultSelector() as selector:
-                for process in processes:
-                    os.set_blocking(process.stdout.fileno(),False);selector.register(process.stdout,selectors.EVENT_READ)
-                deadline=time.monotonic()+3
-                while entered<4 and time.monotonic()<deadline:
-                    for key,_ in selector.select(.1):entered+=os.read(key.fd,65536).count(b'entered\n')
-                self.assertEqual(entered,4)
-                for key,_ in selector.select(.1):entered+=os.read(key.fd,65536).count(b'entered\n')
-                self.assertEqual(entered,4,'separate worker processes must not each receive four global permits')
+            deadline=time.monotonic()+3
+            while entered<4 and time.monotonic()<deadline:
+                try: entered += messages.get(timeout=.1) == b'entered\n'
+                except queue.Empty: pass
+            self.assertEqual(entered,4)
+            with self.assertRaises(queue.Empty): messages.get(timeout=.1)
             release.touch()
             for process in processes:self.assertEqual(process.wait(timeout=3),0)
         finally:
             release.touch(exist_ok=True)
             for process in processes:
                 if process.poll()is None:process.kill();process.wait(timeout=3)
+            for reader in readers: reader.join(3)
+            for process in processes:
                 process.stdout.close();process.stderr.close()
     def test_permit_descriptor_is_not_inheritable(self):
         permits=BatchPermits(self.directory)
         descriptor=permits._acquire(threading.Event())
         try:
             self.assertFalse(os.get_inheritable(descriptor))
-            self.assertTrue(fcntl.fcntl(descriptor,fcntl.F_GETFD)&fcntl.FD_CLOEXEC)
         finally:os.close(descriptor)
     def test_wait_is_cancelled_without_any_permit_being_released(self):
         permits, cancelled = BatchPermits(self.directory), threading.Event()
@@ -202,18 +206,31 @@ class BatchPermitTests(unittest.TestCase):
             future = executor.submit(run); time.sleep(.05); cancelled.set()
             with self.assertRaisesRegex(ProtocolFailure,'gpt_unavailable'): future.result(.5)
     def test_symlink_slot_is_rejected_without_touching_target(self):
-        self.directory.mkdir(mode=0o700)
+        platform.private_directory(self.directory)
         target=Path(self.temporary.name)/'outside';target.write_text('leave untouched');target.chmod(0o600)
-        (self.directory/'slot-0.lock').symlink_to(target)
+        try: (self.directory/'slot-0.lock').symlink_to(target)
+        except OSError:
+            if platform.IS_WINDOWS: self.skipTest('Windows symlink privilege unavailable; junction rejection tested separately')
+            raise
         with self.assertRaisesRegex(ProtocolFailure,'unsafe_cache_directory'): BatchPermits(self.directory)
         self.assertEqual(target.read_text(),'leave untouched')
     def test_hardlinked_slot_is_rejected(self):
-        self.directory.mkdir(mode=0o700)
+        platform.private_directory(self.directory)
         target=Path(self.temporary.name)/'outside';target.touch(mode=0o600)
         os.link(target,self.directory/'slot-0.lock')
         with self.assertRaisesRegex(ProtocolFailure,'unsafe_cache_directory'): BatchPermits(self.directory)
         self.assertEqual(target.stat().st_nlink,2)
     def test_public_mode_directory_and_lock_are_rejected(self):
+        if platform.IS_WINDOWS:
+            platform.private_directory(self.directory)
+            subprocess.run(['icacls.exe',str(self.directory),'/grant','*S-1-1-0:(R)'],check=True,capture_output=True)
+            with self.assertRaisesRegex(ProtocolFailure,'unsafe_cache_directory'): BatchPermits(self.directory)
+            platform.private_directory(self.directory)
+            path=self.directory/'slot-0.lock'
+            descriptor=platform.secure_open(path,os.O_RDWR|os.O_CREAT|os.O_EXCL);os.close(descriptor)
+            subprocess.run(['icacls.exe',str(path),'/grant','*S-1-1-0:(R)'],check=True,capture_output=True)
+            with self.assertRaisesRegex(ProtocolFailure,'unsafe_cache_directory'): BatchPermits(self.directory)
+            return
         self.directory.mkdir(mode=0o755);self.directory.chmod(0o755)
         with self.assertRaisesRegex(ProtocolFailure,'unsafe_cache_directory'): BatchPermits(self.directory)
         self.directory.chmod(0o700)
@@ -222,9 +239,12 @@ class BatchPermitTests(unittest.TestCase):
         self.assertEqual(path.stat().st_mode&0o777,0o644,'do not silently repair unsafe existing files')
     def test_symlink_directory_is_rejected(self):
         target=Path(self.temporary.name)/'actual';target.mkdir(mode=0o700)
-        self.directory.symlink_to(target,target_is_directory=True)
+        if platform.IS_WINDOWS:
+            subprocess.run(['cmd.exe','/c','mklink','/J',str(self.directory),str(target)],check=True,capture_output=True)
+        else: self.directory.symlink_to(target,target_is_directory=True)
         with self.assertRaisesRegex(ProtocolFailure,'unsafe_cache_directory'): BatchPermits(self.directory)
     def test_wrong_file_owner_is_rejected(self):
+        if platform.IS_WINDOWS: self.skipTest('POSIX uid injection; Windows ACL owner checked through native handles')
         original=os.fstat
         def altered(fd):
             value=original(fd)

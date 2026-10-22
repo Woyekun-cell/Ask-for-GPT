@@ -8,6 +8,7 @@ import time
 import unittest
 from unittest.mock import patch
 import threading
+from helper_fixture import enable_python_helpers
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -204,6 +205,7 @@ class HeaderPreprocessingTests(unittest.TestCase):
 class BatchHelperProtocolTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(hasattr(worker.NativeHelper, "translate_batch"), "GPT batch helper is missing")
+        enable_python_helpers(self, worker)
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / "helper"
 
@@ -211,7 +213,7 @@ class BatchHelperProtocolTests(unittest.TestCase):
         if hasattr(self, "temp"): self.temp.cleanup()
 
     def make_helper(self, body):
-        self.path.write_text("#!/usr/bin/env python3\nimport json,sys,time\n" + body)
+        self.path.write_text("#!/usr/bin/env python3\nimport json,sys,time\n" + body, encoding='utf-8')
         self.path.chmod(0o700)
         return worker.NativeHelper(self.path, "en", "zh-Hans", batch_timeout=2)
 
