@@ -6,8 +6,8 @@
   "files": [
     {
       "path": ".github/workflows/windows-preview.yml",
-      "bytes": 3982,
-      "sha256": "b64540243c425d87f1ffab6df62f79559890efd131be8ff3a3ac8b8f34f725aa"
+      "bytes": 3764,
+      "sha256": "69ee3edb194cf9f043d902fc0db77ffd3907872e42c6f74cc67ac74883b70a44"
     },
     {
       "path": ".gitignore",
@@ -1670,6 +1670,16 @@
       "sha256": "72f8c0083f0f5abbc281c21b78be8e790f95d406519b7a5acc59c45c10485052"
     },
     {
+      "path": "scripts/windows/browser-test-deps/package-lock.json",
+      "bytes": 18367,
+      "sha256": "107523f51aa5f0fe67d0fdd0d5245fb9b0eb5b3ee794b0502be5077f1fcda2e7"
+    },
+    {
+      "path": "scripts/windows/browser-test-deps/package.json",
+      "bytes": 238,
+      "sha256": "7ba66433000faf6cd63d9526e0c993e987e24797f29dff822cef5834c1f26893"
+    },
+    {
       "path": "scripts/windows/build.ps1",
       "bytes": 7364,
       "sha256": "0f6402afb0bd08685e3c63d71726c698daf8c9b305e52068b8c1f30325c21a17"
@@ -1693,6 +1703,11 @@
       "path": "scripts/windows/prepare-pdf.ps1",
       "bytes": 12114,
       "sha256": "689dc3908e9f82c903ca60ca7b3afeb86a28379e5097f828e686b7e199e9ae5f"
+    },
+    {
+      "path": "scripts/windows/test-integrations.ps1",
+      "bytes": 5042,
+      "sha256": "3d4fa9affdaebe1f437b5f26343677ff03edc795cdeffbb78a1e4d9e7718f1e8"
     },
     {
       "path": "scripts/windows/tests/test_package.py",

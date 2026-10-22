@@ -1,0 +1,9 @@
+{
+  "name": "askgpt-browser-integration-test-deps",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test-only DOM fixture dependencies; never included in the product bundle.",
+  "devDependencies": {
+    "jsdom": "30.1.3"
+  }
+}
