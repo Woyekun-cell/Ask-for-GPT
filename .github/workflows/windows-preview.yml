@@ -34,20 +34,17 @@ jobs:
           python-version: '3.12.10' # CI packaging only; PDF uses uv-pinned 3.12.15
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '22.22.0'
+          node-version: '24.21.0'
       - name: Install fixed NSIS compiler
         shell: pwsh
         run: choco install nsis --version=3.11 --force --yes --no-progress
       - name: JavaScript integration suites
+        id: javascript
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $tests = @(Get-ChildItem Integrations/Zotero/tests -Filter '*tests.cjs') + @(Get-ChildItem Integrations/Browser/tests -Filter '*.test.cjs')
-          foreach ($test in $tests) {
-            & node $test.FullName
-            if ($LASTEXITCODE -ne 0) { throw ('Failed: ' + $test.Name) }
-          }
+        run: scripts/windows/test-integrations.ps1
       - name: Prepare and verify isolated PDF runtime
+        id: pdf
+        if: success() || failure()
         shell: pwsh
         run: |
           & scripts/windows/prepare-pdf.ps1 -CacheRoot "$env:RUNNER_TEMP\AskGPT PDF 中文"
@@ -60,6 +57,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw ('PDF suite failed: ' + $suite) }
           }
       - name: Verify full official Codex payload without login or model request
+        id: codex
+        if: success() || failure()
         shell: pwsh
         run: |
           & scripts/windows/prepare-codex.ps1 -ToolsRoot "$env:RUNNER_TEMP\AskGPT tools 中文"
@@ -68,11 +67,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Prepared Codex --version failed' }
           New-Item -ItemType Directory -Path work -Force | Out-Null
           @{
-            javascript = 'Zotero and Browser suites passed'
-            pdf = 'Pinned Windows runtime, assets, ACL/Job/pipe/permit/preparation and protocol suites passed'
+            javascript = '${{ steps.javascript.outcome }}'
+            pdf = '${{ steps.pdf.outcome }}'
             codex = 'Full fixed official Windows payload SHA512 verified and --version passed; no login or model request'
           } | ConvertTo-Json | Set-Content -LiteralPath work/windows-ci-checks.json -Encoding UTF8
       - name: Build, test and package Windows x64
+        if: success() || failure()
         shell: pwsh
         run: scripts/windows/build.ps1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
