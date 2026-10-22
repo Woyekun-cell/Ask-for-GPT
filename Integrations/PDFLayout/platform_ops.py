@@ -55,6 +55,8 @@ else:
     _bind(kernel, 'SetInformationJobObject', wt.BOOL, [wt.HANDLE, ctypes.c_int, wt.LPVOID, wt.DWORD])
     _bind(kernel, 'AssignProcessToJobObject', wt.BOOL, [wt.HANDLE, wt.HANDLE])
     _bind(kernel, 'TerminateJobObject', wt.BOOL, [wt.HANDLE, wt.UINT])
+    _bind(kernel, 'QueryInformationJobObject', wt.BOOL, [wt.HANDLE, ctypes.c_int, wt.LPVOID, wt.DWORD, ctypes.POINTER(wt.DWORD)])
+    _bind(kernel, 'IsProcessInJob', wt.BOOL, [wt.HANDLE, wt.HANDLE, ctypes.POINTER(wt.BOOL)])
     _bind(kernel, 'CreateToolhelp32Snapshot', wt.HANDLE, [wt.DWORD, wt.DWORD])
     _bind(kernel, 'OpenThread', wt.HANDLE, [wt.DWORD, wt.BOOL, wt.DWORD])
     _bind(kernel, 'ResumeThread', wt.DWORD, [wt.HANDLE])
@@ -80,6 +82,42 @@ else:
     def _wincheck(result):
         if not result: raise ctypes.WinError(ctypes.get_last_error())
         return result
+
+    def _job_process_handles(job):
+        # JOBOBJECT_BASIC_PROCESS_ID_LIST includes nested child jobs. Open only
+        # members of this owned job, then verify membership again against PID
+        # reuse before keeping a SYNCHRONIZE handle.
+        capacity = 16
+        while capacity <= 4096:
+            buffer = ctypes.create_string_buffer(8 + capacity * ctypes.sizeof(ctypes.c_size_t))
+            success = kernel.QueryInformationJobObject(job, 3, buffer, ctypes.sizeof(buffer), None)
+            error = ctypes.get_last_error() if not success else 0
+            if error not in (0, 234): raise ctypes.WinError(error)
+            assigned, count = ctypes.cast(buffer, ctypes.POINTER(wt.DWORD))[:2]
+            if success and assigned == count and count <= capacity:
+                identities = list((ctypes.c_size_t * count).from_buffer(buffer, 8))
+                break
+            capacity = max(capacity * 2, assigned)
+        else: raise ValueError('owned_job_process_limit')
+        handles = []
+        try:
+            for identity in identities:
+                process = kernel.OpenProcess(0x101000, False, identity)  # SYNCHRONIZE, QUERY_LIMITED_INFORMATION
+                if not process:
+                    error = ctypes.get_last_error()
+                    if error in (87, 1168): continue  # Already destroyed after the job snapshot.
+                    raise ctypes.WinError(error)
+                try:
+                    member = wt.BOOL()
+                    _wincheck(kernel.IsProcessInJob(process, job, ctypes.byref(member)))
+                    if member.value:
+                        handles.append((identity, process)); process = None
+                finally:
+                    if process is not None: kernel.CloseHandle(process)
+            return handles
+        except BaseException:
+            for _, process in handles: kernel.CloseHandle(process)
+            raise
 
     def _sid_string(sid):
         output = wt.LPWSTR()
@@ -454,6 +492,37 @@ def spawn_owned(arguments, *, popen=subprocess.Popen, own_group=True, **kwargs):
         raise
 
 
+def _terminate_windows_job(job, timeout=3):
+    """Terminate and observe every owned descendant's asynchronous process exit."""
+    handles = {}
+    deadline = time.monotonic() + timeout
+    def capture():
+        for identity, handle in _job_process_handles(job):
+            if identity in handles: kernel.CloseHandle(handle)
+            else: handles[identity] = handle
+    try:
+        capture()
+        _wincheck(kernel.TerminateJobObject(job, 1))
+        while True:
+            if time.monotonic() > deadline: raise TimeoutError('owned_job_cleanup_timeout')
+            capture()
+            pending = []
+            for handle in handles.values():
+                state = kernel.WaitForSingleObject(handle, 0)
+                if state == 0x102: pending.append(handle)
+                elif state != 0: raise OSError('owned_job_wait_failed')
+            if not pending:
+                known = len(handles)
+                capture()  # Include children created during the first termination snapshot.
+                if len(handles) == known: return
+                continue
+            remaining = deadline - time.monotonic()
+            if remaining <= 0: raise TimeoutError('owned_job_cleanup_timeout')
+            kernel.WaitForSingleObject(pending[0], max(1, min(50, int(remaining * 1000))))
+    finally:
+        for handle in handles.values(): kernel.CloseHandle(handle)
+
+
 def finish_owned(process, *, grace=3.5):
     if IS_WINDOWS:
         if not hasattr(process, '_askgpt_job_handle'): raise ValueError('unowned_process')
@@ -465,7 +534,7 @@ def finish_owned(process, *, grace=3.5):
                 if process.poll() is None and grace > 0:
                     try: process.wait(timeout=grace)
                     except subprocess.TimeoutExpired: pass
-                _wincheck(kernel.TerminateJobObject(handle, 1))
+                _terminate_windows_job(handle)
                 if process.poll() is None: process.wait(timeout=3)
                 join_pipe_writer(process.stdin)
             finally:

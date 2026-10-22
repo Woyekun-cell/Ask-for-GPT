@@ -69,7 +69,8 @@ function Protect-Directory([string]$Path) {
 }
 function Expand-VerifiedCodexArchive([string]$Archive, [string]$Destination) {
     # Windows bsdtar may convert non-ASCII argv through its active code page.
-    # CreateProcessW sets the Unicode working directory; only ASCII reaches tar argv.
+    # Use a new ASCII-named copy in the private extraction directory. Framework's
+    # redirected stdin StreamWriter can prepend a BOM even before binary writes.
     if (-not ('AskGptTarStreams' -as [type])) {
         Add-Type -TypeDefinition @'
 using System.IO;
@@ -86,34 +87,32 @@ public static class AskGptTarStreams {
         }
         return text.ToString();
     }
-    public static async Task PumpAsync(Stream source, Stream destination) {
-        try { await source.CopyToAsync(destination).ConfigureAwait(false); }
-        finally { destination.Dispose(); }
-    }
 }
 '@
     }
+    $localName = 'askgpt-archive-' + [Guid]::NewGuid().ToString('N') + '.tgz'
+    $localArchive = Join-Path $Destination $localName
     $start = [Diagnostics.ProcessStartInfo]::new()
     $start.FileName = Join-Path ([Environment]::SystemDirectory) 'tar.exe'
     $start.WorkingDirectory = $Destination
-    $start.Arguments = '-xzf -'
+    $start.Arguments = '-xzf ' + $localName
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
-    $start.RedirectStandardInput = $true
     $start.RedirectStandardOutput = $true
     $start.RedirectStandardError = $true
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $start
-    $archiveStream = $null
+    $copyCreated = $false
     $started = $false
     try {
-        $archiveStream = [IO.File]::Open($Archive, 'Open', 'Read', 'Read')
+        # False refuses collisions instead of overwriting anything in Destination.
+        [IO.File]::Copy($Archive, $localArchive, $false)
+        $copyCreated = $true
         $started = $process.Start()
         if (-not $started) { throw 'Unable to start system tar.' }
         $stdout = [AskGptTarStreams]::DrainAsync($process.StandardOutput)
         $stderr = [AskGptTarStreams]::DrainAsync($process.StandardError)
-        $pump = [AskGptTarStreams]::PumpAsync($archiveStream, $process.StandardInput.BaseStream)
-        $all = [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($stdout, $stderr, $pump))
+        $all = [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($stdout, $stderr))
         if (-not $process.WaitForExit(120000)) { throw 'Official Codex archive extraction timed out after 120 seconds.' }
         $transferError = $null
         try { if (-not $all.Wait(5000)) { throw 'Archive stream completion timed out.' } }
@@ -122,13 +121,13 @@ public static class AskGptTarStreams {
         if ($process.ExitCode -ne 0) {
             throw ('Unable to extract official Codex package: tar exit ' + $process.ExitCode + '. ' + $stderr.Result + $stdout.Result)
         }
-        if ($transferError) { throw ('Unable to stream official Codex archive: ' + $transferError) }
+        if ($transferError) { throw ('Unable to collect system tar output: ' + $transferError) }
     } finally {
         try {
             if ($started -and -not $process.HasExited) { $process.Kill(); [void]$process.WaitForExit(5000) }
         } finally {
-            if ($archiveStream) { $archiveStream.Dispose() }
             $process.Dispose()
+            if ($copyCreated) { [IO.File]::Delete($localArchive) }
         }
     }
 }

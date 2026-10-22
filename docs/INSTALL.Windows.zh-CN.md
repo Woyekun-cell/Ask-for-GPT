@@ -1,6 +1,6 @@
 # Ask for GPT Windows 阅读预览版
 
-版本：0.1.0-preview.1，Windows x64。以 Windows 11 为主要目标，Windows 10 22H2 为兼容目标。构建环境是 GitHub 标准 Windows Server runner；当前没有 Windows 10/11 用户桌面实机验收。每次发行的真实自动检查结果随包提供 `build-validation.json`。
+版本：0.1.0-preview.1，Windows x64。以 Windows 11 为主要目标，Windows 10 22H2 为兼容目标。构建环境是 GitHub 标准 Windows Server runner；当前没有 Windows 10/11 用户桌面实机验收。每次发行的真实自动检查结果在发行页单独提供，见 `build-validation.json`。
 
 本版提供快捷键划词、离线英汉词典、段落翻译与提问、Chrome/Zotero 阅读集成、PDF 中英对照、可配置 Codex/兼容 API/Claude Code 后端。Word/WPS 写作辅助留待后续版本。仓库中的界面图片来自 macOS，不能作为 Windows 界面或兼容性证据。
 
@@ -66,7 +66,7 @@ icacls $keyPath /inheritance:r /grant:r "*${sid}:(F)"
 
 ### Claude Code 与外部 JSON
 
-Claude Code 需用户自行安装并登录，设置中选择其真实 `.exe`，不支持 `.cmd`/`.bat` 包装器。该后端使用独立参数调用，不把 Codex 参数套用到 Claude。
+Claude Code 需用户自行安装并登录，设置中选择其真实 `.exe`，并将模型改为 Claude 支持的模型或留空；界面会保留原先填写的模型。不支持 `.cmd`/`.bat` 包装器。该后端使用独立参数调用，不把 Codex 参数套用到 Claude。
 
 也可设置外部翻译 JSON，字段限 `provider`、`cliPath`、`model`、`endpoint`、`apiKeyFile`，优先于界面后端字段；示例见 `Resources\Distribution\examples`。示例文件的 macOS 路径须改成 Windows 绝对路径。兼容 API/Claude 的验证目前使用模拟服务，没有真实账户连通或翻译质量测试。
 

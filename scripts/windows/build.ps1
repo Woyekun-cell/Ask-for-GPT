@@ -23,21 +23,36 @@ $validation = [ordered]@{
     schemaVersion = 1; version = '0.1.0-preview.1'; sourceCommit = $env:GITHUB_SHA
     checkedAtUTC = [DateTime]::UtcNow.ToString('o'); os = [Environment]::OSVersion.VersionString
     dotnetSdk = $sdk; fakeProvidersOnly = $true; desktopUserAcceptance = 'not performed'
-    windows10Desktop = 'not tested'; windows11Desktop = 'not tested'; checks = @()
+    windows10Desktop = 'not tested'; windows11Desktop = 'not tested'; checks = @(); testGroups = @()
 }
 Push-Location $root
 try {
     if (!$SkipTests) {
+        $testGroups = @()
         foreach ($hostCommand in @('pwsh','powershell.exe')) {
-            Invoke-Checked $hostCommand @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','scripts/windows/tests/test_prepare_codex_archive.ps1')
+            $testGroups += @{ name = ($hostCommand + ' Unicode tar roundtrip, malformed archive rejection and cleanup'); file = $hostCommand; arguments = @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','scripts/windows/tests/test_prepare_codex_archive.ps1') }
         }
-        $validation.checks += 'PowerShell 7 and Windows PowerShell 5.1 Unicode tar roundtrip and malformed archive rejection'
-        Invoke-Checked dotnet @('run','--project','Platforms/Windows/AskGPT.Windows.Core.Tests','--configuration','Release','--','--smoke-test')
-        $validation.checks += 'Core console tests (fake providers; auth, config, cache and cancellation)'
-        Invoke-Checked dotnet @('run','--project','Platforms/Windows/AskGPT.Windows/PolicyTests','--configuration','Release')
-        $validation.checks += 'Selection and clipboard policy checks'
-        Invoke-Checked python @('-m','unittest','discover','-s','scripts/windows/tests','-v')
-        $validation.checks += 'Windows package validation tests'
+        $testGroups += @{ name = 'Core console tests (fake providers; auth, config, cache and cancellation)'; file = 'dotnet'; arguments = @('run','--project','Platforms/Windows/AskGPT.Windows.Core.Tests','--configuration','Release','--','--smoke-test') }
+        $testGroups += @{ name = 'Selection and clipboard policy checks'; file = 'dotnet'; arguments = @('run','--project','Platforms/Windows/AskGPT.Windows/PolicyTests','--configuration','Release') }
+        $testGroups += @{ name = 'Windows package validation tests'; file = 'python'; arguments = @('-m','unittest','discover','-s','scripts/windows/tests','-v') }
+        $failures = @()
+        foreach ($group in $testGroups) {
+            Write-Output ('Running test group: ' + $group.name)
+            try {
+                Invoke-Checked -File $group.file -Arguments $group.arguments
+                $validation.checks += $group.name
+                $validation.testGroups += @{ name = $group.name; status = 'PASS' }
+            } catch {
+                $failure = $group.name + ': ' + $_.Exception.Message
+                $failures += $failure
+                $validation.testGroups += @{ name = $group.name; status = 'FAIL'; error = $_.Exception.Message }
+                Write-Warning $failure
+            }
+        }
+        if ($failures.Count -ne 0) {
+            $validation | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'build-validation.json') -Encoding UTF8
+            throw ('Windows test groups failed; publish was not attempted: ' + ($failures -join '; '))
+        }
     }
     $published = Join-Path $work 'published'
     foreach ($project in @('AskGPT.Windows','AskGPT.Translate')) {

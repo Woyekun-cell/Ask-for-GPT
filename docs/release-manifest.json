@@ -6,8 +6,8 @@
   "files": [
     {
       "path": ".github/workflows/windows-preview.yml",
-      "bytes": 3764,
-      "sha256": "69ee3edb194cf9f043d902fc0db77ffd3907872e42c6f74cc67ac74883b70a44"
+      "bytes": 3740,
+      "sha256": "eb92d4c7d5e541da4d49c2ef5cfd1eaf4b17f2c01a81f851d8e0bbd491166a7b"
     },
     {
       "path": ".gitignore",
@@ -126,8 +126,8 @@
     },
     {
       "path": "Integrations/PDFLayout/platform_ops.py",
-      "bytes": 28857,
-      "sha256": "9c0ff7e0ec037f32d41f23919ddf8c2d722d749825686be7291759e1c3180144"
+      "bytes": 32361,
+      "sha256": "8658bfc0cb7cb501f6621a3860a4101e2ce7bd173f15e889dc225fba26f6c6b1"
     },
     {
       "path": "Integrations/PDFLayout/prepare-assets.py",
@@ -266,8 +266,8 @@
     },
     {
       "path": "Integrations/PDFLayout/tests/test_platform_ops.py",
-      "bytes": 9734,
-      "sha256": "1ef9ec3ff31919c6c045db3cedef205c96c606265614869956ff8f15f130fdda"
+      "bytes": 11936,
+      "sha256": "6ea510e580b7168b1e665df3185ab53168d886def81607882613ad2e8d85ae4b"
     },
     {
       "path": "Integrations/PDFLayout/tests/test_portable_cached_pdf.py",
@@ -1411,8 +1411,8 @@
     },
     {
       "path": "docs/INSTALL.Windows.zh-CN.md",
-      "bytes": 8035,
-      "sha256": "02a3e0d94524a553f7d8171f8bc62f0b523685b1ccadd8e1b0a1c9b0003d0212"
+      "bytes": 8145,
+      "sha256": "815531bc23dabeedcfca98a1f331abbab8e5f748c209227ca4719d5daec81f54"
     },
     {
       "path": "docs/INSTALL.macOS.zh-CN.md",
@@ -1681,8 +1681,8 @@
     },
     {
       "path": "scripts/windows/build.ps1",
-      "bytes": 7728,
-      "sha256": "5a3c8e9fd6643f2c2be8db82068e386c338ac321ed245661c798309d8492ea31"
+      "bytes": 8735,
+      "sha256": "fb5876a5faaebdffb53ed87134826e4cf72abc02437135598a434806432c37f3"
     },
     {
       "path": "scripts/windows/installer.nsi",
@@ -1696,8 +1696,8 @@
     },
     {
       "path": "scripts/windows/prepare-codex.ps1",
-      "bytes": 10197,
-      "sha256": "32728d5843f8d074bc6188c58f017fe12358fb2928e7fd23e02d3c4b9c666fa6"
+      "bytes": 10166,
+      "sha256": "c51c6cd65d0f05da56f330ca20e98db8d86530e1b2903b16e104cfd4f718a2b0"
     },
     {
       "path": "scripts/windows/prepare-pdf.ps1",
@@ -1716,8 +1716,8 @@
     },
     {
       "path": "scripts/windows/tests/test_prepare_codex_archive.ps1",
-      "bytes": 2845,
-      "sha256": "f99120278553eb9c1b3841c4e237e98b7bee780da024d2c14ef3ec666aa46205"
+      "bytes": 3545,
+      "sha256": "b4c2e3598fdd62cb221a0b23d61acac9ad3ff9d89cc6b9c4860e88f49b9c9e05"
     },
     {
       "path": "scripts/windows/toolchain.json",

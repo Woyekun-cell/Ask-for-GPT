@@ -6,6 +6,7 @@ import sys
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -14,6 +15,40 @@ import platform_ops as ops
 
 
 class PlatformOpsTests(unittest.TestCase):
+    def test_windows_job_cleanup_timeout_is_bounded_and_never_claims_success(self):
+        closed = []
+        class Kernel:
+            def TerminateJobObject(self, handle, code): return True
+            def WaitForSingleObject(self, handle, milliseconds):
+                time.sleep(milliseconds / 1000); return 0x102
+            def CloseHandle(self, handle): closed.append(handle); return True
+        started = time.monotonic()
+        with patch.multiple(ops, kernel=Kernel(), _wincheck=lambda value:value,
+                            _job_process_handles=lambda handle:[(101, 501)], create=True):
+            with self.assertRaisesRegex(TimeoutError, 'owned_job_cleanup_timeout'):
+                ops._terminate_windows_job(42, timeout=.03)
+        self.assertLess(time.monotonic() - started, .3)
+        self.assertIn(501, closed)
+
+    def test_windows_finish_waits_for_asynchronous_descendant_exit_before_closing_job(self):
+        exited, closed = threading.Event(), []
+        timer = threading.Timer(.05, exited.set)
+        class Kernel:
+            def TerminateJobObject(self, handle, code): timer.start(); return True
+            def WaitForSingleObject(self, handle, milliseconds):
+                return 0 if exited.wait(milliseconds / 1000) else 0x102
+            def CloseHandle(self, handle): closed.append((handle, exited.is_set())); return True
+        process = SimpleNamespace(_askgpt_job_handle=42, _askgpt_job_lock=threading.Lock(),
+                                  poll=lambda:0, stdin=None)
+        try:
+            with patch.multiple(ops, IS_WINDOWS=True, kernel=Kernel(), _wincheck=lambda value:value,
+                                _job_process_handles=lambda handle:[(101, 501)], create=True):
+                ops.finish_owned(process, grace=0)
+            self.assertTrue(exited.is_set(), 'cleanup returned while its descendant was still terminating')
+            self.assertIn((42, True), closed, 'the owned job must remain open until descendant exit')
+            self.assertIn((501, True), closed, 'owned process synchronization handles must be released')
+        finally:
+            if timer.ident is not None: timer.join(1)
     def test_generated_tree_protects_only_new_items_and_rejects_links(self):
         with tempfile.TemporaryDirectory() as root:
             directory = ops.private_directory(Path(root) / 'generated')
