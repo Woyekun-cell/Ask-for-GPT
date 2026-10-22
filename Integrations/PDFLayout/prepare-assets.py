@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import os
 from platform_ops import protect_path
+import platform_ops as platform
 
 from layout_common import BABELDOC_VERSION, atomic_json, configure_asset_home, private_directory
 
@@ -18,12 +19,14 @@ def main():
     os.umask(0o077)
     root = private_directory(args.cache_root)
     assets = configure_asset_home(root)
+    existing = platform.snapshot_private_tree(assets) if platform.IS_WINDOWS else None
     if importlib.metadata.version("BabelDOC") != BABELDOC_VERSION:
         raise SystemExit("runtime_version_mismatch")
     logging.basicConfig(level=logging.ERROR, format="%(levelname)s: asset preparation failed")
     from babeldoc.assets.assets import warmup
     print("Preparing verified public PDF layout model, fonts, and CMaps.", flush=True)
     warmup()
+    if platform.IS_WINDOWS: platform.protect_generated_tree(assets, existing)
     records = []
     for path in sorted(assets.rglob("*")):
         if path.relative_to(assets).parts[0] not in {"models", "fonts", "cmap", "tiktoken"}:

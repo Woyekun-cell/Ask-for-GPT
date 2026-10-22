@@ -28,6 +28,10 @@ $validation = [ordered]@{
 Push-Location $root
 try {
     if (!$SkipTests) {
+        foreach ($hostCommand in @('pwsh','powershell.exe')) {
+            Invoke-Checked $hostCommand @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File','scripts/windows/tests/test_prepare_codex_archive.ps1')
+        }
+        $validation.checks += 'PowerShell 7 and Windows PowerShell 5.1 Unicode tar roundtrip and malformed archive rejection'
         Invoke-Checked dotnet @('run','--project','Platforms/Windows/AskGPT.Windows.Core.Tests','--configuration','Release','--','--smoke-test')
         $validation.checks += 'Core console tests (fake providers; auth, config, cache and cancellation)'
         Invoke-Checked dotnet @('run','--project','Platforms/Windows/AskGPT.Windows/PolicyTests','--configuration','Release')

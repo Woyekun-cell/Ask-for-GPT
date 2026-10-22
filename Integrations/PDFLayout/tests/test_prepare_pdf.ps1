@@ -3,8 +3,13 @@ $ErrorActionPreference = 'Stop'
 $script = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..\scripts\windows\prepare-pdf.ps1'))
 $codexScript = Join-Path ([IO.Path]::GetDirectoryName($script)) 'prepare-codex.ps1'
 $tokens = $null; $parseErrors = $null
-[void][Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors)
+$preparationAst = [Management.Automation.Language.Parser]::ParseFile($script, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count -ne 0) { throw ($parseErrors | Out-String) }
+foreach ($definition in $preparationAst.FindAll({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] }, $false)) {
+    Invoke-Expression $definition.Extent.Text
+}
+$PythonVersion = '3.12.15'
+$CurrentUser = [Security.Principal.WindowsIdentity]::GetCurrent().User
 $temporary = Join-Path ([IO.Path]::GetTempPath()) ('AskGPT PDF test 中文 ' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($temporary)
 $checks = 0
@@ -41,6 +46,34 @@ function Must-RejectCodex([string]$Root, [string]$Expected) {
     $script:checks++
 }
 try {
+    $managed = Join-Path $temporary 'managed'
+    Protect-PrivateDirectory $managed
+    $patch = Join-Path $managed 'cpython-3.12.15-windows-x86_64-none'
+    Protect-PrivateDirectory $patch
+    $alias = Join-Path $managed 'cpython-3.12-windows-x86_64-none'
+    [void](New-Item -ItemType Junction -Path $alias -Target $patch)
+    Remove-NewManagedAlias $managed @{}
+    if (Test-Path -LiteralPath $alias) { throw 'New verified managed junction was retained.' }
+    if (-not (Test-Path -LiteralPath $patch -PathType Container)) { throw 'Managed junction removal deleted its target.' }
+    Assert-PrivateTree $managed
+    $checks++
+    [void](New-Item -ItemType Junction -Path $alias -Target $patch)
+    $existingAlias = @{}; $existingAlias[[IO.Path]::GetFullPath($alias)] = $true
+    $failure = $null
+    try { Remove-NewManagedAlias $managed $existingAlias } catch { $failure = $_.Exception.Message }
+    if (-not $failure -or $failure -notmatch 'unsafe_managed_alias') { throw 'Existing managed junction was accepted.' }
+    [IO.Directory]::Delete($alias)
+    $checks++
+    $outside = Join-Path $temporary 'outside-managed'
+    [void][IO.Directory]::CreateDirectory($outside)
+    [IO.File]::WriteAllText((Join-Path $outside 'keep.txt'), 'original')
+    [void](New-Item -ItemType Junction -Path $alias -Target $outside)
+    $failure = $null
+    try { Remove-NewManagedAlias $managed @{} } catch { $failure = $_.Exception.Message }
+    if (-not $failure -or $failure -notmatch 'unsafe_managed_alias_target') { throw 'Escaping managed junction was accepted.' }
+    [IO.Directory]::Delete($alias)
+    if ([IO.File]::ReadAllText((Join-Path $outside 'keep.txt')) -ne 'original') { throw 'Outside fixture changed.' }
+    $checks++
     $cache = Join-Path $temporary 'checksum'
     $tools = Join-Path $cache 'Tools'
     [void][IO.Directory]::CreateDirectory($tools)
@@ -75,7 +108,7 @@ try {
         if ($foreign) { Must-RejectCodex $tools 'unsafe_file_owner' }
         else { Must-RejectCodex $tools 'unsafe_file_acl' }
     }
-    Write-Output "PASS component preparation safeguards: $checks checks (checksum, exclusive lock, junction, PDF/Codex writable and foreign-owner files), plus PowerShell syntax."
+    Write-Output "PASS component preparation safeguards: $checks checks (new/existing/escaping managed aliases, checksum, exclusive lock, junction, PDF/Codex writable and foreign-owner files), plus PowerShell syntax."
 } finally {
     if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Recurse -Force }
 }

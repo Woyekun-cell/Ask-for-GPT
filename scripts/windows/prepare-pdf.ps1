@@ -20,7 +20,7 @@ function Assert-NoReparse([string]$Path) {
     while ($cursor) {
         if (Test-Path -LiteralPath $cursor) {
             $item = Get-Item -LiteralPath $cursor -Force
-            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'unsafe_reparse_point' }
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw ('unsafe_reparse_point: ' + $cursor) }
         }
         $parent = [IO.Path]::GetDirectoryName($cursor)
         if ($parent -eq $cursor) { break }
@@ -54,6 +54,34 @@ function Get-PlainTree([string]$Path) {
 
 function Assert-PrivateTree([string]$Path) {
     foreach ($item in @(Get-PlainTree $Path)) { Assert-PrivateItem $item.FullName }
+}
+
+function Remove-NewManagedAlias([string]$Root, [hashtable]$Existing) {
+    # uv 0.12.23 always creates this Windows minor-version junction, including
+    # with --no-bin. We use the fixed patch executable, so no upgrade alias is
+    # needed. Remove only its newly-created directory entry, never its target.
+    # https://github.com/astral-sh/uv/blob/0.12.23/crates/uv-python/src/managed.rs#L509
+    Assert-NoReparse $Root
+    $minor = ($PythonVersion.Split('.')[0..1] -join '.')
+    $alias = Join-Path $Root ("cpython-$minor-windows-x86_64-none")
+    $target = [IO.Path]::GetFullPath((Join-Path $Root ("cpython-$PythonVersion-windows-x86_64-none")))
+    $item = Get-Item -LiteralPath $alias -Force -ErrorAction SilentlyContinue
+    if (-not $item) { return }
+    if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return }
+    if ($Existing.ContainsKey($item.FullName) -or $item.LinkType -notin @('Junction', 'SymbolicLink')) {
+        throw ('unsafe_managed_alias: ' + $alias)
+    }
+    $destinations = @($item.Target)
+    if ($destinations.Count -ne 1 -or -not $destinations[0]) { throw ('unsafe_managed_alias: ' + $alias) }
+    $destination = [string]$destinations[0]
+    if ($destination.StartsWith('\??\') -or $destination.StartsWith('\\?\')) { $destination = $destination.Substring(4) }
+    if (-not [IO.Path]::IsPathRooted($destination)) { $destination = Join-Path $Root $destination }
+    $destination = [IO.Path]::GetFullPath($destination)
+    if (-not [StringComparer]::OrdinalIgnoreCase.Equals($destination, $target)) { throw ('unsafe_managed_alias_target: ' + $alias) }
+    Assert-NoReparse $target
+    if (-not (Test-Path -LiteralPath $target -PathType Container)) { throw ('unsafe_managed_alias_target: ' + $alias) }
+    [IO.Directory]::Delete($alias)
+    Assert-NoReparse $Root
 }
 
 # Only call for entries created by this invocation inside an already private tree.
@@ -188,10 +216,13 @@ try {
     $version = & $script:Uv --version
     if ($LASTEXITCODE -ne 0 -or $version -notmatch ('^uv ' + [regex]::Escape($UvVersion) + '( |$)')) { throw 'uv version mismatch.' }
     Write-Output "Preparing independent Python $PythonVersion..."
-    Invoke-Uv @('python', 'install', '--install-dir', $env:UV_PYTHON_INSTALL_DIR, '--no-bin', '--no-config', $PythonVersion)
+    Invoke-Uv @('python', 'install', '--install-dir', $env:UV_PYTHON_INSTALL_DIR, '--no-bin', '--no-registry', '--no-config', $PythonVersion)
+    Remove-NewManagedAlias $managedPython $existingPython
     Protect-NewItems $managedPython $existingPython
+    $managedExecutable = Join-Path $managedPython ("cpython-$PythonVersion-windows-x86_64-none\python.exe")
+    Assert-PrivateItem $managedExecutable
     if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
-        Invoke-Uv @('venv', '--python', $PythonVersion, '--managed-python', '--no-python-downloads', '--no-config', $runtime)
+        Invoke-Uv @('venv', '--python', $managedExecutable, '--managed-python', '--no-python-downloads', '--no-config', $runtime)
         Protect-NewItems $runtime $existingPython
     }
     Assert-PrivateTree $runtime

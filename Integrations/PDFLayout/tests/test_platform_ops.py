@@ -14,6 +14,58 @@ import platform_ops as ops
 
 
 class PlatformOpsTests(unittest.TestCase):
+    def test_generated_tree_protects_only_new_items_and_rejects_links(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = ops.private_directory(Path(root) / 'generated')
+            previous = ops.snapshot_private_tree(directory)
+            child = directory / 'fonts'
+            child.mkdir()
+            output = child / 'fixture.font'
+            output.write_bytes(b'generated fixture')
+            ops.protect_generated_tree(directory, previous)
+            protected = ops.snapshot_private_tree(directory)
+            self.assertIn(output, protected)
+            outside = Path(root) / 'outside'
+            outside.write_bytes(b'original')
+            with self.assertRaisesRegex(ValueError, 'unsafe_generated_path'):
+                ops.protect_generated_file(outside, directory, previous)
+            os.link(output, directory / 'alias')
+            with self.assertRaisesRegex(ValueError, 'unsafe_cache_file'):
+                ops.protect_generated_tree(directory, previous)
+            self.assertEqual(outside.read_bytes(), b'original')
+
+    def test_generated_tree_never_repairs_an_unsafe_old_item(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = ops.private_directory(Path(root) / 'generated')
+            output = directory / 'old'
+            descriptor = ops.secure_open(output, os.O_RDWR | os.O_CREAT | os.O_EXCL)
+            os.close(descriptor)
+            previous = ops.snapshot_private_tree(directory)
+            if ops.IS_WINDOWS:
+                subprocess.run(['icacls.exe', str(output), '/setowner', '*S-1-5-32-544'], check=True, capture_output=True)
+            else: output.chmod(0o644)
+            with self.assertRaises((OSError, ValueError)): ops.protect_generated_tree(directory, previous)
+            with self.assertRaises((OSError, ValueError)): ops.snapshot_private_tree(directory)
+
+    @unittest.skipUnless(ops.IS_WINDOWS, 'Windows elevated creator owner and inherited ACL')
+    def test_windows_generated_admin_owner_is_narrowed_only_for_new_private_entries(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = ops.private_directory(Path(root) / 'generated')
+            previous = ops.snapshot_private_tree(directory)
+            child = directory / 'models'
+            child.mkdir()
+            output = child / 'fixture.model'
+            output.write_bytes(b'generated fixture')
+            for path in (child, output):
+                subprocess.run(['icacls.exe', str(path), '/setowner', '*S-1-5-32-544'], check=True, capture_output=True)
+            ops.protect_generated_tree(directory, previous)
+            self.assertIn(output, ops.snapshot_private_tree(directory))
+            previous = ops.snapshot_private_tree(directory)
+            unsafe = directory / 'broad'
+            unsafe.write_bytes(b'no repair')
+            subprocess.run(['icacls.exe', str(unsafe), '/grant', '*S-1-1-0:(R)'], check=True, capture_output=True)
+            with self.assertRaisesRegex(ValueError, 'unsafe_file_acl'): ops.protect_generated_tree(directory, previous)
+
     def test_private_file_rejects_symlink_and_multiple_links(self):
         with tempfile.TemporaryDirectory() as root:
             directory = ops.private_directory(Path(root) / 'private')

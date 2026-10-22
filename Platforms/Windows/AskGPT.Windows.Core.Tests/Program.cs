@@ -33,8 +33,9 @@ if(args.FirstOrDefault()=="--owned-fixture") {
 }
 if(args.FirstOrDefault()=="--sleep-fixture"){await Task.Delay(Timeout.Infinite);return 0;}
 var tests = new List<(string, Func<Task>)>();
-var temporary = Path.Combine(OperatingSystem.IsWindows()?Path.GetTempPath():"/private/tmp", "Ask GPT 中文 tests " + Guid.NewGuid());
-Directory.CreateDirectory(temporary);
+var temporaryContainer=ProtectedFiles.CreatePrivateSubdirectory(OperatingSystem.IsWindows()?Path.GetTempPath():"/private/tmp","AskGPT-Core-Tests-");
+var temporary=Path.Combine(temporaryContainer,"Ask GPT 中文 tests");
+ProtectedFiles.EnsureDirectory(temporary);
 if(args.Contains("--smoke-test"))Environment.SetEnvironmentVariable("ASKGPT_DATA_DIRECTORY",Path.Combine(temporary,"isolated app data"));
 void Test(string name, Func<Task> test) => tests.Add((name, test));
 void Assert(bool ok, string message = "assertion failed") { if (!ok) throw new Exception(message); }
@@ -117,6 +118,21 @@ Test("Dictionary queries bundled real SQLite with prepared parameters", async ()
     var path=Path.Combine(root,"Resources","Dictionary","words.sqlite");
     var lookup=new DictionaryLookup(path); var word=await lookup.LookupAsync("hello",default); Assert(word is not null && word.Translation.Length>0,"real dictionary missing hello: "+path);
     Assert(await lookup.LookupAsync("hello' OR 1=1 --",default) is null);
+});
+Test("Existing nonprivate directory is rejected without changing its permissions", async () => {
+    var path=Path.Combine(temporary,"existing nonprivate directory");Directory.CreateDirectory(path);
+    if(OperatingSystem.IsWindows()) {
+        var security=new DirectoryInfo(path).GetAccessControl();security.AddAccessRule(new FileSystemAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid,null),FileSystemRights.Read,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));new DirectoryInfo(path).SetAccessControl(security);
+    } else File.SetUnixFileMode(path,UnixFileMode.UserRead|UnixFileMode.UserWrite|UnixFileMode.UserExecute|UnixFileMode.GroupRead|UnixFileMode.GroupExecute);
+    string Permissions()=>OperatingSystem.IsWindows()?new DirectoryInfo(path).GetAccessControl().GetSecurityDescriptorSddlForm(AccessControlSections.All):File.GetUnixFileMode(path).ToString();
+    var before=Permissions();await Reject<ConfigurationException>(()=>Task.Run(()=>ProtectedFiles.EnsureDirectory(path)));Assert(Permissions()==before,"existing directory permissions changed");
+});
+Test("Windows new private directories and atomic file replacement retain explicit current owner", async () => {
+    if(!OperatingSystem.IsWindows())throw new SkippedTest("native Windows security descriptor creation requires Windows");
+    var root=Path.Combine(temporary,"new private tree");var nested=Path.Combine(root,"middle","leaf");ProtectedFiles.EnsureDirectory(nested);var current=WindowsIdentity.GetCurrent().User!;
+    foreach(var path in new[]{root,Path.Combine(root,"middle"),nested}) {var security=new DirectoryInfo(path).GetAccessControl();Assert(current.Equals(security.GetOwner(typeof(SecurityIdentifier)))&&security.AreAccessRulesProtected,"new directory owner or ACL inherited defaults");}
+    var file=Path.Combine(nested,"private file.json");ProtectedFiles.Write(file,System.Text.Encoding.UTF8.GetBytes("one"));ProtectedFiles.Write(file,System.Text.Encoding.UTF8.GetBytes("two"));
+    var fileSecurity=new FileInfo(file).GetAccessControl();Assert(current.Equals(fileSecurity.GetOwner(typeof(SecurityIdentifier)))&&fileSecurity.AreAccessRulesProtected);Assert(System.Text.Encoding.UTF8.GetString(ProtectedFiles.Read(file,1024,true))=="two");
 });
 Test("Private files and pairing reject replacement links and preserve token", async () => {
     var dir=Path.Combine(temporary,"private"); ProtectedFiles.EnsureDirectory(dir);
@@ -209,7 +225,7 @@ Test("Windows owned process preserves Unicode argv and kills owned descendants",
 var failures=0;var skipped=0;
 foreach(var (name,test) in tests) { try { await test(); Console.WriteLine("PASS "+name); } catch(SkippedTest e) {skipped++;Console.WriteLine("SKIP "+name+": "+e.Message);} catch(Exception e) { failures++; Console.Error.WriteLine("FAIL "+name+": "+e.Message); } }
 Console.WriteLine($"RESULT {tests.Count-failures-skipped} passed, {skipped} skipped, {failures} failed");
-try { Directory.Delete(temporary,true); } catch { }
+try { Directory.Delete(temporaryContainer,true); } catch { }
 return failures==0?0:1;
 sealed class SkippedTest(string message):Exception(message);
 sealed class FakeProvider : ITranslationProvider {

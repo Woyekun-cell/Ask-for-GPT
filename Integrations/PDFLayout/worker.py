@@ -603,6 +603,7 @@ def restore_mono_geometry(source_path: Path, engine_mono: Path, selected: list[i
 
 
 def translate_job(job_dir: Path, cache_root: Path, helper_path: Path):
+    existing_outputs = platform.snapshot_private_tree(job_dir, recursive=False) if platform.IS_WINDOWS else None
     report_progress(job_dir, {"stage": "preparing"})
     if importlib.metadata.version("BabelDOC") != BABELDOC_VERSION:
         raise ProtocolFailure("runtime_missing")
@@ -680,11 +681,13 @@ def translate_job(job_dir: Path, cache_root: Path, helper_path: Path):
                 if len(document) != len(selected): raise ProtocolFailure("invalid_output")
             target_path = job_dir / (kind + ".pdf")
             restore_mono_geometry(input_file, path, selected, target_path)
-            platform.protect_path(target_path)
+            if platform.IS_WINDOWS: platform.protect_generated_file(target_path, job_dir, existing_outputs)
+            else: platform.protect_path(target_path)
         compose_dual(input_file, job_dir / "mono.pdf", selected, job_dir / "dual.pdf")
         if (job_dir / "dual.pdf").stat().st_size > MAX_OUTPUT_BYTES:
             raise ProtocolFailure("invalid_output")
-        platform.protect_path(job_dir / "dual.pdf")
+        if platform.IS_WINDOWS: platform.protect_generated_file(job_dir / "dual.pdf", job_dir, existing_outputs)
+        else: platform.protect_path(job_dir / "dual.pdf")
         try:
             alignment.write(job_dir / "alignment.json", input_file,
                 job_dir / "mono.pdf", job_dir / "dual.pdf", selected, request["pageCount"])

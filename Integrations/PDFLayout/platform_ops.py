@@ -43,6 +43,7 @@ else:
     _bind(advapi, 'OpenProcessToken', wt.BOOL, [wt.HANDLE, wt.DWORD, ctypes.POINTER(wt.HANDLE)])
     _bind(advapi, 'GetTokenInformation', wt.BOOL, [wt.HANDLE, ctypes.c_int, wt.LPVOID, wt.DWORD, ctypes.POINTER(wt.DWORD)])
     _bind(advapi, 'ConvertSidToStringSidW', wt.BOOL, [wt.LPVOID, ctypes.POINTER(wt.LPWSTR)])
+    _bind(advapi, 'ConvertStringSidToSidW', wt.BOOL, [wt.LPCWSTR, ctypes.POINTER(wt.LPVOID)])
     _bind(advapi, 'ConvertStringSecurityDescriptorToSecurityDescriptorW', wt.BOOL, [wt.LPCWSTR, wt.DWORD, ctypes.POINTER(wt.LPVOID), ctypes.POINTER(wt.DWORD)])
     _bind(advapi, 'GetSecurityInfo', wt.DWORD, [wt.HANDLE, ctypes.c_int, wt.DWORD, ctypes.POINTER(wt.LPVOID), ctypes.POINTER(wt.LPVOID), ctypes.POINTER(wt.LPVOID), ctypes.POINTER(wt.LPVOID), ctypes.POINTER(wt.LPVOID)])
     _bind(advapi, 'GetSecurityDescriptorControl', wt.BOOL, [wt.LPVOID, ctypes.POINTER(wt.WORD), ctypes.POINTER(wt.DWORD)])
@@ -97,7 +98,7 @@ else:
             return _sid_string(ctypes.cast(buffer, ctypes.POINTER(wt.LPVOID))[0])
         finally: kernel.CloseHandle(token)
 
-    def _windows_security(handle, *, protect=False, directory=False):
+    def _windows_security(handle, *, protect=False, directory=False, new_generated=False):
         information = _FileInfo()
         _wincheck(kernel.GetFileInformationByHandle(handle, ctypes.byref(information)))
         if information.attributes & 0x400: raise ValueError('unsafe_reparse_point')
@@ -108,7 +109,8 @@ else:
         if status: raise ctypes.WinError(status)
         try:
             user = _user_sid()
-            if not owner or _sid_string(owner) != user: raise ValueError('unsafe_file_owner')
+            allowed_owners = {user, 'S-1-5-32-544'} if new_generated else {user}
+            if not owner or _sid_string(owner) not in allowed_owners: raise ValueError('unsafe_file_owner')
             if protect:
                 replacement = wt.LPVOID()
                 inheritance = 'OICI' if directory else ''
@@ -125,7 +127,7 @@ else:
             else:
                 control, revision = wt.WORD(), wt.DWORD()
                 _wincheck(advapi.GetSecurityDescriptorControl(security, ctypes.byref(control), ctypes.byref(revision)))
-                if not control.value & 0x1000 or not dacl: raise ValueError('unsafe_file_acl')
+                if (not new_generated and not control.value & 0x1000) or not dacl: raise ValueError('unsafe_file_acl')
                 allowed = {user, 'S-1-5-18', 'S-1-5-32-544'}
                 acl = ctypes.cast(dacl, ctypes.POINTER(_ACL)).contents
                 if not acl.count: raise ValueError('unsafe_file_acl')
@@ -139,9 +141,32 @@ else:
                     if header[0] != 0: raise ValueError('unsafe_file_acl')
                     sid = _sid_string(ace.value + 8)
                     if sid not in allowed: raise ValueError('unsafe_file_acl')
-                    has_user = has_user or sid == user
+                    mask = ctypes.cast(ace, ctypes.POINTER(wt.DWORD))[1]
+                    usable_user = sid == user and not header[1] & 8
+                    if new_generated: usable_user = usable_user and mask & 0x1f01ff == 0x1f01ff
+                    has_user = has_user or usable_user
                 if not has_user: raise ValueError('unsafe_file_acl')
         finally: kernel.LocalFree(security)
+
+    def _protect_new_generated_item(path, *, directory=False):
+        # The caller proves this path did not exist in a checked private root
+        # before the current operation. Elevated Python can create it with the
+        # Administrators default owner; never accept that owner for old files.
+        path = _reject_reparse(path)
+        handle = kernel.CreateFileW(str(path), 0xe0080, 1, None, 3,
+                                    0x00200000 | (0x02000000 if directory else 0), None)
+        if handle == ctypes.c_void_p(-1).value: raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            _windows_security(handle, directory=directory, new_generated=True)
+            user = wt.LPVOID()
+            _wincheck(advapi.ConvertStringSidToSidW(_user_sid(), ctypes.byref(user)))
+            try:
+                status = advapi.SetSecurityInfo(handle, 1, 1, user, None, None, None)
+                if status: raise ctypes.WinError(status)
+            finally: kernel.LocalFree(user)
+            _windows_security(handle, protect=True, directory=directory)
+            _windows_security(handle, directory=directory)
+        finally: kernel.CloseHandle(handle)
 
     def _reject_reparse(path):
         path = Path(os.path.abspath(path))
@@ -291,6 +316,84 @@ def protect_path(path, *, directory=False):
         try: validate_file(descriptor)
         finally: os.close(descriptor)
     else: Path(path).chmod(0o600)
+
+
+def _plain_items(root, *, recursive=True):
+    info = root.lstat()
+    if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+        raise ValueError('unsafe_reparse_point')
+    if not stat.S_ISDIR(info.st_mode) and (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1):
+        raise ValueError('unsafe_cache_file')
+    yield root, info
+    if stat.S_ISDIR(info.st_mode):
+        for child in sorted(root.iterdir()):
+            if recursive: yield from _plain_items(child)
+            else:
+                child_info = child.lstat()
+                if stat.S_ISLNK(child_info.st_mode) or getattr(child_info, 'st_file_attributes', 0) & 0x400:
+                    raise ValueError('unsafe_reparse_point')
+                if not stat.S_ISDIR(child_info.st_mode) and (not stat.S_ISREG(child_info.st_mode) or child_info.st_nlink != 1):
+                    raise ValueError('unsafe_cache_file')
+                yield child, child_info
+
+
+def _assert_private_item(path, info):
+    if stat.S_ISDIR(info.st_mode):
+        descriptor = open_private_directory(path)
+        close_directory(descriptor)
+    else:
+        descriptor = secure_open(path, os.O_RDONLY)
+        try: validate_file(descriptor)
+        finally: os.close(descriptor)
+
+
+def snapshot_private_tree(root, *, recursive=True):
+    """Record pre-existing protected entries before trusted asset/output creation."""
+    root = Path(os.path.abspath(root))
+    if not directory_is_private(root): raise ValueError('unsafe_cache_directory')
+    result = {}
+    for path, info in _plain_items(root, recursive=recursive):
+        _assert_private_item(path, info)
+        result[path] = (info.st_dev, info.st_ino)
+    return result
+
+
+def _check_generated_root(root, previous):
+    if root not in previous or not directory_is_private(root): raise ValueError('unsafe_cache_directory')
+    info = root.lstat()
+    if (info.st_dev, info.st_ino) != previous[root]: raise ValueError('changed_cache_directory')
+
+
+def protect_generated_tree(root, previous):
+    """Narrow only newly generated items inside the same previously private root."""
+    root = Path(os.path.abspath(root))
+    _check_generated_root(root, previous)
+    for path, info in _plain_items(root):
+        if path in previous:
+            _assert_private_item(path, info)
+        elif IS_WINDOWS:
+            _protect_new_generated_item(path, directory=stat.S_ISDIR(info.st_mode))
+        else:
+            if info.st_uid != os.getuid(): raise ValueError('unsafe_file_owner')
+            protect_path(path, directory=stat.S_ISDIR(info.st_mode))
+    snapshot_private_tree(root)
+
+
+def protect_generated_file(path, root, previous):
+    """Protect a new direct child output; existing files retain strict validation."""
+    path, root = Path(os.path.abspath(path)), Path(os.path.abspath(root))
+    if path.parent != root: raise ValueError('unsafe_generated_path')
+    _check_generated_root(root, previous)
+    info = next(_plain_items(path))[1]
+    if not stat.S_ISREG(info.st_mode): raise ValueError('unsafe_cache_file')
+    if path in previous:
+        _assert_private_item(path, info)
+    elif IS_WINDOWS:
+        _protect_new_generated_item(path)
+    else:
+        if info.st_uid != os.getuid(): raise ValueError('unsafe_file_owner')
+        protect_path(path)
+    _assert_private_item(path, path.lstat())
 
 
 def lock_exclusive(descriptor):

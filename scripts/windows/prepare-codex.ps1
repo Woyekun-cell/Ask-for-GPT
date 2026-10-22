@@ -67,6 +67,71 @@ function Protect-Directory([string]$Path) {
     }
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
+function Expand-VerifiedCodexArchive([string]$Archive, [string]$Destination) {
+    # Windows bsdtar may convert non-ASCII argv through its active code page.
+    # CreateProcessW sets the Unicode working directory; only ASCII reaches tar argv.
+    if (-not ('AskGptTarStreams' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+public static class AskGptTarStreams {
+    public static async Task<string> DrainAsync(StreamReader reader) {
+        var text = new StringBuilder();
+        var buffer = new char[2048];
+        int count;
+        while ((count = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) != 0) {
+            int keep = System.Math.Min(count, 8192 - text.Length);
+            if (keep > 0) text.Append(buffer, 0, keep);
+        }
+        return text.ToString();
+    }
+    public static async Task PumpAsync(Stream source, Stream destination) {
+        try { await source.CopyToAsync(destination).ConfigureAwait(false); }
+        finally { destination.Dispose(); }
+    }
+}
+'@
+    }
+    $start = [Diagnostics.ProcessStartInfo]::new()
+    $start.FileName = Join-Path ([Environment]::SystemDirectory) 'tar.exe'
+    $start.WorkingDirectory = $Destination
+    $start.Arguments = '-xzf -'
+    $start.UseShellExecute = $false
+    $start.CreateNoWindow = $true
+    $start.RedirectStandardInput = $true
+    $start.RedirectStandardOutput = $true
+    $start.RedirectStandardError = $true
+    $process = [Diagnostics.Process]::new()
+    $process.StartInfo = $start
+    $archiveStream = $null
+    $started = $false
+    try {
+        $archiveStream = [IO.File]::Open($Archive, 'Open', 'Read', 'Read')
+        $started = $process.Start()
+        if (-not $started) { throw 'Unable to start system tar.' }
+        $stdout = [AskGptTarStreams]::DrainAsync($process.StandardOutput)
+        $stderr = [AskGptTarStreams]::DrainAsync($process.StandardError)
+        $pump = [AskGptTarStreams]::PumpAsync($archiveStream, $process.StandardInput.BaseStream)
+        $all = [Threading.Tasks.Task]::WhenAll([Threading.Tasks.Task[]]@($stdout, $stderr, $pump))
+        if (-not $process.WaitForExit(120000)) { throw 'Official Codex archive extraction timed out after 120 seconds.' }
+        $transferError = $null
+        try { if (-not $all.Wait(5000)) { throw 'Archive stream completion timed out.' } }
+        catch { $transferError = $_.Exception.Message }
+        if (-not $stdout.IsCompleted -or -not $stderr.IsCompleted) { throw 'Unable to drain system tar output.' }
+        if ($process.ExitCode -ne 0) {
+            throw ('Unable to extract official Codex package: tar exit ' + $process.ExitCode + '. ' + $stderr.Result + $stdout.Result)
+        }
+        if ($transferError) { throw ('Unable to stream official Codex archive: ' + $transferError) }
+    } finally {
+        try {
+            if ($started -and -not $process.HasExited) { $process.Kill(); [void]$process.WaitForExit(5000) }
+        } finally {
+            if ($archiveStream) { $archiveStream.Dispose() }
+            $process.Dispose()
+        }
+    }
+}
 $pin = (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'toolchain.json') -Raw | ConvertFrom-Json).codex
 $ToolsRoot = [IO.Path]::GetFullPath($ToolsRoot)
 Protect-Directory $ToolsRoot
@@ -98,8 +163,7 @@ Protect-Directory $stage
     if ((Get-FileHash -LiteralPath $archive -Algorithm SHA512).Hash.ToLowerInvariant() -ne $pin.sha512) { throw 'Official Codex package SHA512 mismatch.' }
     $extract = Join-Path $stage 'extract'
     Protect-Directory $extract
-    & tar.exe -xzf $archive -C $extract
-    if ($LASTEXITCODE -ne 0) { throw 'Unable to extract official Codex package.' }
+    Expand-VerifiedCodexArchive $archive $extract
     $package = Join-Path $extract 'package'
     $exe = Join-Path $package $pin.executable
     if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Complete Windows Codex payload is missing its executable.' }

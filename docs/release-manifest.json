@@ -126,13 +126,13 @@
     },
     {
       "path": "Integrations/PDFLayout/platform_ops.py",
-      "bytes": 23864,
-      "sha256": "9bdf8b7d3cdecc191f1a1086f3230580101bc4e8e4082cb44dbc1a42138152a5"
+      "bytes": 28857,
+      "sha256": "9c0ff7e0ec037f32d41f23919ddf8c2d722d749825686be7291759e1c3180144"
     },
     {
       "path": "Integrations/PDFLayout/prepare-assets.py",
-      "bytes": 1764,
-      "sha256": "9147999583848b3096e6ec4b5bcc97e700c10a32c22b37094c28d8e82f0869cc"
+      "bytes": 1961,
+      "sha256": "6c2fabfa75556abae448ac71cbaae4cee848c55c815adef491e158efed3f30bb"
     },
     {
       "path": "Integrations/PDFLayout/requirements.in",
@@ -266,8 +266,8 @@
     },
     {
       "path": "Integrations/PDFLayout/tests/test_platform_ops.py",
-      "bytes": 6637,
-      "sha256": "93bbcc620aec0b8d8069bed6d8676101507cefe6185d7853e0a7c18dad637024"
+      "bytes": 9734,
+      "sha256": "1ef9ec3ff31919c6c045db3cedef205c96c606265614869956ff8f15f130fdda"
     },
     {
       "path": "Integrations/PDFLayout/tests/test_portable_cached_pdf.py",
@@ -281,8 +281,8 @@
     },
     {
       "path": "Integrations/PDFLayout/tests/test_prepare_pdf.ps1",
-      "bytes": 4551,
-      "sha256": "865ffbc3b8e3cb4067cda42299184be128fd5add5b635169bddf4198227aaf27"
+      "bytes": 6614,
+      "sha256": "470dfcf20118c05310551c1245e3b8b8064ad20feb1ed8d5eca3d2c34c8286d1"
     },
     {
       "path": "Integrations/PDFLayout/tests/test_progress.py",
@@ -316,8 +316,8 @@
     },
     {
       "path": "Integrations/PDFLayout/worker.py",
-      "bytes": 39100,
-      "sha256": "8724828bf514272a8d6d3787de44a4e1cabc345c6f7a66ed8e6809d0ee969487"
+      "bytes": 39446,
+      "sha256": "3698f3b7887d8b84769de2ed11a712054f7c5903f17d457a2cdf345ec5af67c9"
     },
     {
       "path": "Integrations/Writing/package.json",
@@ -686,8 +686,8 @@
     },
     {
       "path": "Platforms/Windows/AskGPT.Windows.Core.Tests/Program.cs",
-      "bytes": 26287,
-      "sha256": "ff5c539d4b8e6261e59eb2bbde808bf2b4c05ff42e28d4ccf532a349a53815aa"
+      "bytes": 28697,
+      "sha256": "d30b4b510cf498f27f952eab05e186c65ef40e231c7062928d0ab44483b31a25"
     },
     {
       "path": "Platforms/Windows/AskGPT.Windows.Core.Tests/packages.lock.json",
@@ -736,8 +736,8 @@
     },
     {
       "path": "Platforms/Windows/AskGPT.Windows.Core/ProtectedFiles.cs",
-      "bytes": 9170,
-      "sha256": "d0414240eb7b287e93a7427b3ec90ae5ffea41aea2e1e9660b81d79a19ed6873"
+      "bytes": 11082,
+      "sha256": "16690e121b6d58f795947f941091d1f419bb688b3a46d1b0dd0e93f9862b096a"
     },
     {
       "path": "Platforms/Windows/AskGPT.Windows.Core/ReaderRuntime.cs",
@@ -1681,8 +1681,8 @@
     },
     {
       "path": "scripts/windows/build.ps1",
-      "bytes": 7364,
-      "sha256": "0f6402afb0bd08685e3c63d71726c698daf8c9b305e52068b8c1f30325c21a17"
+      "bytes": 7728,
+      "sha256": "5a3c8e9fd6643f2c2be8db82068e386c338ac321ed245661c798309d8492ea31"
     },
     {
       "path": "scripts/windows/installer.nsi",
@@ -1696,13 +1696,13 @@
     },
     {
       "path": "scripts/windows/prepare-codex.ps1",
-      "bytes": 7164,
-      "sha256": "031fe3c32bc22c028a70c737e4755ff2b25a5a0d42803cd19330c2c2e95d0832"
+      "bytes": 10197,
+      "sha256": "32728d5843f8d074bc6188c58f017fe12358fb2928e7fd23e02d3c4b9c666fa6"
     },
     {
       "path": "scripts/windows/prepare-pdf.ps1",
-      "bytes": 12114,
-      "sha256": "689dc3908e9f82c903ca60ca7b3afeb86a28379e5097f828e686b7e199e9ae5f"
+      "bytes": 14174,
+      "sha256": "638f073d8cfbaa4c6399486ba1291e00d6935ade373d97e598da04ee698c227d"
     },
     {
       "path": "scripts/windows/test-integrations.ps1",
@@ -1713,6 +1713,11 @@
       "path": "scripts/windows/tests/test_package.py",
       "bytes": 2770,
       "sha256": "846bd0c387df8f426c0794014d21efb25b846627e34aeef164f1f555a12f5076"
+    },
+    {
+      "path": "scripts/windows/tests/test_prepare_codex_archive.ps1",
+      "bytes": 2845,
+      "sha256": "f99120278553eb9c1b3841c4e237e98b7bee780da024d2c14ef3ec666aa46205"
     },
     {
       "path": "scripts/windows/toolchain.json",
