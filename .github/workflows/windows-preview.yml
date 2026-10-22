@@ -48,21 +48,21 @@ jobs:
         shell: pwsh
         run: |
           & scripts/windows/prepare-pdf.ps1 -CacheRoot "$env:RUNNER_TEMP\AskGPT PDF 中文"
-          if ($LASTEXITCODE -ne 0) { throw 'PDF preparation failed' }
           $python = "$env:RUNNER_TEMP\AskGPT PDF 中文\runtime\Scripts\python.exe"
-          & Integrations/PDFLayout/tests/test_prepare_pdf.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'PDF preparation security tests failed' }
+          $failedSuites = @()
+          try { & Integrations/PDFLayout/tests/test_prepare_pdf.ps1 }
+          catch { Write-Host $_; $failedSuites += 'preparation security' }
           foreach ($suite in @('test_platform_ops.py','test_batch_permits.py','test_portable_selection_source.py','test_portable_cached_pdf.py','test_worker.py','test_gpt_batch.py','test_phrase_helper.py','test_contract.py')) {
             & $python -m unittest discover -s Integrations/PDFLayout/tests -p $suite -v
-            if ($LASTEXITCODE -ne 0) { throw ('PDF suite failed: ' + $suite) }
+            if ($LASTEXITCODE -ne 0) { $failedSuites += $suite }
           }
+          if ($failedSuites.Count -gt 0) { throw ('PDF suites failed: ' + ($failedSuites -join ', ')) }
       - name: Verify full official Codex payload without login or model request
         id: codex
         if: success() || failure()
         shell: pwsh
         run: |
           & scripts/windows/prepare-codex.ps1 -ToolsRoot "$env:RUNNER_TEMP\AskGPT tools 中文"
-          if ($LASTEXITCODE -ne 0) { throw 'Codex preparation failed' }
           & "$env:RUNNER_TEMP\AskGPT tools 中文\codex-0.163.0\vendor\x86_64-pc-windows-msvc\bin\codex.exe" --version
           if ($LASTEXITCODE -ne 0) { throw 'Prepared Codex --version failed' }
           New-Item -ItemType Directory -Path work -Force | Out-Null
