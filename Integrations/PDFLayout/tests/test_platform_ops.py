@@ -15,6 +15,20 @@ import platform_ops as ops
 
 
 class PlatformOpsTests(unittest.TestCase):
+    def test_directory_handle_remains_open_until_close_and_detects_replacement(self):
+        with tempfile.TemporaryDirectory() as root:
+            directory = ops.private_directory(Path(root) / 'private')
+            descriptor = ops.open_private_directory(directory)
+            try:
+                ops.check_directory_binding(descriptor, directory)
+                directory.rename(Path(root) / 'previous')
+                ops.private_directory(directory)
+                with self.assertRaisesRegex(ValueError, 'changed_cache_directory'):
+                    ops.check_directory_binding(descriptor, directory)
+            finally: ops.close_directory(descriptor)
+            with self.assertRaises((OSError, ValueError)):
+                ops.check_directory_binding(descriptor, directory)
+
     def test_windows_job_cleanup_timeout_is_bounded_and_never_claims_success(self):
         closed = []
         class Kernel:

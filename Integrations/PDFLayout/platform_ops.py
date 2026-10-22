@@ -248,7 +248,10 @@ else:
             protecting = repair or (create and (bool(flags & os.O_EXCL) or not opened_existing))
             _windows_security(handle, protect=protecting, directory=directory)
             if protecting: _windows_security(handle)
-            if directory: return handle
+            if directory:
+                owned = handle
+                handle = None
+                return owned
             descriptor = msvcrt.open_osfhandle(handle, flags & (os.O_RDONLY | os.O_WRONLY | os.O_RDWR) | os.O_BINARY)
             handle = None
             os.set_inheritable(descriptor, False)

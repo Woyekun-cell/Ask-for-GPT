@@ -126,8 +126,8 @@
     },
     {
       "path": "Integrations/PDFLayout/platform_ops.py",
-      "bytes": 32361,
-      "sha256": "8658bfc0cb7cb501f6621a3860a4101e2ce7bd173f15e889dc225fba26f6c6b1"
+      "bytes": 32437,
+      "sha256": "45cf412276a2acab85d17823c649d971302e28304fd0d3f494aacd662e9baf76"
     },
     {
       "path": "Integrations/PDFLayout/prepare-assets.py",
@@ -191,8 +191,8 @@
     },
     {
       "path": "Integrations/PDFLayout/tests/test_batch_permits.py",
-      "bytes": 14684,
-      "sha256": "ef49623b02b205d0a6d69ff6451eb6a325255c63217d1c6381797bdcde2e3794"
+      "bytes": 14712,
+      "sha256": "429cb630cb2a5bb6737cd8cb3d1ce0667a6ba678a0c06650605a611931481942"
     },
     {
       "path": "Integrations/PDFLayout/tests/test_completed_cache.py",
@@ -201,8 +201,8 @@
     },
     {
       "path": "Integrations/PDFLayout/tests/test_contract.py",
-      "bytes": 4196,
-      "sha256": "484d30337e55f7470d6f9ec4d12cbe64e2ecbdc5eab9f3617f08242e5172f42d"
+      "bytes": 5121,
+      "sha256": "118ee62412e6c5bd529776b6b584ae9818bfab38957712751e133cebca68e676"
     },
     {
       "path": "Integrations/PDFLayout/tests/test_failure_diagnostics.py",
@@ -266,8 +266,8 @@
     },
     {
       "path": "Integrations/PDFLayout/tests/test_platform_ops.py",
-      "bytes": 11936,
-      "sha256": "6ea510e580b7168b1e665df3185ab53168d886def81607882613ad2e8d85ae4b"
+      "bytes": 12733,
+      "sha256": "dd039c4f9b9368bd05dfb457d1205a1a8f2556d672a537e9e8395f0fcfa4442c"
     },
     {
       "path": "Integrations/PDFLayout/tests/test_portable_cached_pdf.py",

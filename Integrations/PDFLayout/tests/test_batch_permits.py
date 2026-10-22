@@ -141,7 +141,7 @@ class BatchPermitTests(unittest.TestCase):
             for _ in range(3): held.enter_context(permits.hold(threading.Event()))
             process = subprocess.Popen([sys.executable,'-c',script],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             try:
-                self.assertEqual(platform.read_pipe(process.stdout, time.monotonic()+3), b'held\n')
+                self.assertEqual(platform.read_pipe(process.stdout, time.monotonic()+3).rstrip(b'\r\n'), b'held')
                 with ThreadPoolExecutor(1) as executor:
                     def acquire():
                         with permits.hold(threading.Event()): return True
@@ -178,7 +178,7 @@ class BatchPermitTests(unittest.TestCase):
         try:
             deadline=time.monotonic()+3
             while entered<4 and time.monotonic()<deadline:
-                try: entered += messages.get(timeout=.1) == b'entered\n'
+                try: entered += messages.get(timeout=.1).rstrip(b'\r\n') == b'entered'
                 except queue.Empty: pass
             self.assertEqual(entered,4)
             with self.assertRaises(queue.Empty): messages.get(timeout=.1)

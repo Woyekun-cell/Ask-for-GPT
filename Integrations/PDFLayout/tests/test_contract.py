@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import subprocess
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
@@ -48,15 +49,28 @@ class TranslationContractTests(unittest.TestCase):
     def test_private_config_rejects_symlink_and_world_readable(self):
         with tempfile.TemporaryDirectory() as folder:
             config = Path(folder) / "connection.json"
-            config.write_text(json.dumps({"token": "a" * 64, "version": 1,
-                "endpoint": "http://127.0.0.1:43792"}))
-            config.chmod(0o600)
+            common.atomic_json(config, {"token": "a" * 64, "version": 1,
+                "endpoint": "http://127.0.0.1:43792"})
             self.assertEqual(common.load_token(config), "a" * 64)
             link = Path(folder) / "link.json"
             link.symlink_to(config)
             with self.assertRaises(common.ProtocolFailure): common.load_token(link)
-            config.chmod(0o644)
+            if common.platform.IS_WINDOWS:
+                subprocess.run(['icacls.exe', str(config), '/grant', '*S-1-1-0:(R)'], check=True, capture_output=True)
+            else: config.chmod(0o644)
             with self.assertRaises(common.ProtocolFailure): common.load_token(config)
+
+    @unittest.skipUnless(os.name == 'nt', 'Windows reparse directory validation')
+    def test_private_config_rejects_junction_parent_without_reading_the_token(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = common.private_directory(Path(folder) / 'private')
+            config = directory / 'connection.json'
+            common.atomic_json(config, {'token':'a' * 64, 'version':1, 'endpoint':'http://127.0.0.1:43792'})
+            junction = Path(folder) / 'junction'
+            subprocess.run(['cmd.exe', '/c', 'mklink', '/J', str(junction), str(directory)], check=True, capture_output=True)
+            try:
+                with self.assertRaises(common.ProtocolFailure): common.load_token(junction / 'connection.json')
+            finally: junction.rmdir()
 
     def test_offline_guard_blocks_socket_connect_and_dns(self):
         import subprocess
@@ -75,12 +89,12 @@ class TranslationContractTests(unittest.TestCase):
             path = Path(folder) / "connection.json"
             value = {"token": "a" * 64, "version": 1, "endpoint": "http://127.0.0.1:43792",
                      "extensionID": "ofcbkomnacejiphoifjmkmkpjcjddmfj"}
-            path.write_text(json.dumps(value)); path.chmod(0o600)
+            common.atomic_json(path, value)
             self.assertEqual(common.load_connection(path),
                 ("a" * 64, "chrome-extension://ofcbkomnacejiphoifjmkmkpjcjddmfj"))
             for invalid in ["*", "https://example.com", "a" * 31, "q" * 32, None]:
                 value["extensionID"] = invalid
-                path.write_text(json.dumps(value))
+                common.atomic_json(path, value)
                 with self.assertRaises(common.ProtocolFailure): common.load_connection(path)
 
 
