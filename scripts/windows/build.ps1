@@ -60,7 +60,7 @@ try {
     if ($nsisVersion -notmatch '^v3\.11(?:\.|$)') { throw ('Expected NSIS 3.11, got ' + $nsisVersion) }
     $validation.nsis = $nsisVersion
     $installer = Join-Path $OutputDirectory 'Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe'
-    Invoke-Checked $makensis @('/V2', ('/DBUNDLE_DIR=' + $bundle), ('/DOUTPUT_FILE=' + $installer), ('/DUNINSTALL_INCLUDE=' + $uninstall), (Join-Path $PSScriptRoot 'installer.nsi'))
+    Invoke-Checked $makensis @('/V2','/INPUTCHARSET','UTF8', ('/DBUNDLE_DIR=' + $bundle), ('/DOUTPUT_FILE=' + $installer), ('/DUNINSTALL_INCLUDE=' + $uninstall), (Join-Path $PSScriptRoot 'installer.nsi'))
     $installed = Join-Path $work 'install smoke 中文'
     $install = Start-Process -FilePath $installer -ArgumentList @('/S', ('/D=' + $installed)) -Wait -PassThru
     if ($install.ExitCode -ne 0 -or !(Test-Path -LiteralPath (Join-Path $installed 'AskGPT.Windows.exe'))) { throw 'Silent runner installation failed.' }
@@ -70,6 +70,9 @@ try {
     Set-Content -LiteralPath $sentinel -Value 'keep' -Encoding UTF8
     $uninstallProcess = Start-Process -FilePath (Join-Path $installed 'Uninstall.exe') -ArgumentList @('/S', ('_?=' + $installed)) -Wait -PassThru
     if ($uninstallProcess.ExitCode -ne 0 -or !(Test-Path -LiteralPath $sentinel) -or (Test-Path -LiteralPath (Join-Path $installed 'AskGPT.Windows.exe'))) { throw 'Runner uninstall/preserve check failed.' }
+    foreach ($entry in (Get-Content -LiteralPath (Join-Path $bundle 'package-manifest.json') -Raw | ConvertFrom-Json).files) {
+        if (Test-Path -LiteralPath (Join-Path $installed $entry.path)) { throw ('Uninstall left a packaged file: ' + $entry.path) }
+    }
     $validation.checks += 'NSIS runner silent install, installed file hashes and uninstall preserving unrelated files'
     $zip = Join-Path $OutputDirectory 'Ask-for-GPT-0.1.0-preview.1-Windows-x64-Portable.zip'
     Invoke-Checked python @('scripts/windows/zip-package.py',$bundle,$zip)

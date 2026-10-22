@@ -1671,8 +1671,8 @@
     },
     {
       "path": "scripts/windows/build.ps1",
-      "bytes": 7076,
-      "sha256": "2499ed5ad931e44d4a1ea130384c43060b571924a2cd0ffa18f5040dcb02b23b"
+      "bytes": 7364,
+      "sha256": "0f6402afb0bd08685e3c63d71726c698daf8c9b305e52068b8c1f30325c21a17"
     },
     {
       "path": "scripts/windows/installer.nsi",
