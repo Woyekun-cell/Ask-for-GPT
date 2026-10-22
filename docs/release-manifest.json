@@ -6,8 +6,8 @@
   "files": [
     {
       "path": ".github/workflows/windows-preview.yml",
-      "bytes": 3934,
-      "sha256": "ce5fa17006c9000f4337b0497ce0c7cf115a0378abbe132dda5dab52e072efbc"
+      "bytes": 3982,
+      "sha256": "b64540243c425d87f1ffab6df62f79559890efd131be8ff3a3ac8b8f34f725aa"
     },
     {
       "path": ".gitignore",
