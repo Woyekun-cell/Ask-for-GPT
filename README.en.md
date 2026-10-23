@@ -4,11 +4,11 @@
 
 <img src="Resources/AppIcon.png" width="96" alt="Ask for GPT icon">
 
-# Ask for GPT
+# 📖 Ask for GPT
 
-**Understand a paper, starting with the word in front of you.**
+**Read the paper. Switch fewer windows.**
 
-Read PDFs side by side in Zotero, follow translations on a web page, ask about a passage, and review suggestions while writing.
+Look up words, ask about a passage, and read web pages and PDFs in two languages. Keep your reading notes in Zotero, then refine your wording as you write.
 
 [![Download macOS DMG](https://img.shields.io/badge/Download_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.dmg)
 [![Download ZIP](https://img.shields.io/badge/Download-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.zip)
@@ -19,7 +19,7 @@ Read PDFs side by side in Zotero, follow translations on a web page, ask about a
 
 </div>
 
-Ask for GPT is a macOS companion for reading papers and writing academic text. Look up an unfamiliar word, translate a passage, or read a full PDF beside its translation. Ask questions with the passage as context, then use writing suggestions when you put your own ideas into words.
+Word lookup, translation, and questions should fit the pace of reading a paper. Ask for GPT brings them together on macOS: ask with a passage as context, read web pages and PDFs alongside their translations, keep annotations and notes in Zotero, and check spelling and wording when you write. The project is under active development, shaped by the practical needs of reading and academic writing.
 
 The app works where you already read and write: your Zotero attachment and annotations, the page open in Chrome, or a manuscript in Word. English word lookup uses a local dictionary. AI features use your own ChatGPT login session by default, with an optional configuration file for alternative translation backends.
 
