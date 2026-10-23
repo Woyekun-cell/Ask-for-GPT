@@ -58,9 +58,9 @@
 
 在 Zotero 打开 PDF，右侧 **PDF 翻译**面板提供 **范围、显示、方向**三个选择。先用 **当前页 + 中英对照 + EN → 中**阅读摘要或关键结果，确认文章相关，再把范围改为 **整篇**继续处理。中文文献也可以选 **中 → EN**。
 
-![真实论文在 Zotero 中的英文原文与中文译文对照](docs/images/zotero/live-bilingual-reading.jpg)
+![Zotero 双语阅读：英文原文与中文译文并排显示](docs/images/zotero/live-bilingual-reading.jpg)
 
-*实机截图：在 Zotero 中阅读 Liao 等的 [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x)，Nature 617, 312–324（2023）。左侧为英文原文，右侧为 Ask for GPT 生成并重新排版的中文机器译文。论文采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 许可。*
+*Zotero 双语阅读 · Liao 等，[A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x)（Nature, 2023；[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）。右侧为 Ask for GPT 生成的中文机器译文与排版。*
 
 翻译就在当前文献标签里显示。页数进度会留在侧栏和顶部工具栏，你可以继续看原文，或者切换到另一篇论文。各篇任务独立，最多同时处理两篇文档，并可分别停止。
 
@@ -94,7 +94,7 @@
 
 ![实机对照阅读同一页的英文摘要与中文译文](docs/images/zotero/live-abstract-detail.jpg)
 
-*同一篇论文第 1 页（印刷页 312）的实机截图。切到 **独立**后手动调整两侧位置，可以把摘要和引言中的同一段留在眼前比较。机器译文需要结合原文人工核对术语、数字和含义。*
+*独立滚动，对照查看摘要与正文。论文来源同上。*
 
 ![联动与独立滚动，以及更多菜单中的同步大小](docs/images/zotero/05-reading-tools.png)
 
@@ -168,7 +168,7 @@ Codex CLI 路径、提问模型、推理强度、可选翻译配置文件、自�
 
 原 PDF 文件不被覆盖；手动保存的 Zotero 标注写入原附件的标注记录。完成译本长期保留，未完成任务的临时文件另行清理。使用译文撰写或引用前，应核对术语、数字、公式与原意。物理修饰键滚轮手势、实际显示帧率和全新 Mac 的完整安装仍需进一步实机检查。
 
-两张论文实拍图来自本机 Ask for GPT 1.0.89、Zotero 9.0.6 与插件 0.3.28 的真实论文阅读会话。其余五张 Zotero 功能图和三张主程序图使用原生界面资源与自有示例内容。各图来源、制作方式与适用范围见[界面图廊](docs/GALLERY.md)。
+阅读界面与功能演示的图片来源见[界面图廊](docs/GALLERY.md)。
 
 ## 源码与开发
 
