@@ -80,6 +80,8 @@ Select words in either pane to see an established counterpart in the other langu
 
 Phrase mapping accounts for differences in word length and order. Where a reliable link exists, part of a Chinese selection can correspond to a complete English word while retaining the Chinese range you actually selected. Ordinary text selection does not automatically create an annotation, so you can look up or copy a phrase as you read.
 
+Enable **悬停释义** (hover gloss) in the sidebar for quick word lookup while reading. For a longer passage, select it and press **`⌥D`** to open the reading panel.
+
 ### Keep reading notes with Zotero's eight native colors
 
 After selecting text, use Zotero's native eight-color popup to save a highlight or underline. A mark made on the translated side is associated with the corresponding original PDF text and retains the translated excerpt. You can continue adding comments, changing colors, and navigating from Zotero's annotation list.
@@ -100,6 +102,8 @@ Saved marks are projected again when you return to the original or reopen the si
 
 Use **⋯ → 同步大小** (match pane zoom) when the panes have different scales. The More menu also provides current-page and whole-document translation, stop, retry, zoom, and fit width. You can keep reading while phrase correspondence is being prepared; with a completed translation, retry prioritizes missing correspondence information.
 
+**Option-click** a paragraph to focus on the passage you are reading.
+
 ### Open a figure in one pane and keep the results in the other
 
 The **图表** (figures and tables) button opens an index with labels, page numbers, and caption excerpts. Choose the left or right pane, then select an entry. That pane jumps to the figure while the other stays where it was—useful when a results paragraph refers to Fig. 3.
@@ -108,27 +112,43 @@ The **图表** (figures and tables) button opens an index with labels, page numb
 
 A figure jump switches scrolling to independent mode. Restore linked scrolling when you are ready to continue. The caption index is reused within the current PDF session. Completed translations are stored locally for longer-term reuse, matched by document content, page range, language direction, translation revision, and a backend configuration digest. A completed whole-document result can also supply an individual page.
 
+Click a figure, or hover over it and press **Space**, to open an independent preview. Zoom in to inspect labels, fit the image to the window, or export it as a PNG.
+
+### Return to your reading position
+
+Enable **重开时提示阅读位置** in the PDF translation sidebar to receive a reading-position prompt when you reopen the paper. A completed local whole-document translation can be matched to its source and reused, or imported as a regular PDF attachment for separate reading.
+
 See the **[Zotero reading guide](docs/ZOTERO.zh-CN.md)** for detailed controls, background tasks, and annotations.
 
 ## Look up a word without leaving your reading
 
-Select text in an app that exposes its selection and press **`⌥D`** to open the translation panel. Single words use the local dictionary first, with pronunciation, parts of speech, meanings, and inflections. Passages can use on-device translation or continue to GPT refinement and explanation.
+Select text in an app that exposes its selection and press **`⌥D`** to open the translation panel. Single words use the local dictionary first, with pronunciation, parts of speech, meanings, and inflections. The macOS panel offers three ways to read a passage:
+
+| Tab | Use it for |
+| --- | --- |
+| **Local** | Apple on-device translation of the selected text |
+| **GPT** | A closer translation of the selected passage |
+| **Explain** | The selected passage's terminology, reasoning, and qualifications |
+
+**GPT** and **Explain** start a model request when you click them. Use **Stop / Retry** to control a request.
 
 ![Translation panel](docs/images/translation.png)
 
-Language direction, result colors, and the question entry point are kept together. English to Chinese is the default; Chinese to English and automatic direction are also available. Enable automatic selection translation for continuous reading, or keep the shortcut for a more deliberate pace.
+Choose **EN → 中** or **中 → EN** for the language direction. **Auto** detects the source language and translates into Chinese. Expand the original to compare wording, select result text and copy it with the system shortcut, or adjust the text color. You can also paste text into **Paste text** and click **Translate**. Enable automatic selection translation for continuous reading, or use the shortcut when needed.
 
 ## Ask a specific question with the passage attached
 
-Select a difficult sentence and press **`⌥X`**. The passage becomes context for your question. Ask what a condition refers to, how a term relates to the previous paragraph, or how the sentence is structured. Replies stream into the panel, and you can follow up without copying the passage again.
+Choose **Ask GPT** in the reading panel, or select a difficult sentence and press **`⌥X`**. The passage becomes context for your question. Ask what a condition refers to, how a term relates to the previous paragraph, or how the sentence is structured. Replies stream into the panel, and you can follow up without copying the passage again.
 
 Questions can also use web search and source links when you need supporting material. Press **Enter** to send and **Shift+Enter** for a new line.
 
 ## Follow translations on the original web page
 
-The Chrome extension inserts translations paragraph by paragraph, with the original above and translation below. Read an abstract, technical document, or long article in place, then restore the page when needed.
+Use the Chrome extension button or **`⌥⇧X`** to insert translations paragraph by paragraph, with the original above and translation below. Translation starts near the current viewport and continues as you scroll. The reading controls provide language direction, text color, **Pause translation / Resume translation**, and **Restore original**.
 
-Chrome PDFs use the layout-preserving reading workflow in the current tab. The default **`⌥⇧X`** shortcut translates or restores a page. Local PDFs require file URL access in the extension settings; see the [installation guide](docs/INSTALL.macOS.zh-CN.md).
+Chrome PDFs use a layout-preserving reader in the current tab, with **Page / Document** range and **Translation / Original + Translation / Original** display options. The toolbar keeps page numbers, language direction, progress, **Translate**, and **Cancel** together. Local PDFs require file URL access in the extension settings; see the [installation guide](docs/INSTALL.macOS.zh-CN.md).
+
+On macOS, the **PDF · 原阅读器** menu supports PDFs open in Preview or WPS. Choose current-page or whole-document translation, translation-only or bilingual output, and either language direction. The generated PDF opens in the original reader; the menu also offers the most recent translation, a return to the original PDF, and cancellation.
 
 ## Review writing suggestions before applying them
 
