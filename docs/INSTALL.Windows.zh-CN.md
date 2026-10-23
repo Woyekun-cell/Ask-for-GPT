@@ -1,12 +1,12 @@
-# Ask for GPT Windows 阅读预览版
+# Ask for GPT Windows版安装与配置
 
-版本：0.1.0-preview.1，Windows x64。以 Windows 11 为主要目标，Windows 10 22H2 为兼容目标。构建环境是 GitHub 标准 Windows Server runner；当前没有 Windows 10/11 用户桌面实机验收。每次发行的真实自动检查结果在发行页单独提供，见 `build-validation.json`。
+Windows版面向 x64 电脑，以 Windows 11 为主要目标，Windows 10 22H2 为兼容目标。发行标识为 `0.1.0-preview.1`，构建与检查记录见发行页的 `build-validation.json`。
 
-本版提供快捷键划词、离线英汉词典、段落翻译与提问、Chrome/Zotero 阅读集成、PDF 中英对照、可配置 Codex/兼容 API/Claude Code 后端。Word/WPS 写作辅助留待后续版本。仓库中的界面图片来自 macOS，不能作为 Windows 界面或兼容性证据。
+Windows版提供快捷键划词、离线英汉词典、段落翻译与提问、Chrome/Zotero 阅读集成、PDF 中英对照，以及可配置的 Codex/兼容 API/Claude Code 后端。Word/WPS 写作辅助目前在 macOS版提供。仓库图廊展示 macOS 界面。
 
 ## 下载安装
 
-从 [Windows 预览发行页](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/windows-v0.1.0-preview.1) 选择一种：
+安装包待上传。发布后，从 [Windows版发行页](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/windows-v0.1.0-preview.1) 选择一种：
 
 - `Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe`：当前用户安装，默认位置 `%LOCALAPPDATA%\Programs\Ask for GPT Windows Preview`，开始菜单生成入口，无需管理员权限。
 - `Ask-for-GPT-0.1.0-preview.1-Windows-x64-Portable.zip`：完整解压到可写目录，运行 `AskGPT.Windows.exe`；程序与随包文件夹必须保持在一起。
@@ -28,7 +28,7 @@ Get-FileHash '.\Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe' -Algorithm SH
 3. 设置内可更改快捷键。若 `Alt+D` 被其他应用占用，更换组合后保存。
 4. 自动划词默认关闭；启用后只处理拖选/双击产生的短选区，不自动走剪贴板回退。密码控件排除。
 
-手动快捷键优先读取 Windows UI Automation 选区。目标应用不支持时，程序尝试短暂复制；仅在剪贴板与焦点仍符合恢复条件时恢复原内容。部分受保护、提权或自绘界面可能无法读取，届时可在浮窗手动输入。实际热键、选区、中文输入法、显示缩放及剪贴板交互仍待桌面实测。
+手动快捷键优先读取 Windows UI Automation 选区。目标应用不支持时，程序尝试短暂复制；仅在剪贴板与焦点仍符合恢复条件时恢复原内容。部分受保护、提权或自绘界面可能无法读取，届时可在浮窗手动输入。
 
 ## 翻译后端
 
@@ -98,4 +98,6 @@ Claude Code 需用户自行安装并登录，设置中选择其真实 `.exe`，�
 
 端口 `43792` 为阅读集成，`43795` 为 PDF 服务。若启动报端口占用，先退出旧的 Ask for GPT 进程再重开，不要结束不明进程。组件准备失败可在 PowerShell 中单独运行安装目录下的 `scripts\windows\prepare-pdf.ps1` 或 `prepare-codex.ps1` 查看错误。无须提供密钥、论文正文或整个用户目录来报告问题。
 
-每次发行的自动检查项目、运行环境和检查边界见本次发行页及 `build-validation.json`。
+## 验证记录
+
+自动检查在 GitHub Windows Server runner 上运行，项目和结果见发行页的 `build-validation.json`。Windows 10/11 桌面的热键、选区、中文输入法、显示缩放和剪贴板交互仍待实机验证。

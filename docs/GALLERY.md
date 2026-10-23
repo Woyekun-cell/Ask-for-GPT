@@ -1,8 +1,8 @@
 # 界面图廊
 
-[返回首页](../README.md) · [下载安装](INSTALL.macOS.zh-CN.md) · [Zotero 完整指南](ZOTERO.zh-CN.md) · [翻译后端配置](TRANSLATION-BACKENDS.zh-CN.md)
+[返回首页](../README.md) · [macOS 安装](INSTALL.macOS.zh-CN.md) · [Windows 安装](INSTALL.Windows.zh-CN.md) · [Zotero 完整指南](ZOTERO.zh-CN.md) · [翻译后端配置](TRANSLATION-BACKENDS.zh-CN.md)
 
-从遇到一个生词，到读完并标记整篇论文，Ask for GPT 把常用操作放在当前阅读环境中。下面按使用流程查看界面。
+Ask for GPT 提供 Windows 和 macOS 两个版本，把查词、翻译和提问放在当前阅读环境中。下面按使用流程查看 macOS版的阅读与写作界面，Windows版的安装与功能范围见[Windows 指南](INSTALL.Windows.zh-CN.md)。
 
 ## 在 Zotero 里双语读论文
 
