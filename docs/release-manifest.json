@@ -971,13 +971,13 @@
     },
     {
       "path": "README.en.md",
-      "bytes": 19753,
-      "sha256": "71a55eabc7e4d4e21b99bfdd96e85d273fffb5e9132a8dff414f43d75b8b6ae2"
+      "bytes": 20423,
+      "sha256": "b0345bbbba36f24f440a64557e1bbe7fc67d0dad854316449993b3beeaadf767"
     },
     {
       "path": "README.md",
-      "bytes": 16883,
-      "sha256": "bd74f4bac5a76843ff2bb7a227da842ad1b0814fcd7df36fcf845f840459632f"
+      "bytes": 17485,
+      "sha256": "72de61ae6885fa082a73b8132e7b0ccf9e89207c3780e289c2afa37e9baca677"
     },
     {
       "path": "Resources/AppIcon.icns",
@@ -1536,8 +1536,8 @@
     },
     {
       "path": "docs/GALLERY.md",
-      "bytes": 6159,
-      "sha256": "365ff7d0721582e06814ba91e385d8753ce9f42903aab77d338c07c4c1be5bc6"
+      "bytes": 7280,
+      "sha256": "d7a9b2f24fa4e93df640d818f2a80b330effe67b4831a242fd87b419234ae528"
     },
     {
       "path": "docs/HANDBOOK.zh-CN.md",
@@ -1561,8 +1561,8 @@
     },
     {
       "path": "docs/ZOTERO.zh-CN.md",
-      "bytes": 17088,
-      "sha256": "f1da467681c73ec13ae57805b4faa60ad6f0e79e63259c8bffb6ed2cd0c5eed4"
+      "bytes": 17682,
+      "sha256": "444ee2f7ae8e46d2c23c3560eddd8488df7fa11c7e1444c1ae9592d840790c92"
     },
     {
       "path": "docs/demo-source/READMEPreviews.swift",
@@ -1665,6 +1665,21 @@
       "sha256": "4f7fb803809008fbfa8b1b38cedfc3f0035c7703ee911eabc33fdf6a697f0676"
     },
     {
+      "path": "docs/images/zotero/live-figure-export.jpg",
+      "bytes": 328226,
+      "sha256": "60bddfeb6dda01974fcbec0f3393daf7e02ab7a044925f661e181cfba7ac064d"
+    },
+    {
+      "path": "docs/images/zotero/live-figure-preview.jpg",
+      "bytes": 326743,
+      "sha256": "fed68f3cef21a94b556c88f8dbd661650fa93de63d8fc998cb25485b748e8888"
+    },
+    {
+      "path": "docs/images/zotero/live-figure-zoom.jpg",
+      "bytes": 319281,
+      "sha256": "929ee15717a361014ec5c836dddce4a0468ac9b45b48eaddf3104fea040d2bbf"
+    },
+    {
       "path": "docs/images/zotero/live-independent.jpg",
       "bytes": 919368,
       "sha256": "29c5258815f049ccedad29bfbfe7d5f014043f0ed94cab19b832833159066bb2"
@@ -1676,8 +1691,8 @@
     },
     {
       "path": "docs/images/zotero/live-provenance.json",
-      "bytes": 5612,
-      "sha256": "fea6c1e7876f6df6266405060b3fbc36e31c7634a1eece6503be37586c0a860a"
+      "bytes": 7949,
+      "sha256": "6c813d0970d8c78d840241b6857fbf5f126e5ef6e97a534a3088ebecfb1d7698"
     },
     {
       "path": "docs/images/zotero/live-reading-tools.jpg",
@@ -1688,6 +1703,11 @@
       "path": "docs/images/zotero/live-translated.jpg",
       "bytes": 488536,
       "sha256": "997601619ba8a2328358fd5e24e2a50fb1b2ba5852b0ae855229ae85111f1a2d"
+    },
+    {
+      "path": "docs/images/zotero/live-word-palette.jpg",
+      "bytes": 986487,
+      "sha256": "c396b629be48b19f8549708f6835a81c2bac4468b4d07b9b3c047755f44f2cf5"
     },
     {
       "path": "docs/superpowers/plans/2026-10-22-windows-reading.md",

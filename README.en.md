@@ -80,6 +80,10 @@ Use the translated view to follow a section, then switch to side by side for a t
 
 Select words in either pane to see an established counterpart in the other language. You can move from English to Chinese or use the translation to find the original wording. This helps with terminology, verb choices, and modifiers in context.
 
+![Real pangenome selection and Chinese counterpart with the native eight-color palette](docs/images/zotero/live-word-palette.jpg)
+
+*Live capture: “pangenome” and “泛基因组” are selected in their respective panes, with Zotero’s native color palette open. This is a temporary selection; no annotation was saved for the capture.*
+
 Phrase mapping accounts for differences in word length and order. Where a reliable link exists, part of a Chinese selection can correspond to a complete English word while retaining the Chinese range you actually selected. Ordinary text selection does not automatically create an annotation, so you can look up or copy a phrase as you read.
 
 Enable **悬停释义** (hover gloss) in the sidebar for quick word lookup while reading. For a longer passage, select it and press **`⌥D`** to open the reading panel.
@@ -113,6 +117,10 @@ The **图表** (figures and tables) button opens an index with labels, page numb
 A figure jump switches scrolling to independent mode. Restore linked scrolling when you are ready to continue. The caption index is reused within the current PDF session. Completed translations are stored locally for longer-term reuse, matched by document content, page range, language direction, translation revision, and a backend configuration digest. A completed whole-document result can also supply an individual page.
 
 Click a figure, or hover over it and press **Space**, to open an independent preview. Zoom in to inspect labels, fit the image to the window, or export it as a PNG.
+
+![Real Fig. 1 in its native Preview window after successful PNG export](docs/images/zotero/live-figure-export.jpg)
+
+*Live Fig. 1 preview from the same paper. Zoom, Fit and Export PNG were exercised; “PNG exported” is the actual success status. [Preview and zoom examples](docs/GALLERY.md#独立放大图片并导出-png).*
 
 ### Return to your reading position
 

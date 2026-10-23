@@ -39,11 +39,13 @@
   "privacyReview": "The captures show the selected published paper and other published-paper tab titles. Library collections, private notes, account details, credentials and full source PDF are not included.",
   "validationScope": [
     "Visually confirmed original English and machine-translated Chinese in the real Zotero window.",
-    "Image file integrity and documented source attribution."
+    "Image file integrity and documented source attribution.",
+    "Real English pangenome and Chinese 泛基因组 selection correspondence with the native eight-color palette.",
+    "Real Fig. 1 separate-window preview; Zoom In, Fit, and successful native Export PNG operation."
   ],
   "limits": [
     "One paper and one cached translated physical page; no new model call or full-document quality audit.",
-    "Selection, saved annotations, hover popup and separate figure-preview window were not captured in this session.",
+    "The word selection/color palette and separate figure preview, zoom, fit and PNG export were captured in the follow-up session. No saved annotation was created, and a fresh hover popup or reading-resume overlay was not captured.",
     "Optional API/Claude Code connections, a clean Mac installation, and Windows 10/11 desktop interactions were not tested."
   ],
   "historicalAssets": [
@@ -122,11 +124,56 @@
       "sha256": "06b4da8d27d19250bd719066f917a68b42252ce3ca0b6d1c62fdee1e0641efdc",
       "capturedAt": "2026-10-23T22:27:26.664925+08:00",
       "view": "Figure index over original physical page 3 and cached Chinese page 1; untranslated right-side targets disabled"
+    },
+    {
+      "path": "docs/images/zotero/live-word-palette.jpg",
+      "mimeType": "image/jpeg",
+      "width": 2940,
+      "height": 1694,
+      "bytes": 986487,
+      "sha256": "c396b629be48b19f8549708f6835a81c2bac4468b4d07b9b3c047755f44f2cf5",
+      "capturedAt": "2026-10-23T23:12:01.452392+08:00",
+      "view": "Real native selection of pangenome in the English title and corresponding 泛基因组 in the cached Chinese title, with Zotero eight-color palette; no annotation saved."
+    },
+    {
+      "path": "docs/images/zotero/live-figure-preview.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1174,
+      "height": 1152,
+      "bytes": 326743,
+      "sha256": "fed68f3cef21a94b556c88f8dbd661650fa93de63d8fc998cb25485b748e8888",
+      "capturedAt": "2026-10-23T23:13:29.479097+08:00",
+      "view": "Native separate Preview window opened by clicking original Fig. 1 on physical PDF page 3, printed page 314; fit view."
+    },
+    {
+      "path": "docs/images/zotero/live-figure-zoom.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1174,
+      "height": 1152,
+      "bytes": 319281,
+      "sha256": "929ee15717a361014ec5c836dddce4a0468ac9b45b48eaddf3104fea040d2bbf",
+      "capturedAt": "2026-10-23T23:13:39.270208+08:00",
+      "view": "Native Preview window after Zoom In, showing an enlarged portion of Fig. 1."
+    },
+    {
+      "path": "docs/images/zotero/live-figure-export.jpg",
+      "mimeType": "image/jpeg",
+      "width": 1174,
+      "height": 1152,
+      "bytes": 328226,
+      "sha256": "60bddfeb6dda01974fcbec0f3393daf7e02ab7a044925f661e181cfba7ac064d",
+      "capturedAt": "2026-10-23T23:14:32.079294+08:00",
+      "view": "Native Preview window returned to Fit after successful PNG export, showing PNG exported status."
     }
   ],
   "historicalCaptureEnvironment": {
     "AskForGPT": "1.0.89",
     "Zotero": "9.0.6",
     "ZoteroPlugin": "0.3.28"
+  },
+  "followupExportCheck": {
+    "scope": "Local verification artifact only; original paper PDF and Zotero records were not edited.",
+    "bytes": 1023614,
+    "sha256": "f21de8093a39f5fbe7bb733a376afaf11a08f889ac107549530691600a3fde3d"
   }
 }

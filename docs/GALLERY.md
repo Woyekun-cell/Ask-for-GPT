@@ -28,6 +28,10 @@ Ask for GPT 提供 Windows 和 macOS 两个版本，把查词、翻译和提问�
 
 ## 从任意一侧核对词组
 
+![真实双向词语对应与原生八色浮层](images/zotero/live-word-palette.jpg)
+
+*英文 “pangenome” 与中文“泛基因组”同时显示对应选区。原生面板中的八色、高亮和下划线入口真实可见；此次仅划词和展开面板，未保存新标注。*
+
 在英文侧划选词语，可以查看中文对应；从中文侧划选，也可以回看英文表达。选区和语义单位结合，帮助核对专业词、动词搭配及修饰关系。
 
 ## 手动选择颜色，留下阅读记录
@@ -36,7 +40,7 @@ Ask for GPT 提供 Windows 和 macOS 两个版本，把查词、翻译和提问�
 
 ## 调整两侧阅读位置
 
-![实机对照阅读摘要与引言](images/zotero/live-independent.jpg)
+![实机独立滚动查看原文 Fig. 1 与中文第一页](images/zotero/live-independent.jpg)
 
 *原文 Fig. 1 在左侧，中文第一页保留在右侧。论文来源同上。*
 
@@ -51,6 +55,20 @@ Ask for GPT 提供 Windows 和 macOS 两个版本，把查词、翻译和提问�
 打开图表面板，按图题或表题查找位置。先选择左侧或右侧，再跳转；另一侧可以保留在当前段落，便于边看图表边读结果。
 
 单击论文图片，或悬停后按 **空格**，在独立预览窗口里放大看标签、适合窗口或导出 PNG。侧栏的 **悬停释义**便于就地查词，**重开时提示阅读位置**帮助下次回来接着读。已有与源文献匹配的完整本地译本时，可复用结果，也可作为普通 PDF 附件管理。
+
+## 独立放大图片并导出 PNG
+
+![真实论文 Fig. 1 在独立预览窗口中完整显示](images/zotero/live-figure-preview.jpg)
+
+*单击原文物理第 3 页（印刷页 314）的 Fig. 1 后打开的真实窗口。工具栏为缩小、适合窗口、放大和 PNG 导出。*
+
+![点击放大后查看 Fig. 1 的局部内容](images/zotero/live-figure-zoom.jpg)
+
+*点击 Zoom In 后放大查看局部，点击 Fit 可恢复完整图片。此图保留原始窗口截图，未另行裁切或拼图。*
+
+![真实 PNG 导出成功状态](images/zotero/live-figure-export.jpg)
+
+*通过原生保存面板实际导出 PNG，窗口显示 “PNG exported”。导出检查文件仅存放于本次工作目录，原 PDF 和 Zotero 文献记录未改动。*
 
 ## 在 Chrome、Preview 和 WPS 中继续阅读
 
@@ -76,4 +94,4 @@ Codex CLI 路径、提问模型、推理强度、可选翻译配置文件、自�
 
 双语阅读实机图取自 Liao 等的 [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x)（Nature, 2023；[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)），中文译文与排版由 Ask for GPT 生成。原文和许可见[官方 PMC 全文](https://pmc.ncbi.nlm.nih.gov/articles/PMC10172123/)；截图环境见[实机图来源](images/zotero/live-provenance.json)。
 
-本页 PDF 图已全部换成真实文献窗口截图。双向划词和保存标注仍有文字说明，本次未补拍相应操作图；没有用模拟选区或标注替代。截图环境为 macOS / Ask for GPT 1.1.37 / Zotero 9.0.6 / 插件 0.3.76，显示已有的单页中文译本，不代表整篇翻译验收。主程序与写作图保留原来源记录：[主程序图来源](images/provenance.json)。安装包和版本信息见[发行页](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38)。
+本页 PDF 图全部来自真实文献窗口。此次补拍了双向划词与原生八色面板、独立图片预览、放大及导出成功状态。未为截图保存新标注；悬停释义弹窗与重开位置提示仍未补拍。截图环境为 macOS / Ask for GPT 1.1.37 / Zotero 9.0.6 / 插件 0.3.76，显示已有的单页中文译本，不代表整篇翻译验收。主程序与写作图保留原来源记录：[主程序图来源](images/provenance.json)。安装包和版本信息见[发行页](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38)。
