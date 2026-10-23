@@ -4,11 +4,11 @@
 
 <img src="Resources/AppIcon.png" width="96" alt="Ask for GPT 图标">
 
-# Ask for GPT
+# 📖 Ask for GPT
 
-**读懂一篇论文，从眼前这个词开始。**
+**读论文时，少切几个窗口。**
 
-在 Zotero 里对照读 PDF，在网页中逐段看翻译，遇到问题随手提问，写作时看清建议再修改。
+划词查词、随手提问、网页和 PDF 双语阅读；阅读笔记留在 Zotero，写作时再把表达打磨顺一点。
 
 [![下载 macOS DMG](https://img.shields.io/badge/下载_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.dmg)
 [![下载 ZIP](https://img.shields.io/badge/下载-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.zip)
@@ -19,7 +19,7 @@
 
 </div>
 
-Ask for GPT 是面向文献阅读和学术写作的 macOS 工具。阅读时，你可以查一个单词、翻译一段正文，也可以把整篇 PDF 放在原文旁边精读。遇到难懂的表述，带着选段继续提问；形成自己的文字后，再用写作建议检查拼写和表达。
+读论文时，查词、翻译和提问最好都能顺着阅读的节奏来。Ask for GPT 把这些事接在一起：在 macOS 上划词查词、带着选段提问，在网页和 PDF 中对照阅读，把标注和笔记留在 Zotero，写作时再检查拼写、打磨表达。项目还在持续更新，会沿着读文献和写作中的实际需求继续完善。
 
 它保留你熟悉的工作环境：Zotero 原有的文献标签和标注、Chrome 正在阅读的网页，以及 Word 中的稿件。英文单词优先查本地词典；AI 功能默认使用你自己的 ChatGPT 登录会话，翻译另有可选的配置文件接入方式。
 
