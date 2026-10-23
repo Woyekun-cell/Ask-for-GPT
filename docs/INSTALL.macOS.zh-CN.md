@@ -6,7 +6,7 @@
 
 ## 先选对下载文件
 
-在 GitHub Releases 的 **Assets** 中下载 `Ask-for-GPT-1.0.85-macOS-arm64.dmg`。如果你更习惯解压文件，也可以选同版本的 `.zip`；两者内容相同。
+在 GitHub Releases 的 **Assets** 中下载 `Ask-for-GPT-1.1.38-macOS-arm64.dmg`。如果你更习惯解压文件，也可以选同版本的 `.zip`；两者内容相同。
 
 当前安装版适用于 **Apple Silicon Mac（M1、M2、M3、M4 等 M 系列芯片）**。可以在苹果菜单 **关于本机**中查看芯片。完整 PDF 支持需要 macOS 15 或更新版本；Apple 本机短段翻译需要 macOS 26 和对应语言包。Intel Mac 暂无此安装包。
 
@@ -131,5 +131,5 @@ Word/WPS 写作加载项还需要单独的 localhost HTTPS 配置。若需要写
 每次 Release 附带 `SHA256SUMS.txt`。下载后可以在终端检查安装包，输出应与文件内对应行相同：
 
 ```bash
-shasum -a 256 ~/Downloads/Ask-for-GPT-1.0.85-macOS-arm64.dmg
+shasum -a 256 ~/Downloads/Ask-for-GPT-1.1.38-macOS-arm64.dmg
 ```

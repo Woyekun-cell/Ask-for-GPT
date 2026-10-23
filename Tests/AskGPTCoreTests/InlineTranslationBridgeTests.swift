@@ -90,6 +90,123 @@ struct InlineTranslationBridgeTests {
         await bridge.shutdown()
     }
 
+    @Test func lookupValidUnlistedWordReturnsAnEmptyEntryWithoutTranslation() async throws {
+        let calls = InlineTestCalls()
+        let bridge = try makeBridge { text in await calls.record(text); return "must not translate" }
+        let body = try JSONSerialization.data(withJSONObject: ["word": "zzqvneverlistedword"])
+        let response = await bridge.handleRequest(request(path: "/v1/inline/lookup", body: body))
+        #expect(response.status == 200)
+        #expect(try json(response)["entry"] is NSNull)
+        #expect(await calls.texts.isEmpty)
+        await bridge.shutdown()
+    }
+
+    @Test func lookupRejectsInvalidWordAndUnexpectedFields() async throws {
+        let calls = InlineTestCalls()
+        let bridge = try makeBridge { text in await calls.record(text); return "must not translate" }
+        for object: [String: Any] in [["word": "two words"], ["word": "IL6"], ["word": "中文"],
+                                    ["word": ""], ["word": 42], ["text": "table"],
+                                    ["word": "table", "source": "en"],
+                                    ["word": String(repeating: "a", count: 513)]] {
+            let body = try JSONSerialization.data(withJSONObject: object)
+            let response = await bridge.handleRequest(request(path: "/v1/inline/lookup", body: body))
+            #expect(response.status == 400)
+        }
+        #expect(await calls.texts.isEmpty)
+        await bridge.shutdown()
+    }
+
+    @Test func lookupReturnsNormalizedQueryHeadwordPhoneticAndAllSenses() async throws {
+        let provider = InlineWordFixtureProvider()
+        let bridge = try makeBridge(wordLookupEngine: WordLookupEngine(provider: provider)) { _ in
+            Issue.record("Dictionary requests must not enter translation")
+            return "unused"
+        }
+        let response = await bridge.handleRequest(lookupRequest(" “tables,” "))
+        #expect(response.status == 200)
+        let object = try json(response)
+        #expect(Set(object.keys) == ["entry"])
+        let entry = try #require(object["entry"] as? [String: Any])
+        #expect(Set(entry.keys) == ["query", "headword", "phonetic", "senses"])
+        #expect(entry["query"] as? String == "tables")
+        #expect(entry["headword"] as? String == "table")
+        #expect(entry["phonetic"] as? String == "ˈteɪbəl")
+        let senses = try #require(entry["senses"] as? [[String: Any]])
+        #expect(senses.count == 2)
+        #expect(senses.first?["partOfSpeech"] as? String == "n.")
+        #expect(senses.first?["meanings"] as? [String] == ["桌子", "表格"])
+        #expect(senses.last?["partOfSpeech"] as? String == "vt.")
+        #expect(senses.last?["meanings"] as? [String] == ["制表"])
+        let noPhonetic = await bridge.handleRequest(lookupRequest("gene"))
+        let gene = try #require(json(noPhonetic)["entry"] as? [String: Any])
+        #expect(gene["phonetic"] is NSNull)
+        #expect(gene["query"] as? String == "gene")
+        #expect(await provider.queries == ["tables", "gene"])
+        await bridge.shutdown()
+    }
+
+    @Test func lookupKeepsAuthenticationAndOriginChecksBeforeDictionaryAccess() async throws {
+        let provider = InlineWordFixtureProvider()
+        let bridge = try makeBridge(wordLookupEngine: WordLookupEngine(provider: provider)) { _ in "unused" }
+        for (headers, status) in [(["authorization": "Bearer invalid"], 401),
+                                  (["host": "localhost:0"], 403),
+                                  (["origin": "https://example.com"], 403)] {
+            #expect(await bridge.handleRequest(lookupRequest("table", headers: headers)).status == status)
+        }
+        #expect(await provider.queries.isEmpty)
+        let preflight = await bridge.handleRequest(request(method: "OPTIONS", path: "/v1/inline/lookup", headers: [
+            "origin": origin, "authorization": "", "access-control-request-method": "POST",
+            "access-control-request-headers": "Authorization, Content-Type"]))
+        #expect(preflight.status == 204)
+        #expect(preflight.headers["Access-Control-Allow-Origin"] == origin)
+        #expect(await bridge.handleRequest(lookupRequest("table", headers: ["origin": origin])).status == 200)
+        #expect(await bridge.handleRequest(lookupRequest("table", headers: ["content-type": "text/plain"])).status == 415)
+        #expect(await bridge.handleRequest(request(method: "GET", path: "/v1/inline/lookup")).status == 404)
+        #expect(await provider.queries == ["table"])
+        await bridge.shutdown()
+    }
+
+    @Test func lookupUsesShippedDictionaryAndPreservesExactSpellingsAndAcronyms() async throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let database = root.appendingPathComponent("Resources/Dictionary/words.sqlite")
+        let engine = WordLookupEngine(databaseURL: database)
+        let bridge = try makeBridge(wordLookupEngine: engine) { _ in
+            Issue.record("Dictionary requests must not enter translation")
+            return "unused"
+        }
+        let response = await bridge.handleRequest(lookupRequest("tables"))
+        #expect(response.status == 200)
+        let entry = try #require(json(response)["entry"] as? [String: Any])
+        #expect(entry["headword"] as? String == "tables", "the dictionary has a direct tables entry, which must outrank its table alias")
+        #expect(entry["query"] as? String == "tables")
+        let acronym = await bridge.handleRequest(lookupRequest("ZZQVNOLIST"))
+        #expect(acronym.status == 200)
+        #expect(try json(acronym)["entry"] is NSNull)
+        #expect(await bridge.handleRequest(lookupRequest("PaEprs1a")).status == 400)
+        await bridge.shutdown()
+    }
+
+    @Test func lookupIsIndependentOfAnActiveTranslationAndSharesItsWordCache() async throws {
+        let provider = InlineWordFixtureProvider(delayNanoseconds: 30_000_000), gate = InlineTestGate()
+        let bridge = try makeBridge(wordLookupEngine: WordLookupEngine(provider: provider)) { _ in
+            await gate.wait(); return "译文"
+        }
+        let pendingTranslation = Task { await bridge.handleRequest(request()) }
+        defer { Task { await gate.release() } }
+        try await waitFor { await gate.started }
+        async let first = bridge.handleRequest(lookupRequest("tables"))
+        async let second = bridge.handleRequest(lookupRequest("tables"))
+        let responses = await [first, second]
+        #expect(responses.allSatisfy { $0.status == 200 })
+        #expect(try json(responses[0])["entry"] is [String: Any])
+        #expect(await provider.queries == ["tables"])
+        #expect(await bridge.handleRequest(lookupRequest("tables")).status == 200)
+        #expect(await provider.queries == ["tables"])
+        await gate.release()
+        #expect(await pendingTranslation.value.status == 200)
+        await bridge.shutdown()
+    }
+
     @Test func strictHostAndPairedOriginAreEnforcedBeforeTranslation() async throws {
         let calls = InlineTestCalls()
         let bridge = try makeBridge { text in await calls.record(text); return "译文" }
@@ -489,10 +606,16 @@ struct InlineTranslationBridgeTests {
     }
 
     private func makeBridge(port: UInt16 = 0, timeout: Double = 2,
+                            wordLookupEngine: WordLookupEngine = WordLookupEngine(),
                             handler: @escaping @Sendable (String) async throws -> String) throws -> InlineTranslationBridge {
         let configuration = try InlineConnectionConfiguration(token: token, extensionID: extensionID)
         return InlineTranslationBridge(configuration: configuration, port: port, translationTimeout: timeout,
+            wordLookupEngine: wordLookupEngine,
             translatorFactory: { { text, _, _ in try await handler(text) } })
+    }
+    private func lookupRequest(_ word: String, headers: [String: String] = [:]) -> InlineHTTPRequest {
+        request(path: "/v1/inline/lookup", headers: headers,
+                body: try! JSONSerialization.data(withJSONObject: ["word": word]))
     }
     private func request(method: String = "POST", path: String = "/v1/inline/translate", id: String = "paragraph-1",
                          text: String = "A synthetic English paragraph.", port: UInt16 = 0,
@@ -539,6 +662,23 @@ struct InlineTranslationBridgeTests {
 private actor InlineTestCalls {
     private(set) var texts: [String] = []
     func record(_ text: String) { texts.append(text) }
+}
+private actor InlineWordFixtureProvider: WordLookupProviding {
+    private(set) var queries: [String] = []
+    let delayNanoseconds: UInt64
+    init(delayNanoseconds: UInt64 = 0) { self.delayNanoseconds = delayNanoseconds }
+    func entry(for word: String) async throws -> WordEntry? {
+        queries.append(word)
+        if delayNanoseconds > 0 { try await Task.sleep(nanoseconds: delayNanoseconds) }
+        switch word {
+        case "table", "tables":
+            return WordEntry(headword: "table", phonetic: "ˈteɪbəl", senses: [
+                .init(partOfSpeech: "n.", meanings: ["桌子", "表格"]),
+                .init(partOfSpeech: "vt.", meanings: ["制表"])])
+        case "gene": return WordEntry(headword: "gene", senses: [.init(partOfSpeech: "n.", meanings: ["基因"])])
+        default: return nil
+        }
+    }
 }
 private actor InlineNativeDirectionSpy: NativeTranslationDriver {
     struct Call: Equatable { let text: String; let source: String; let target: String }

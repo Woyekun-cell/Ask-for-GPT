@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
   "captureMethod": "CUA native Zotero window screenshot",
-  "processing": "Unmodified window capture. No crop, retouching, compositing, or generated interface content. Original JPEG bytes retained.",
+  "processing": "Unmodified native window JPEG captures. No cropping, compositing, retouching or generated UI. Original capture bytes retained.",
   "captureEnvironment": {
     "macOS": "26.6.2",
     "Zotero": "9.0.6",
-    "AskForGPT": "1.0.89",
-    "ZoteroPlugin": "0.3.28"
+    "AskForGPT": "1.1.37",
+    "ZoteroPlugin": "0.3.76"
   },
   "distributionRelease": {
-    "version": "1.0.85",
-    "url": "https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.0.85",
-    "relationship": "The capture environment is a later installed version; these images do not establish cross-version release acceptance."
+    "version": "1.1.38",
+    "url": "https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38",
+    "relationship": "Screenshots captured from installed 1.1.37 with reader plugin 0.3.76. New release built and tested separately; screenshots are not acceptance evidence for the 1.1.38 binary or Windows."
   },
   "paper": {
     "title": "A draft human pangenome reference",
@@ -27,7 +27,8 @@
     "license": "CC BY 4.0",
     "licenseURL": "https://creativecommons.org/licenses/by/4.0/",
     "licenseEvidenceURL": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10172123/",
-    "sourcePDFSHA256": "f850d6528541c068348f53497a9b8cf2f88db95b58c25bf1ed8ecb52bfb5972e"
+    "sourcePDFSHA256": "f850d6528541c068348f53497a9b8cf2f88db95b58c25bf1ed8ecb52bfb5972e",
+    "additionalLicenseEvidenceURL": "https://digitalcommons.wustl.edu/oa_4/2130/"
   },
   "content": {
     "left": "Published English original",
@@ -35,7 +36,17 @@
     "translationRoute": "Existing default Codex route; cached single-page translation",
     "adaptationNotice": "Translation and typesetting are adaptations. The original authors and publisher did not produce or endorse the machine translation."
   },
-  "assets": [
+  "privacyReview": "The captures show the selected published paper and other published-paper tab titles. Library collections, private notes, account details, credentials and full source PDF are not included.",
+  "validationScope": [
+    "Visually confirmed original English and machine-translated Chinese in the real Zotero window.",
+    "Image file integrity and documented source attribution."
+  ],
+  "limits": [
+    "One paper and one cached translated physical page; no new model call or full-document quality audit.",
+    "Selection, saved annotations, hover popup and separate figure-preview window were not captured in this session.",
+    "Optional API/Claude Code connections, a clean Mac installation, and Windows 10/11 desktop interactions were not tested."
+  ],
+  "historicalAssets": [
     {
       "path": "docs/images/zotero/live-bilingual-reading.jpg",
       "mimeType": "image/jpeg",
@@ -61,14 +72,61 @@
       "printedPage": "312"
     }
   ],
-  "privacyReview": "The captures show the selected published paper and other published-paper tab titles. Library collections, private notes, account details, credentials and full source PDF are not included.",
-  "validationScope": [
-    "Visually confirmed original English and machine-translated Chinese in the real Zotero window.",
-    "Image file integrity and documented source attribution."
+  "assets": [
+    {
+      "path": "docs/images/zotero/live-bilingual.jpg",
+      "mimeType": "image/jpeg",
+      "width": 2940,
+      "height": 1694,
+      "bytes": 999614,
+      "sha256": "4f7fb803809008fbfa8b1b38cedfc3f0035c7703ee911eabc33fdf6a697f0676",
+      "capturedAt": "2026-10-23T22:25:30.643683+08:00",
+      "view": "Original and cached Chinese page 1 in two panes"
+    },
+    {
+      "path": "docs/images/zotero/live-translated.jpg",
+      "mimeType": "image/jpeg",
+      "width": 2940,
+      "height": 1694,
+      "bytes": 488536,
+      "sha256": "997601619ba8a2328358fd5e24e2a50fb1b2ba5852b0ae855229ae85111f1a2d",
+      "capturedAt": "2026-10-23T22:26:50.186331+08:00",
+      "view": "Cached Chinese page 1 only"
+    },
+    {
+      "path": "docs/images/zotero/live-independent.jpg",
+      "mimeType": "image/jpeg",
+      "width": 2940,
+      "height": 1694,
+      "bytes": 919368,
+      "sha256": "29c5258815f049ccedad29bfbfe7d5f014043f0ed94cab19b832833159066bb2",
+      "capturedAt": "2026-10-23T22:27:24.110888+08:00",
+      "view": "Original physical page 3 Fig. 1 and Chinese page 1; independent scrolling"
+    },
+    {
+      "path": "docs/images/zotero/live-reading-tools.jpg",
+      "mimeType": "image/jpeg",
+      "width": 2940,
+      "height": 1694,
+      "bytes": 953685,
+      "sha256": "47a43b7112ca37f15d155d7bd959ed578501b4b73eb26d4256e6bdf56de703f3",
+      "capturedAt": "2026-10-23T22:26:11.149135+08:00",
+      "view": "More menu over real bilingual page 1"
+    },
+    {
+      "path": "docs/images/zotero/live-navigation.jpg",
+      "mimeType": "image/jpeg",
+      "width": 2940,
+      "height": 1694,
+      "bytes": 802858,
+      "sha256": "06b4da8d27d19250bd719066f917a68b42252ce3ca0b6d1c62fdee1e0641efdc",
+      "capturedAt": "2026-10-23T22:27:26.664925+08:00",
+      "view": "Figure index over original physical page 3 and cached Chinese page 1; untranslated right-side targets disabled"
+    }
   ],
-  "limits": [
-    "One paper, one translated physical page. Not a full-document or translation-quality audit.",
-    "Word correspondence became unavailable during this capture session; word-alignment readiness is not claimed.",
-    "The optional API and Claude Code routes were not tested during this screenshot update."
-  ]
+  "historicalCaptureEnvironment": {
+    "AskForGPT": "1.0.89",
+    "Zotero": "9.0.6",
+    "ZoteroPlugin": "0.3.28"
+  }
 }

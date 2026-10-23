@@ -140,5 +140,10 @@ async function entries(pages,options={}){const f=fixture(pages),result=await Fig
     for(const view of [[-10,20,590,820],foreign,undefined,[0,0,600,0],[0,0,NaN,800],[0,0,600,Infinity],[0,0,600]]){const page={view,getTextContent:async()=>({items:[item('Fig. 1 | Genome overview.',40,650)]})},document={numPages:1,getPage:async()=>page},[entry]=await Figures.create(document).scan();assert.equal(entry.top,650);assert.equal(entry.left,40);if(view===foreign||view?.length===4&&view[0]===-10){assert.equal(entry.pageTop,820);assert.equal(entry.pageHeight,800);}else{assert.equal(Object.hasOwn(entry,'pageTop'),false);assert.equal(Object.hasOwn(entry,'pageHeight'),false);}}
     const page={get view(){throw Error('PRIVATE_PAGE_PATH');},getTextContent:async()=>({items:[item('Table 1 | Variant classes.')]})},[entry]=await Figures.create({numPages:1,getPage:async()=>page}).scan();assert.equal(Object.hasOwn(entry,'pageTop'),false);assert.equal(entry.top,700);
   });
+  await check('first captions publish before a slow second page and partial cache publishes synchronously on reopen',async()=>{
+    let release;const seen=[],document={numPages:2,async getPage(number){return {getTextContent:async()=>{if(number===2)await new Promise(resolve=>release=resolve);return {items:[item('Fig. '+number+' | Genome overview.')]};}};}};
+    const scanner=Figures.create(document,{eagerFirstBatch:true,onBatch:value=>seen.push(value)}),pending=scanner.scan();await tick();assert.equal(seen.length,1);assert.equal(seen[0].entries[0].label,'Fig. 1');
+    const reopened=[];const next=Figures.create(document,{onBatch:value=>reopened.push(value)}).scan();assert.equal(reopened[0].entries[0].label,'Fig. 1');release();await Promise.all([pending,next]);assert.equal(seen.at(-1).done,true);
+  });
   console.log(checks+' local PDF figure navigation tests passed');
 })().catch(error=>{console.error(error);process.exitCode=1;});

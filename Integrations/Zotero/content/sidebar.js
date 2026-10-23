@@ -6,7 +6,7 @@
     scope: ['范围', 'Scope'], current: ['当前页', 'Current page'], whole: ['整篇', 'Whole document'],
     mode: ['显示', 'View'], mono: ['译文', 'Translation'], dual: ['中英对照', 'Side by side'],
     direction: ['方向', 'Direction'], 'en-zh': ['EN → 中', 'EN → 中'], 'zh-en': ['中 → EN', '中 → EN'],
-    translate: ['翻译', 'Translate'], original: ['原文', 'Original'],
+    translate: ['翻译', 'Translate'], original: ['原文', 'Original'], hover: ['悬停释义', 'Hover dictionary'], resume: ['重开时提示阅读位置', 'Highlight reading position on reopen'],
     'progress-preparing': ['准备中', 'Preparing'], 'progress-translating': ['翻译中', 'Translating'],
     'progress-layout': ['排版中', 'Laying out'], 'progress-loading': ['加载译文', 'Loading translation']
   };
@@ -69,6 +69,8 @@
         panel.pending = false;
       }
       panel.scope.value = choice.whole ? 'whole' : 'current'; panel.mode.value = choice.mode; panel.direction.value = choice.direction;
+      panel.hover.checked = actions.hoverEnabled?.() !== false;
+      panel.resume.checked = actions.resumeEnabled?.() !== false;
       const busy = panel.pending || panel.state.busy;
       panel.translate.disabled = busy; panel.original.disabled = !(busy || panel.state.open);
       panel.body.setAttribute('aria-busy', String(busy)); panel.translate.setAttribute('aria-busy', String(busy));
@@ -110,6 +112,12 @@
       panel.progressGroup.append(panel.progressLabel, panel.progressMeter); container.appendChild(panel.progressGroup);
       panel.mode = menu('mode', [['mono', 'mono'], ['dual', 'dual']]);
       panel.direction = menu('direction', [['en-zh', 'en-zh'], ['zh-en', 'zh-en']]);
+      panel.hover = localized(xul(doc,'checkbox'),'hover','label');
+      panel.hover.setAttribute('data-askgpt-control','hover');container.appendChild(panel.hover);
+      listen(panel,panel.hover,'command',()=>{if(current(panel))actions.setHoverEnabled?.(panel.hover.checked===true);});
+      panel.resume = localized(xul(doc,'checkbox'),'resume','label');
+      panel.resume.setAttribute('data-askgpt-control','resume');container.appendChild(panel.resume);
+      listen(panel,panel.resume,'command',()=>{if(current(panel))actions.setResumeEnabled?.(panel.resume.checked===true);});
       const buttons = xul(doc, 'hbox'); buttons.setAttribute('style', 'gap: 6px; margin-top: 2px;');
       for (const key of ['translate', 'original']) {
         panel[key] = localized(xul(doc, 'button'), key, 'label'); panel[key].setAttribute('data-askgpt-control', key);
@@ -120,7 +128,7 @@
       listen(panel, panel.direction, 'command', () => { if (current(panel)) { choice.direction = panel.direction.value === 'zh-en' ? 'zh-en' : 'en-zh'; draftFields.get(reader).add('direction'); } });
       listen(panel, panel.mode, 'command', () => {
         if (!current(panel)) return;
-        choice.mode = panel.mode.value === 'dual' ? 'dual' : 'mono'; actions.setMode(reader, choice.mode);
+        choice.mode = panel.mode.value === 'dual' ? 'dual' : 'mono'; draftFields.get(reader).add('mode'); actions.setMode(reader, choice.mode);
       });
       listen(panel, panel.translate, 'command', () => {
         if (!current(panel) || panel.pending || state(reader).busy) return;

@@ -10,30 +10,48 @@ async function startup(data, reason) {
   await Zotero.initializationPromise;
   await Zotero.uiReadyPromise;
   if (generation !== askGPTInlineGeneration || !/^9\./.test(Zotero.version)) return;
-  const scope = { Zotero, Services, Components, ChromeUtils };
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/inline-core.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-layout.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-pane-gestures.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-reading-tools.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-selection-link.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-figure-navigation.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-figure-panel.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-scroll-sync.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/pdf-native-view.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/sidebar.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/connection-security.js', scope);
-  Services.scriptloader.loadSubScript(data.rootURI + 'content/inline.js', scope);
+  const scope = { Zotero, Services, Components, ChromeUtils, IOUtils };
+  // Match Zotero's plugin bootstrap loader: a replaced XPI keeps the same URI,
+  // so its owned modules must not reuse bytecode from an older plugin build.
+  const loadScript=path=>Services.scriptloader.loadSubScriptWithOptions(data.rootURI+path,{target:scope,ignoreCache:true});
+  loadScript('content/inline-core.js');
+  loadScript('content/pdf-layout.js');
+  loadScript('content/pdf-local-version.js');
+  loadScript('content/pdf-pane-gestures.js');
+  loadScript('content/pdf-reading-tools.js');
+  loadScript('content/pdf-hover-gloss.js');
+  loadScript('content/pdf-reading-resume.js');
+  loadScript('content/pdf-reading-resume-store.js');
+  loadScript('content/pdf-selection-link.js');
+  loadScript('content/pdf-figure-navigation.js');
+  loadScript('content/pdf-figure-panel.js');
+  loadScript('content/pdf-figure-markup.js');
+  loadScript('content/pdf-figure-markup-store.js');
+  loadScript('content/pdf-figure-region.js');
+  loadScript('content/pdf-figure-bridge.js');
+  loadScript('content/pdf-figure-reader.js');
+  loadScript('content/pdf-figure-window.js');
+  loadScript('content/pdf-figure-preview.js');
+  loadScript('content/pdf-scroll-sync.js');
+  loadScript('content/pdf-native-view.js');
+  loadScript('content/sidebar.js');
+  loadScript('content/connection-security.js');
+  loadScript('content/inline.js');
   const css = await Zotero.File.getContentsFromURLAsync(data.rootURI + 'content/inline.css');
   if (generation !== askGPTInlineGeneration) return;
   let diagnosticWrite = Promise.resolve();
+  const diagnosticStarted=Date.now();
+  const figureRecords=[],pdfRecords=[];
   const reportDiagnostic = (stage, error) => {
     const record = scope.AskGPTPDFLayout.diagnostic(stage, error);
+    record.elapsedMilliseconds=Math.max(0,Date.now()-diagnosticStarted);
+    const records=stage.startsWith('figure')?figureRecords:pdfRecords;records.push({...record});if(records.length>12)records.shift();record.recentRecords=records.slice();
     diagnosticWrite = diagnosticWrite.then(async () => {
       await scope.AskGPTConnectionSecurity.writeDiagnostic({ Zotero, Services, Components, ChromeUtils }, record);
     }).catch(() => {});
     return diagnosticWrite;
   };
-  scope.instance = scope.AskGPTInline.create({ Zotero, Services, Components, ChromeUtils, css, reportDiagnostic,
+  scope.instance = scope.AskGPTInline.create({ Zotero, Services, Components, ChromeUtils, IOUtils, css, reportDiagnostic,
     pluginID: data.id, rootURI: data.rootURI, readText: path => Zotero.File.getContentsAsync(path, 'UTF-8', 4096),
     setTimer: setTimeout, clearTimer: clearTimeout });
   askGPTInlineScope = scope;

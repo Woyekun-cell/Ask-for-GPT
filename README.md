@@ -10,10 +10,12 @@
 
 划词查词、随手提问、网页和 PDF 双语阅读；阅读笔记留在 Zotero，写作时再把表达打磨顺一点。
 
-[![下载 macOS DMG](https://img.shields.io/badge/下载_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.dmg)
-[![下载 ZIP](https://img.shields.io/badge/下载-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.zip)
+[![下载 macOS DMG](https://img.shields.io/badge/下载_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.dmg)
+[![下载 ZIP](https://img.shields.io/badge/下载-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.zip)
 
-**macOS v1.0.85 · Apple Silicon · macOS 15+**
+[![下载 Windows](https://img.shields.io/badge/下载_Windows-x64-0078D4?style=for-the-badge&logo=windows)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe)
+
+**macOS v1.1.38 · Apple Silicon · macOS 15+ | Windows x64 v0.1.0-preview.1**
 
 [macOS 安装](docs/INSTALL.macOS.zh-CN.md) · [Windows 安装](docs/INSTALL.Windows.zh-CN.md) · [Zotero 阅读指南](docs/ZOTERO.zh-CN.md) · [翻译后端配置](docs/TRANSLATION-BACKENDS.zh-CN.md) · [界面图廊](docs/GALLERY.md) · [发行记录](https://github.com/Woyekun-cell/Ask-for-GPT/releases) · [反馈问题](https://github.com/Woyekun-cell/Ask-for-GPT/issues)
 
@@ -25,14 +27,16 @@ Ask for GPT 提供 Windows 和 macOS 两个版本，把划词查词、带着选�
 
 ## 下载与安装
 
-**Windows版（x64）：** [发行入口（安装包待上传）](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/windows-v0.1.0-preview.1) · [安装与配置](docs/INSTALL.Windows.zh-CN.md)。提供划词、离线词典、段落翻译与提问、Chrome/Zotero 阅读集成、PDF 对照及可配置翻译后端。[构建与检查记录](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml)见工作流。下方界面展示使用 macOS版。
+**Windows版（x64）：** [Windows 安装包与便携版](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38) · [安装与配置](docs/INSTALL.Windows.zh-CN.md)。提供划词、离线词典、段落翻译与提问、Chrome/Zotero 阅读集成、PDF 对照及可配置翻译后端。[构建与检查记录](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml)见工作流。下方界面展示使用 macOS版。
+
+本次 macOS 更新包含悬停释义、重开阅读位置提示、图表独立预览、完整本地译本复用，以及阅读布局和缓存改进。Windows 包沿用独立验证的 `0.1.0-preview.1` 构建（源码 `05348ad`），上述新阅读功能不代表已同步进入该预览包。
 
 macOS版可直接下载上方安装包。应用本体约 **48 MB**，包含约 40 万条英文词条、Chrome/Zotero 插件和写作集成资源。
 
 | 下载 | 适合怎样安装 |
 | --- | --- |
-| [DMG 安装包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.dmg) | 推荐。打开磁盘映像，将应用拖入“应用程序”，按随包指引完成首次设置 |
-| [ZIP 压缩包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.zip) | 解压后安装；包含相同应用和准备脚本 |
+| [DMG 安装包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.dmg) | 推荐。打开磁盘映像，将应用拖入“应用程序”，按随包指引完成首次设置 |
+| [ZIP 压缩包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.zip) | 解压后安装；包含相同应用和准备脚本 |
 | [源码](https://github.com/Woyekun-cell/Ask-for-GPT/archive/refs/heads/main.zip) | 自行构建、阅读实现或修改集成；开发步骤见[源码手册](docs/HANDBOOK.zh-CN.md) |
 
 macOS 首次设置分四步：
@@ -58,7 +62,7 @@ macOS 首次设置分四步：
 
 在 Zotero 打开 PDF，右侧 **PDF 翻译**面板提供 **范围、显示、方向**三个选择。先用 **当前页 + 中英对照 + EN → 中**阅读摘要或关键结果，确认文章相关，再把范围改为 **整篇**继续处理。中文文献也可以选 **中 → EN**。
 
-![Zotero 双语阅读：英文原文与中文译文并排显示](docs/images/zotero/live-bilingual-reading.jpg)
+![Zotero 双语阅读：英文原文与中文译文并排显示](docs/images/zotero/live-bilingual.jpg)
 
 *Zotero 双语阅读 · Liao 等，[A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x)（Nature, 2023；[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）。右侧为 Ask for GPT 生成的中文机器译文与排版。*
 
@@ -68,7 +72,7 @@ macOS 首次设置分四步：
 
 顶部的 **原文 / 译文 / 对照**适合三种阅读方式：看原句、连贯读译文，或左右核对。译文重新排入 PDF 页面，保留图表与正文的布局关系；对照视图左侧原文、右侧译文，使用两个原生 PDF 阅读窗格。
 
-![Zotero 译文视图与整篇处理进度](docs/images/zotero/02-views.png)
+![Zotero 译文视图：已完成的第一页](docs/images/zotero/live-translated.jpg)
 
 读一节内容时可以先用译文，遇到术语、公式或关键结论再切回对照。切换显示方式会复用完成结果；原 PDF、文献身份和阅读进度继续沿用原附件。
 
@@ -76,15 +80,11 @@ macOS 首次设置分四步：
 
 在对照视图任意一侧划选词语，另一侧会显示已经建立的对应选区。可以从英文查看中文意思，也可以从中文回看英文用词。专业术语、动词搭配和句中修饰关系，都能放在上下文中核对。
 
-![双向词组选择与 Zotero 原生颜色浮层](docs/images/zotero/03-selection.png)
-
 词语对应会处理两种语言的词长与顺序差异。有可靠对应时，中文的部分选区可以关联到完整英文词，同时保留你实际选中的中文范围。只想查词或复制文本时，选中后继续操作即可；普通划选不会自动创建标注。
 
 ### 用原生八色标注留下自己的阅读记录
 
 选择正文后，使用 Zotero 原生八色浮层手动保存高亮或下划线。译文侧保存的标注会关联到原 PDF 的相应文字位置，并保留译文摘录。之后仍可在 Zotero 标注列表中添加评论、改色和定位。
-
-![手动保存蓝色标注，原文与译文显示对应内容](docs/images/zotero/04-annotations.png)
 
 再次切回原文或重开对照视图，已有标注会按对应关系重新显示。你可以把颜色留给自己的阅读习惯：疑问、方法、证据、结论，由你决定如何整理。
 
@@ -92,11 +92,11 @@ macOS 首次设置分四步：
 
 **联动**适合顺着文章连续读：在任意一侧滚动，另一侧跟随。点击后切为 **独立**，就能把一侧停在结果段，另一侧向前查方法或术语。准备继续时，再恢复联动，以当前阅读侧重新对齐。
 
-![实机对照阅读同一页的英文摘要与中文译文](docs/images/zotero/live-abstract-detail.jpg)
+![实机独立滚动：原文 Fig. 1 与中文第一页](docs/images/zotero/live-independent.jpg)
 
-*独立滚动，对照查看摘要与正文。论文来源同上。*
+*左侧查看原文 Fig. 1，右侧保留已完成的中文第一页。论文来源同上。*
 
-![联动与独立滚动，以及更多菜单中的同步大小](docs/images/zotero/05-reading-tools.png)
+![联动与独立滚动，以及更多菜单中的同步大小](docs/images/zotero/live-reading-tools.jpg)
 
 两侧大小不一致时，用 **⋯ → 同步大小**把另一侧缩放比例调整到当前侧。更多菜单还提供 **本页 / 整份**、停止、重试、缩小、适合宽度和放大；按住 **Option** 单击段落，可以聚焦正在读的部分。若词语对应仍在准备，页面可以继续阅读；已有译本时，重试会优先补齐需要的对应信息。
 
@@ -104,7 +104,7 @@ macOS 首次设置分四步：
 
 点击 **图表**打开图表索引，按编号、页次和标题摘录查找。选择 **左侧**或 **右侧**后再点击条目，所选窗格跳到图表，另一侧保留当前位置。读到“见 Fig. 3”时，可以一边看图，一边保留结果段。
 
-![图表索引选择跳转侧，保留另一侧阅读位置](docs/images/zotero/06-navigation.png)
+![图表索引选择跳转侧，保留另一侧阅读位置](docs/images/zotero/live-navigation.jpg)
 
 图表跳转会切为独立滚动。查看结束后，恢复联动即可继续精读。单击论文图片，或悬停后按 **空格**，可以打开独立预览窗口，缩放、适合窗口或导出 PNG。
 

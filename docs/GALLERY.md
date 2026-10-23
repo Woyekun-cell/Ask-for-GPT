@@ -6,7 +6,7 @@ Ask for GPT 提供 Windows 和 macOS 两个版本，把查词、翻译和提问�
 
 ## 在 Zotero 里双语读论文
 
-![Zotero 双语阅读：英文原文与中文译文并排显示](images/zotero/live-bilingual-reading.jpg)
+![Zotero 双语阅读：英文原文与中文译文并排显示](images/zotero/live-bilingual.jpg)
 
 *Zotero 双语阅读 · Liao 等，[A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x)（Nature, 2023；[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）。右侧为 Ask for GPT 生成的中文机器译文与排版。*
 
@@ -22,35 +22,31 @@ Ask for GPT 提供 Windows 和 macOS 两个版本，把查词、翻译和提问�
 
 ## 原文、译文与对照
 
-![译文视图与翻译进度](images/zotero/02-views.png)
+![译文视图：已完成的第一页](images/zotero/live-translated.jpg)
 
 用译文视图连续阅读，遇到需要核对的术语或公式，再切换原文或对照。后台处理多页时，进度显示在侧栏，原始页面仍可阅读。
 
 ## 从任意一侧核对词组
 
-![双向词组选择和原生颜色浮层](images/zotero/03-selection.png)
-
 在英文侧划选词语，可以查看中文对应；从中文侧划选，也可以回看英文表达。选区和语义单位结合，帮助核对专业词、动词搭配及修饰关系。
 
 ## 手动选择颜色，留下阅读记录
-
-![蓝色标注在两侧显示](images/zotero/04-annotations.png)
 
 原生八色浮层保留 Zotero 熟悉的操作。只划选时可以临时核对，选择颜色后保存高亮或下划线。译文侧的标注关联原 PDF，并保留译文摘录；之后在 Zotero 标注列表继续写评论、改色和定位，重开文献时沿着原有标记接着读。
 
 ## 调整两侧阅读位置
 
-![实机对照阅读摘要与引言](images/zotero/live-abstract-detail.jpg)
+![实机对照阅读摘要与引言](images/zotero/live-independent.jpg)
 
-*独立滚动，对照查看摘要与正文。论文来源同上。*
+*原文 Fig. 1 在左侧，中文第一页保留在右侧。论文来源同上。*
 
-![联动、独立与更多阅读工具](images/zotero/05-reading-tools.png)
+![联动、独立与更多阅读工具](images/zotero/live-reading-tools.jpg)
 
 连续阅读时让两侧联动；查阅其他段落时切为独立。需要重新对齐字号，可以在更多菜单同步大小，或使用缩小、适合宽度、放大。按住 **Option** 单击段落，可以聚焦正在看的内容。本页/整份、停止和重试也放在这里。
 
 ## 按图表标题跳转
 
-![图表定位面板](images/zotero/06-navigation.png)
+![图表定位面板](images/zotero/live-navigation.jpg)
 
 打开图表面板，按图题或表题查找位置。先选择左侧或右侧，再跳转；另一侧可以保留在当前段落，便于边看图表边读结果。
 
@@ -80,4 +76,4 @@ Codex CLI 路径、提问模型、推理强度、可选翻译配置文件、自�
 
 双语阅读实机图取自 Liao 等的 [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x)（Nature, 2023；[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)），中文译文与排版由 Ask for GPT 生成。原文和许可见[官方 PMC 全文](https://pmc.ncbi.nlm.nih.gov/articles/PMC10172123/)；截图环境见[实机图来源](images/zotero/live-provenance.json)。
 
-其余功能图使用原生界面和项目自写阅读内容，展示对照阅读、划选、标注、图表导航与写作操作：[Zotero 演示图来源](demo-source/zotero/provenance.json) · [主程序图来源](images/provenance.json)。安装包和版本信息见[发行页](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.0.85)。
+本页 PDF 图已全部换成真实文献窗口截图。双向划词和保存标注仍有文字说明，本次未补拍相应操作图；没有用模拟选区或标注替代。截图环境为 macOS / Ask for GPT 1.1.37 / Zotero 9.0.6 / 插件 0.3.76，显示已有的单页中文译本，不代表整篇翻译验收。主程序与写作图保留原来源记录：[主程序图来源](images/provenance.json)。安装包和版本信息见[发行页](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38)。

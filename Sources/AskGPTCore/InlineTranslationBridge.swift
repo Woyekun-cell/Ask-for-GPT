@@ -81,6 +81,7 @@ public actor InlineTranslationBridge {
     private let port: UInt16
     private let readTimeout: Double
     private let translationTimeout: Double
+    private let wordLookupEngine: WordLookupEngine
     private let translatorFactory: TranslatorFactory
     private var translator: Translator
     private let queue = DispatchQueue(label: "AskGPT.inline.loopback", qos: .userInitiated)
@@ -92,8 +93,9 @@ public actor InlineTranslationBridge {
     private var activeRequest: UUID?
     private var stopping = false
 
-    public init(configuration: InlineConnectionConfiguration) {
+    public init(configuration: InlineConnectionConfiguration, wordLookupEngine: WordLookupEngine = WordLookupEngine()) {
         self.configuration = configuration; port = InlineConnectionConfiguration.port
+        self.wordLookupEngine = wordLookupEngine
         readTimeout = 10; translationTimeout = 3
         let factory = Self.nativeTranslatorFactory()
         translatorFactory = factory; translator = factory()
@@ -111,8 +113,10 @@ public actor InlineTranslationBridge {
     }
 
     init(configuration: InlineConnectionConfiguration, port: UInt16, readTimeout: Double = 1,
-         translationTimeout: Double = 1, translatorFactory: @escaping TranslatorFactory) {
+         translationTimeout: Double = 1, wordLookupEngine: WordLookupEngine = WordLookupEngine(),
+         translatorFactory: @escaping TranslatorFactory) {
         self.configuration = configuration; self.port = port
+        self.wordLookupEngine = wordLookupEngine
         self.readTimeout = max(0.01, readTimeout); self.translationTimeout = max(0.01, translationTimeout)
         self.translatorFactory = translatorFactory; translator = translatorFactory()
     }
@@ -181,7 +185,7 @@ public actor InlineTranslationBridge {
                 throw InlineBridgeFailure(status: 403, code: "invalid_origin", message: "请求来源未配对。")
             }
             if origin != nil { cors = ["Access-Control-Allow-Origin": allowedOrigin, "Vary": "Origin"] }
-            let knownPath = ["/v1/inline/health", "/v1/inline/translate"].contains(request.path)
+            let knownPath = ["/v1/inline/health", "/v1/inline/translate", "/v1/inline/lookup"].contains(request.path)
             if request.method == "OPTIONS" {
                 guard origin == allowedOrigin, knownPath,
                       ["GET", "POST"].contains(request.headers["access-control-request-method"] ?? "") else {
@@ -204,13 +208,24 @@ public actor InlineTranslationBridge {
             if request.method == "GET", request.path == "/v1/inline/health" {
                 return .json(status: 200, headers: cors, object: ["status": "ready", "protocolVersion": 1])
             }
-            guard request.method == "POST", request.path == "/v1/inline/translate" else {
+            guard request.method == "POST", ["/v1/inline/translate", "/v1/inline/lookup"].contains(request.path) else {
                 throw InlineBridgeFailure(status: 404, code: "not_found", message: "不存在此原位翻译接口。")
             }
             let type = request.headers["content-type"]?.split(separator: ";", maxSplits: 1).first?
                 .trimmingCharacters(in: .whitespaces).lowercased()
             guard type == "application/json" else {
                 throw InlineBridgeFailure(status: 415, code: "unsupported_media_type", message: "请求必须为 JSON。")
+            }
+            if request.path == "/v1/inline/lookup" {
+                let word = try Self.decodeWord(request.body)
+                let entry = await wordLookupEngine.lookup(word)
+                try Task.checkCancellation()
+                let value: Any = entry.map { entry -> [String: Any] in
+                    ["query": entry.query, "headword": entry.headword,
+                     "phonetic": (entry.phonetic as Any?) ?? NSNull(),
+                     "senses": entry.senses.map { ["partOfSpeech": $0.partOfSpeech, "meanings": $0.meanings] as [String: Any] }]
+                } ?? NSNull()
+                return .json(status: 200, headers: cors, object: ["entry": value])
             }
             let paragraph = try Self.decode(request.body)
             guard activeRequest == nil else { throw InlineBridgeFailure.busy }
@@ -240,6 +255,16 @@ public actor InlineTranslationBridge {
             return .failure(.init(status: 503, code: "native_unavailable", message: failure.localizedDescription), headers: cors)
         }
         catch { return .failure(.init(status: 502, code: "translation_failed", message: "本机翻译未完成。"), headers: cors) }
+    }
+
+    private static func decodeWord(_ data: Data) throws -> String {
+        guard data.count <= 4_096,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["word"], let word = object["word"] as? String,
+              word.utf8.count <= 512, let normalized = WordLookupEngine.normalizedWord(word) else {
+            throw InlineBridgeFailure.badRequest
+        }
+        return normalized
     }
 
     private struct Paragraph { let id: String; let text: String; let source: String; let target: String }

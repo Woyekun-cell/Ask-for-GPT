@@ -47,6 +47,8 @@ struct GlassBackdrop: View {
         ZStack {
             if reduceTransparency {
                 Color(nsColor: .windowBackgroundColor)
+            } else if #available(macOS 26.0, *) {
+                Color.clear.glassEffect(.regular, in: Rectangle())
             } else {
                 WindowFrost()
                 LinearGradient(colors: [Color.accentColor.opacity(colorScheme == .dark ? 0.09 : 0.055), .clear],
@@ -63,9 +65,17 @@ private struct GlassCard: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var radius: CGFloat
     var tinted: Bool
+    @ViewBuilder private var background: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if #available(macOS 26.0, *), !reduceTransparency, contrast != .increased {
+            Color.clear.glassEffect(tinted ? .regular.tint(.accentColor.opacity(0.12)) : .regular, in: shape)
+        } else {
+            shape.fill(surface)
+        }
+    }
     func body(content: Content) -> some View {
         content
-            .background { RoundedRectangle(cornerRadius: radius, style: .continuous).fill(surface) }
+            .background { background }
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
                     .strokeBorder(contrast == .increased ? Color.primary.opacity(0.48) :
@@ -91,6 +101,7 @@ struct GlassButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     var prominent = false
     var destructive = false
     func makeBody(configuration: Configuration) -> some View {
@@ -99,8 +110,14 @@ struct GlassButtonStyle: ButtonStyle {
             .padding(.horizontal, 13).padding(.vertical, 8)
             .foregroundStyle(prominent && isEnabled ? Color.white : (destructive && isEnabled ? Color.red : Color.primary.opacity(isEnabled ? 0.86 : 0.35)))
             .background {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(prominent && isEnabled ? Color.accentColor : Color.primary.opacity(configuration.isPressed ? 0.12 : 0.055))
+                let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+                if #available(macOS 26.0, *), !reduceTransparency, contrast != .increased {
+                    Color.clear.glassEffect(
+                        (prominent && isEnabled ? Glass.regular.tint(.accentColor) : Glass.regular).interactive(isEnabled),
+                        in: shape)
+                } else {
+                    shape.fill(prominent && isEnabled ? Color.accentColor : Color.primary.opacity(configuration.isPressed ? 0.12 : 0.055))
+                }
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)

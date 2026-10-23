@@ -5,13 +5,13 @@
   const MAX_OUTPUT_BYTES = 450 * 1024 * 1024;
   const MAX_ALIGNMENT_BYTES = 32 * 1024 * 1024;
   const XHTML = 'http://www.w3.org/1999/xhtml';
-  const knownErrors = new Set(['connection', 'permissions', 'runtime_missing', 'translation_failed', 'gpt_unavailable', 'batch_invalid', 'batch_limit', 'translation_timeout', 'formula_placeholder_mismatch', 'invalid_pdf', 'pdf', 'direction', 'response', 'stopped', 'timeout', 'compatibility', 'limit', 'bridge', 'alignment_unavailable', 'alignment_timeout', 'alignment_invalid', 'selection_busy', 'selection_timeout', 'selection_invalid', 'selection_unavailable', 'annotation_sentence', 'annotation_mapping', 'rendered', 'recycled', 'layout']);
-  const validationDetails=new Set(['jsonObject','count','rowShape','id','empty','formula','content','notFunction','missingProperty','permission','other']);
+  const knownErrors = new Set(['connection', 'permissions', 'runtime_missing', 'already_translated', 'local_version_save', 'translation_failed', 'gpt_unavailable', 'batch_invalid', 'batch_limit', 'translation_timeout', 'formula_placeholder_mismatch', 'invalid_pdf', 'pdf', 'direction', 'response', 'stopped', 'timeout', 'compatibility', 'limit', 'bridge', 'alignment_unavailable', 'alignment_timeout', 'alignment_invalid', 'selection_busy', 'selection_timeout', 'selection_invalid', 'selection_unavailable', 'annotation_sentence', 'annotation_mapping', 'rendered', 'recycled', 'layout']);
+  const validationDetails=new Set(['jsonObject','count','rowShape','id','empty','formula','content','notFunction','missingProperty','permission','other','nativeInitialize','nativePaint','hoverAttach','hoverInput','hoverDisabled','hoverSelection','hoverGeometry','hoverLookup','hoverRender','hoverEvent','resumeAttach','resumeSave','resumeRestore','resumeLoad','resumeCapture','figureBinding','figureRender','figureNativeAttach','figureInactive','figureInput','figureSelection','figureTool','figureTarget','figurePoint','figureGlyph','figureDrag','figurePrevented']);
   const nativeErrorProperties=new Set(['map','flatMap','some','apply','cloneInto','setSelectedAnnotationIDs','_onSelectAnnotations','setAnnotations','_onAddAnnotation','_onUpdateAnnotations','_onDeleteAnnotations','_getPageLabel','getAnnotations','then','slice','filter','find','every','other']);
   class PDFError extends Error { constructor(code) { super(code); this.code = code; } }
   function errorMessage(error) {
     const messages = { connection: '请启动 Ask for GPT 并开启页面翻译连接', permissions: '页面翻译连接权限异常',
-      runtime_missing: '保版翻译组件尚未就绪', translation_failed: '保版翻译失败，请重试', invalid_pdf: '无法读取这份 PDF', pdf: '无法读取这份 PDF',
+      local_version_save: '译文版本未能保存或打开，请检查文献库的写入权限与磁盘空间；已有缓存已保留', already_translated: '当前 PDF 已是译文，可直接阅读，无需重复翻译', runtime_missing: '保版翻译组件尚未就绪', translation_failed: '保版翻译失败，请重试', invalid_pdf: '无法读取这份 PDF', pdf: '无法读取这份 PDF',
       gpt_unavailable: 'GPT 翻译连接不可用，请在 Ask for GPT 设置中测试连接', batch_invalid: '页面翻译校验失败，请重试', batch_limit: '当前页文字超出批量翻译上限', translation_timeout: 'GPT 翻译超时，请重试', formula_placeholder_mismatch:'公式标记校验失败，请重试',
       direction: '仅支持英语与中文互译', response: 'PDF 翻译结果无效，请重试', stopped: '', timeout: 'PDF 翻译连接超时，请重试',
       alignment_unavailable: '词语对应尚未就绪，可重试', alignment_timeout: '词语对应准备超时，可重试', alignment_invalid: '词语对应校验失败，可重试', selection_busy: '词语对应正在准备，请稍后重试', selection_timeout: '词语对应准备超时，可重试', selection_invalid: '词语对应校验失败，可重试', selection_unavailable: '这几个词暂无精确对应', compatibility: 'PDF 阅读接口暂不可用，请重新打开 PDF', limit: '这份 PDF 超出本地处理上限', bridge: '无法连接本机 PDF 翻译服务' };
@@ -20,8 +20,8 @@
     return text?page+text:'';
   }
   function diagnostic(stage,error){
-    const stages=new Set(['context','mount','start','output','render','text','toolbar','bootstrap','rendered','recycled','layout','startBegin','retired','jobReady','outputBegin','outputReady','stale','loadBegin','loadReady','renderBegin','sentence','native','nativeState','nativeSearch','nativeAnnotation','nativeSelection','nativePopup','nativeCopy','nativeMenu','nativeFocus','nativeEmbedded','nativeDispose','nativeConstructed','nativeInitialized','nativePainted','nativeReady']);
-    const names=new Set(['Error','TypeError','ReferenceError','SecurityError','NetworkError','AbortError','TimeoutException','NS_ERROR_FAILURE','NS_ERROR_XPC_BAD_OP_ON_WN_PROTO','DataCloneError','RenderSnapshot']);
+    const stages=new Set(['context','mount','start','output','render','text','toolbar','bootstrap','rendered','recycled','layout','startBegin','localVersionReady','localVersionError','retired','jobReady','outputBegin','outputReady','alignmentBegin','alignmentReady','alignment','stale','loadBegin','loadReady','renderBegin','sentence','native','nativeState','nativeSearch','nativeAnnotation','nativeSelection','nativePopup','nativeCopy','nativeMenu','nativeFocus','nativeEmbedded','nativeDispose','nativeConstructed','nativeResourcesAttached','nativeResourcesReleased','nativeInitialized','nativePainted','nativeReady','nativeReused','hoverAttach','hoverAttached','hoverMove','hoverBlocked','hoverMiss','hoverHit','hoverLookup','hoverRendered','hoverError','resumeAttached','resumeSaved','resumeRestored','resumeSkipped','resumeError','figureOpened','figureError','figureAttached','figureClick','figureBlocked','figureDetected','figureNoRegions','figureMiss','figureOperatorError','figureEventError','figureToolbar','figureOperatorShape','figureExport','figureWindow','figureInputTiming','figurePreviewTiming']);
+    const names=new Set(['Error','TypeError','ReferenceError','SecurityError','NetworkError','AbortError','TimeoutException','NS_ERROR_FAILURE','NS_ERROR_XPC_BAD_OP_ON_WN_PROTO','DataCloneError','RenderSnapshot','HoverDiagnostic','ResumeDiagnostic','NativeResourceDiagnostic','FigureDiagnostic']);
     const locations=[];const stack=typeof error?.stack==='string'?error.stack.slice(0,12000):'';
     for(const match of stack.matchAll(/(?:^|[/\\])(inline\.js|pdf-layout\.js|pdf-native-view\.js|reader\.js|pdf\.mjs):(\d+)(?::\d+)?/gm)){
       const item={file:match[1],line:Number(match[2])};if(item.line>0&&item.line<100000&&!locations.some(x=>x.file===item.file&&x.line===item.line))locations.push(item);if(locations.length===8)break;
@@ -33,6 +33,10 @@
     if(error?.mappingNumbers){record.mappingNumbers={};for(const key of ['outputPage','sourcePage','selectionRects','matchedSentences','uncoveredRects']){const value=error.mappingNumbers[key];record.mappingNumbers[key]=Number.isInteger(value)&&value>=0&&value<=200000?value:-1;}}
     if(Number.isInteger(error?.failedPage)&&error.failedPage>=1&&error.failedPage<=2000)record.failedPage=error.failedPage;
     if(error?.numbers&&Number.isInteger(error.numbers.expectedPages)&&error.numbers.expectedPages>=1&&error.numbers.expectedPages<=2000){record.numbers={expectedPages:error.numbers.expectedPages,actualPages:Number.isInteger(error.numbers.actualPages)&&error.numbers.actualPages>=0&&error.numbers.actualPages<=2000?error.numbers.actualPages:-1};}
+    if(error?.resourceNumbers&&['nativeResourcesAttached','nativeResourcesReleased'].includes(stage)){record.resourceNumbers={};for(const key of ['parentListeners','mediaListeners','pendingTimers','destroyRequests']){const value=error.resourceNumbers[key];record.resourceNumbers[key]=Number.isInteger(value)&&value>=0&&value<=10000?value:-1;}}
+    if(stage==='nativeState'&&error?.paintNumbers){record.paintNumbers={};for(const key of ['iframeWidth','iframeHeight','containerWidth','containerHeight','visiblePages','renderingState','canvasWidth','canvasHeight','documentHidden','readerFocused','updateInvoked','forceInvoked','loadingTaskPresent','documentPresent','documentPages','viewerPages','currentPage','frameReadyState']){const value=error.paintNumbers[key],maximum=['documentHidden','readerFocused','updateInvoked','forceInvoked','loadingTaskPresent','documentPresent'].includes(key)?1:['renderingState','frameReadyState'].includes(key)?3:['visiblePages','documentPages','viewerPages','currentPage'].includes(key)?2000:100000;record.paintNumbers[key]=Number.isInteger(value)&&value>=0&&value<=maximum?value:key==='renderingState'?-1:0;}}
+    if(stage.startsWith('figure')&&error?.figureNumbers){record.figureNumbers={};for(const key of ['opsCount','argsCount','opsReady','viewBoxReady','regions','thenReady','fieldsReady','waitMilliseconds','cacheReady','inputKind','detectionMilliseconds','modelMilliseconds','operatorsMilliseconds','geometryMilliseconds','width','height','glyphCount','glyphSource','modelCached']){const n=error.figureNumbers[key],maximum=['opsCount','argsCount'].includes(key)?500000:key.endsWith('Milliseconds')?60000:['cacheReady','modelCached'].includes(key)?1:['inputKind','glyphSource'].includes(key)?2:100000;record.figureNumbers[key]=Number.isInteger(n)&&n>=0&&n<=maximum?n:-1;}}
+    if(stage==='figurePreviewTiming'&&error?.previewNumbers){record.previewNumbers={};for(const key of ['openMilliseconds','renderMilliseconds','snapshot']){const n=error.previewNumbers[key];record.previewNumbers[key]=Number.isInteger(n)&&n>=0&&n<=(key==='snapshot'?1:60000)?n:-1;}}
     if(error?.renderNumbers){const numbers={};for(const key of ['width','height','holderChildCount','textItemsCount','renderedCount','nonWhiteSamples']){const n=error.renderNumbers[key];numbers[key]=Number.isInteger(n)&&n>=0&&n<=100000?n:-1;}record.renderNumbers=numbers;}
     if(error?.layoutNumbers){record.layoutNumbers={};for(const key of ['canvasWidth','canvasHeight','canvasClientWidth','canvasClientHeight','canvasOffsetWidth','canvasOffsetHeight','canvasLeft','canvasTop','canvasRectWidth','canvasRectHeight','holderLeft','holderTop','holderRectWidth','holderRectHeight','frameRectWidth','frameRectHeight','canvasDisplay','canvasVisibility','canvasOpacity','holderDisplay','holderVisibility','holderOpacity','frameVisibility','styleWidth','styleHeight','canvasConnected','holderConnected','holderChildCount','textSpanCount','renderedCount','hiddenAncestors','alphaZero','opaque','nonWhiteSamples']){const value=error.layoutNumbers[key];record.layoutNumbers[key]=Number.isFinite(value)&&value>=-10000000&&value<=10000000?Math.round(value):-1;}}
     return record;
@@ -77,7 +81,9 @@
       || new Set(value.sourcePages).size !== value.sourcePages.length) throw new PDFError('response');
     if (selection === 'all' && (value.sourcePages.length !== value.pageCount || value.sourcePages.some((x,i) => x !== i))) throw new PDFError('response');
     if (selection && selection !== 'all' && (value.sourcePages.length !== 1 || value.sourcePages[0] !== Number(selection)-1)) throw new PDFError('response');
+    const legacy=value.state==='complete'&&value.reusedLegacy===true&&typeof value.translationRevision==='string'&&value.translationRevision.length<=256&&/^pdf-layout-gpt-(?:v4-aligned|v5-aligned-visual|v6-paragraph-isolated)(?:-backend-[0-9a-f]{64})?$/.test(value.translationRevision);
     return { id: value.id, state: value.state, sourcePages: value.sourcePages.slice(), pageCount: value.pageCount,
+      ...(legacy?{reusedLegacy:true,translationRevision:value.translationRevision}:{}),
       error: typeof value.error === 'string' && knownErrors.has(value.error) ? value.error : 'translation_failed',
       ...(validateProgress(value.progress)?{progress:validateProgress(value.progress)}:{}),
       ...(validationDetails.has(value.errorDetail)?{errorDetail:value.errorDetail}:{}),
@@ -93,12 +99,12 @@
   const centerIn=(r,box,tolerance=.05)=>(r[0]+r[2])/2>=box[0]-tolerance&&(r[0]+r[2])/2<=box[2]+tolerance&&(r[1]+r[3])/2>=box[1]-tolerance&&(r[1]+r[3])/2<=box[3]+tolerance;
   function validatePhraseData(sentence,page,fail){
     if(Array.isArray(sentence.phrases)&&!sentence.phrases.length&&sentence.source.glyphs===undefined&&sentence.target.glyphs===undefined)return;
-    const pools={};
+    const pools={},positions={};
     for(const side of ['source','target']){
       const part=sentence[side],glyphs=part.glyphs;
       if(!Array.isArray(glyphs)||glyphs.length>100000||glyphs.some(g=>!g||typeof g.text!=='string'||!g.text.length||g.text.length>256||!(g.line==null||Number.isInteger(g.line)&&g.line>=0)||!(g.rect===null?!meaningful(g):rect(g.rect))))return fail();
       if(glyphText(glyphs.map(g=>g.text).join(''))!==glyphText(part.text))return fail();
-      const map=new Map();for(const g of glyphs){if(!meaningful(g))continue;const key=glyphKey(g);if(map.has(key))return fail();map.set(key,g);}pools[side]=map;
+      const map=new Map();for(const g of glyphs){if(!meaningful(g))continue;const key=glyphKey(g);if(map.has(key))return fail();map.set(key,g);}pools[side]=map;positions[side]=new Map([...map.keys()].map((key,index)=>[key,index]));
     }
     if(!Array.isArray(sentence.phrases)||sentence.phrases.length>10000)return fail();
     const ids=new Set(),claimed={source:new Set(),target:new Set()};
@@ -112,7 +118,7 @@
         // Kerning can put the next punctuation glyph's center inside a
         // word's genuine font bbox. Prove ownership from contiguous glyph IDs
         // and reconstruct its actual runs instead of forbidding such overlap.
-        const positions=new Map([...pools[side].keys()].map((key,index)=>[key,index])),indices=glyphs.filter(meaningful).map(g=>positions.get(glyphKey(g)));
+        const indices=glyphs.filter(meaningful).map(g=>positions[side].get(glyphKey(g)));
         if(indices.some((index,i)=>index!==indices[0]+i))return fail();
         const runs=[];for(const glyph of glyphs){if(!glyph.rect)continue;const previous=runs.at(-1);if(previous&&previous.line===glyph.line){const r=previous.rect;r[0]=Math.min(r[0],glyph.rect[0]);r[1]=Math.min(r[1],glyph.rect[1]);r[2]=Math.max(r[2],glyph.rect[2]);r[3]=Math.max(r[3],glyph.rect[3]);}else runs.push({line:glyph.line,rect:glyph.rect.slice()});}
         if(runs.length!==part.rects.length||runs.some((run,i)=>run.rect.some((n,j)=>Math.abs(n-part.rects[i][j])>.02+1e-9)))return fail();
@@ -308,6 +314,13 @@
       const body=JSON.stringify({page,units});
       return validateUpgradeState(await mutateAlignment(id,connection,body,{'Content-Type':'application/json'},control),id,sourcePages);
     }
+    async function alignment(id,sourcePages,setCancel=()=>{}){
+      if(!validID(id)||!Array.isArray(sourcePages)||!sourcePages.length)throw new PDFError('response');
+      const control={aborted:false,abortRequest:null};setCancel(()=>{control.aborted=true;try{control.abortRequest?.();}catch(_){}});
+      try{const connection=await readConnection(dependencies);if(control.aborted)throw new PDFError('stopped');
+        return validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},control,false,MAX_ALIGNMENT_BYTES),sourcePages);
+      }finally{setCancel(null);}
+    }
     return {
       async start(value, options, setCancel = () => {}, onProgress = () => {}) {
         const data = validPDF(value);
@@ -360,10 +373,18 @@
         const connection = await readConnection(dependencies);
         return request('GET', '/' + id + '/' + mode + '.pdf', connection, null, {}, null, true);
       },
-      async alignment(id,sourcePages){
+      alignment,
+      async layoutAlignment(id,sourcePages){
         if(!validID(id)||!Array.isArray(sourcePages)||!sourcePages.length)throw new PDFError('response');
-        const connection=await readConnection(dependencies);
-        return validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},null,false,MAX_ALIGNMENT_BYTES),sourcePages);
+        try{
+          const connection=await readConnection(dependencies),value=validateAlignment(await request('GET','/'+id+'/alignment-layout.json',connection,null,{},null,false,MAX_ALIGNMENT_BYTES),sourcePages);
+          if(value.granularity!=='paragraph'||!value.sourceSHA256||value.sentenceAlignmentRevision||value.phraseAlignmentRevision||value.pages.some(page=>page.paragraphs.some(row=>row.sentences!==undefined)))throw new PDFError('response');
+          return {value,complete:false};
+        }catch(error){
+          // Older local services expose only the complete, validated sidecar.
+          if(!['bridge','response'].includes(error?.code))throw error;
+          return {value:await alignment(id,sourcePages),complete:true};
+        }
       },
       async selectionAlignment(id,value,query,sourcePages,setCancel=()=>{}){
         if(!validID(id)||!validSourcePages(sourcePages)||typeof setCancel!=='function')throw new PDFError('response');

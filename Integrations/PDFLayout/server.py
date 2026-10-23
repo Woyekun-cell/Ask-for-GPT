@@ -29,7 +29,7 @@ from layout_common import (BABELDOC_VERSION, MAX_OUTPUT_BYTES, MAX_PDF_BYTES, PO
 from gpt_batch import ERROR_DETAILS
 from alignment import MAX_ALIGNMENT_BYTES, subset_alignment, validate_alignment
 
-JOB_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})(?:/(mono\.pdf|dual\.pdf|alignment\.json))?")
+JOB_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})(?:/(mono\.pdf|dual\.pdf|alignment\.json|alignment-layout\.json))?")
 ALIGNMENT_UPGRADE_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/alignment-upgrade")
 SELECTION_ALIGNMENT_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/selection-alignment")
 SELECTION_LINKS_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/selection-alignment\?page=(0|[1-9][0-9]{0,3})")
@@ -38,9 +38,10 @@ MAX_INACTIVE_JOBS = 64
 MAX_JOB_AGE = 7 * 24 * 60 * 60
 # These bounds apply only to unfinished/failed/cancelled working directories.
 # Completed translations are permanent local results, not disposable cache.
-# Retain old completed files, but do not serve flat-fragment model results as
-# paragraph-isolated translations: real-paper QA found cross-paragraph content.
+# Old PDFs remain their original translation generation. Reopening one must
+# neither run translation again nor claim the newer paragraph/context quality.
 TRANSLATION_REVISION = "pdf-layout-gpt-v7-context-paragraph"
+LEGACY_OUTPUT_REVISIONS = ("pdf-layout-gpt-v6-paragraph-isolated", "pdf-layout-gpt-v5-aligned-visual", "pdf-layout-gpt-v4-aligned")
 CACHE_SCHEMA = 1
 PROCESS_GROUP_GRACE = 3.5
 MAX_RUNNING_JOBS = 2
@@ -176,8 +177,10 @@ class Job:
     process: subprocess.Popen | None = None
     cache_info: dict | None = None
     output_signatures: dict = field(default_factory=dict)
+    _validated_alignment_binding: tuple | None = None
     error_detail: str | None = None
     failed_page: int | None = None
+    reused_legacy: bool = False
 
     def public(self):
         result = {"id": self.id, "state": self.state,
@@ -190,7 +193,10 @@ class Job:
                     and self.failed_page <= self.page_count and self.failed_page - 1 in (self.source_pages or [])):
                 result["failedPage"] = self.failed_page
         if self.state == "running": result["progress"] = _job_progress(self.directory, len(self.source_pages or []))
-        if self.state == "complete": result["alignmentAvailable"] = "alignment" in self.output_signatures
+        if self.state == "complete":
+            result["alignmentAvailable"] = "alignment" in self.output_signatures
+            if self.reused_legacy:
+                result.update(reusedLegacy=True, translationRevision=self.cache_info["revision"])
         return result
 
 
@@ -217,8 +223,43 @@ class JobManager:
         self.sentence_upgrades = SentenceUpgradeService(self)
         from selection_service import SelectionAlignmentService
         self.selection_alignments = SelectionAlignmentService(self)
+        from figure_regions import FigureRegionService
+        self.figure_regions = FigureRegionService(self.cache_root)
         self._load_completed()
         self.prune()
+
+    def _reusable_revisions(self):
+        # Backend identity is part of translation semantics, not a version to
+        # drop during migration. Unknown/custom generations stay exact-only.
+        suffix = self.translation_revision.removeprefix(TRANSLATION_REVISION)
+        if self.translation_revision != TRANSLATION_REVISION and not re.fullmatch(r"-backend-[0-9a-f]{64}", suffix):
+            return (self.translation_revision,)
+        return (self.translation_revision, *(revision + suffix for revision in LEGACY_OUTPUT_REVISIONS))
+
+    @staticmethod
+    def _validate_legacy_outputs(directory, pages, signatures, alignment):
+        """Check real PDF pages through verified descriptors, without text reads."""
+        from alignment import _geometry
+        for kind in ("mono", "dual"):
+            path = directory / (kind + ".pdf")
+            descriptor = platform.secure_open(path, os.O_RDONLY)
+            with os.fdopen(descriptor, "rb") as handle:
+                expected = signatures[kind]
+                if _signature(os.fstat(handle.fileno())) != expected: raise ValueError("changed_cache_file")
+                try:
+                    with _open_pdf_descriptor(handle) as document:
+                        if document.needs_pass or not document.is_pdf or len(document) != len(pages):
+                            raise ValueError("invalid_cached_page_mapping")
+                        if alignment is not None:
+                            for index, page in enumerate(document):
+                                if _geometry(page) != {name: alignment["pages"][index][kind][name]
+                                        for name in ("mediaBox", "cropBox", "rotation")}:
+                                    raise ValueError("invalid_cached_page_geometry")
+                except Exception:
+                    # Malformed historical PDFs must not prevent service startup.
+                    raise ValueError("invalid_cached_pdf") from None
+                if _signature(os.fstat(handle.fileno())) != expected or _output_signature(path) != expected:
+                    raise ValueError("changed_cache_file")
 
     def _load_completed(self):
         for directory in self.jobs_root.iterdir():
@@ -230,7 +271,7 @@ class JobManager:
                 value = json.loads(raw)
                 pages, count = value["sourcePages"], value["pageCount"]
                 if (value.get("schema") != CACHE_SCHEMA or value.get("state") != "complete"
-                        or value.get("revision") != self.translation_revision
+                        or value.get("revision") not in self._reusable_revisions()
                         or value.get("babeldoc") != BABELDOC_VERSION
                         or type(count) is not int or not 1 <= count <= 2000
                         or not isinstance(pages, list) or not pages
@@ -245,7 +286,7 @@ class JobManager:
                 # prune still retains these completed files permanently.
                 if self.alignment_required and "alignment" not in value: continue
                 key = _cache_key(value["sourceSHA256"], pages, count,
-                                 value["source"], value["target"], self.translation_revision)
+                                 value["source"], value["target"], value["revision"])
                 if key != value["cacheKey"]: continue
                 signatures = {}
                 for kind in ("mono", "dual"):
@@ -253,16 +294,18 @@ class JobManager:
                     if value["outputs"][kind] != {"sha256": digest, "bytes": signature[2]}:
                         raise ValueError("changed_cache_file")
                     signatures[kind] = signature
-                alignment_raw = None
+                alignment_raw, alignment = None, None
                 if "alignment" in value:
                     signature, raw = _private_file(_alignment_path(directory,value), MAX_ALIGNMENT_BYTES)
                     if value["alignment"] != {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": signature[2]}:
                         raise ValueError("changed_cache_file")
-                    validate_alignment(json.loads(raw), pages, count, value["sourceSHA256"])
+                    alignment = validate_alignment(json.loads(raw), pages, count, value["sourceSHA256"])
                     signatures["alignment"] = signature
                     alignment_raw = raw
+                legacy = value["revision"] != self.translation_revision
+                if legacy: self._validate_legacy_outputs(directory, pages, signatures, alignment)
                 job = Job(directory.name, directory, state="complete", source_pages=pages,
-                          page_count=count, cache_info=value, output_signatures=signatures)
+                          page_count=count, cache_info=value, output_signatures=signatures, reused_legacy=legacy)
                 self.jobs[job.id] = job
                 self.completed[key] = job.id
                 self.permanent.add(job.id)
@@ -292,6 +335,15 @@ class JobManager:
         except (OSError, ValueError, KeyError):
             self.completed.pop(key, None)
             return None
+
+    def _matching_completed(self, source_sha, pages, page_count, source, target, revision):
+        key = _cache_key(source_sha, pages, page_count, source, target, revision)
+        job = self._cached_job(key)
+        expected = {"cacheKey": key, "sourceSHA256": source_sha, "sourcePages": pages,
+            "pageCount": page_count, "source": source, "target": target,
+            "revision": revision, "babeldoc": BABELDOC_VERSION}
+        return job if job is not None and job.cache_info and all(
+            job.cache_info.get(name) == value for name, value in expected.items()) else None
 
     def _discard_placeholder(self, job):
         self._clean_intermediates(job)
@@ -340,12 +392,14 @@ class JobManager:
         # Only bytes whose complete semantic/geometry validation has already
         # succeeded enter here. Immutable JSON gives every reader a private
         # deep tree without caching hundreds of thousands of mutable objects.
+        binding=self._alignment_snapshot_binding(job)
+        job._validated_alignment_binding=binding
         self._forget_alignment_snapshot(job.id)
         if len(raw)>MAX_ALIGNMENT_SNAPSHOT_BYTES or MAX_ALIGNMENT_SNAPSHOT_JOBS<1:return
         while self._alignment_snapshots and (len(self._alignment_snapshots)>=MAX_ALIGNMENT_SNAPSHOT_JOBS
                 or self._alignment_snapshot_bytes+len(raw)>MAX_ALIGNMENT_SNAPSHOT_BYTES):
             self._forget_alignment_snapshot(next(iter(self._alignment_snapshots)))
-        self._alignment_snapshots[job.id]=(self._alignment_snapshot_binding(job),bytes(raw))
+        self._alignment_snapshots[job.id]=(binding,bytes(raw))
         self._alignment_snapshot_bytes+=len(raw)
 
     def read_alignment(self,job):
@@ -363,7 +417,11 @@ class JobManager:
                     signature,raw=_private_file(path,MAX_ALIGNMENT_BYTES)
                     if (signature!=expected or len(raw)!=binding[6]
                             or hashlib.sha256(raw).hexdigest()!=binding[5]):raise ValueError("changed_alignment")
-                    value=validate_alignment(json.loads(raw),job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
+                    value=json.loads(raw)
+                    # Evict bytes, not the proof that this exact file/content
+                    # generation already passed the complete semantic checks.
+                    if job._validated_alignment_binding!=binding:
+                        value=validate_alignment(value,job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
                     self._remember_alignment_snapshot(job,raw)
                 # Changes while copying/validating must not return a stale
                 # trusted tree, even when size or mtime was restored.
@@ -372,6 +430,28 @@ class JobManager:
             except (OSError,ValueError,TypeError,KeyError):
                 self._forget_alignment_snapshot(job.id)
                 raise ProtocolFailure("alignment_unavailable") from None
+
+    def read_layout_alignment(self,job):
+        # Project only after the full snapshot passed the same integrity and
+        # semantic checks as alignment.json; paragraph layout claims no precision.
+        value=self.read_alignment(job)
+        result={key:value[key] for key in ("schema","coordinateSpace","provenance",
+            "sourcePages","pageCount","sourceSHA256")}
+        result.update(granularity="paragraph",pages=[])
+        if "layoutRevision" in value:result["layoutRevision"]=value["layoutRevision"]
+        for page in value["pages"]:
+            row={key:page[key] for key in ("sourcePage","outputPage","sourceToDual","targetToDual")}
+            for name in ("source","mono","dual"):
+                row[name]={key:page[name][key] for key in ("mediaBox","cropBox","rotation")}
+            row["paragraphs"]=[]
+            for paragraph in page["paragraphs"]:
+                part={"id":paragraph["id"]}
+                for name in ("source","target","dualSource","dualTarget"):
+                    keys=("text","rects") if name in ("source","target") else ("rects",)
+                    part[name]={key:paragraph[name][key] for key in keys}
+                row["paragraphs"].append(part)
+            result["pages"].append(row)
+        return result
 
     def publish_alignment(self,job,value):
         """One atomic metadata pointer commits a generation; PDF bytes stay put."""
@@ -451,18 +531,24 @@ class JobManager:
             validate_alignment(value, selected, job.page_count, job.cache_info["sourceSHA256"])
             atomic_json(job.directory / "alignment.json", value)
 
-    def _derive_completed_range(self, job):
-        info = job.cache_info
+    def _derive_completed_range(self, job, revision=None):
+        original_info = job.cache_info
+        revision = revision or self.translation_revision
+        info = {**original_info, "revision": revision}
+        info["cacheKey"] = _cache_key(info["sourceSHA256"], job.source_pages, job.page_count,
+            info["source"], info["target"], revision)
         all_pages = list(range(job.page_count))
         if not info or job.source_pages == all_pages: return False
         key = _cache_key(info["sourceSHA256"], all_pages, job.page_count,
-                         info["source"], info["target"], self.translation_revision)
+                         info["source"], info["target"], revision)
         whole = self._cached_job(key)
         if whole is None: return False
         expected = {**info, "cacheKey": key, "sourcePages": all_pages}
         if (whole.state != "complete" or whole.page_count != job.page_count or whole.source_pages != all_pages
                 or not whole.cache_info or any(whole.cache_info.get(name) != value for name, value in expected.items())):
             return False
+        job.cache_info = info
+        job.reused_legacy = revision != self.translation_revision
         try:
             self._extract_cached_pages(whole, job, job.source_pages)
             self._store_completed(job)
@@ -477,7 +563,8 @@ class JobManager:
             for name in ("mono.pdf", "dual.pdf", "alignment.json", "cache.json", "state.json"):
                 try: (job.directory / name).unlink(missing_ok=True)
                 except OSError: pass
-            job.cache_info, job.output_signatures, job.state = info, {}, "running"
+            job.cache_info, job.output_signatures, job.state = original_info, {}, "running"
+            job.reused_legacy = False
             return False
         self._clean_intermediates(job)
         self._release_active(job)
@@ -593,7 +680,7 @@ class JobManager:
                 job.page_count, job.source_pages = page_count, selected
                 _, source_sha = _private_file(job.directory / "input.pdf", MAX_PDF_BYTES, checksum=True)
                 key = _cache_key(source_sha, selected, page_count, source, target, self.translation_revision)
-                cached = self._cached_job(key)
+                cached = self._matching_completed(source_sha, selected, page_count, source, target, self.translation_revision)
                 if cached is not None:
                     self._discard_placeholder(job)
                     os.utime(cached.directory, None)
@@ -602,6 +689,23 @@ class JobManager:
                     "sourcePages": selected, "pageCount": page_count, "source": source,
                     "target": target, "revision": self.translation_revision, "babeldoc": BABELDOC_VERSION}
                 if self._derive_completed_range(job): return job.public()
+                for revision in self._reusable_revisions()[1:]:
+                    cached = self._matching_completed(source_sha, selected, page_count, source, target, revision)
+                    if cached is not None:
+                        self._discard_placeholder(job)
+                        os.utime(cached.directory, None)
+                        return cached.public()
+                    if self._derive_completed_range(job, revision): return job.public()
+                # An exported mono PDF is already in the requested target
+                # language. Match verified bytes, never a filename or a guess.
+                for completed_key in list(self.completed):
+                    completed = self.jobs.get(self.completed.get(completed_key))
+                    info = completed.cache_info if completed else None
+                    if (info and info.get("target") == target
+                            and info.get("sourceSHA256") != source_sha
+                            and info.get("outputs", {}).get("mono", {}).get("sha256") == source_sha
+                            and self._cached_job(completed_key) is not None):
+                        raise ProtocolFailure("already_translated")
                 # Each BabelDOC process loads its own model and helper. Keep
                 # two independent papers concurrent without unbounded models.
                 if sum(other.process is not None and other.process.poll() is None
@@ -710,6 +814,7 @@ class JobManager:
             self.stopping = True
         self.sentence_upgrades.shutdown()
         self.selection_alignments.shutdown()
+        self.figure_regions.shutdown()
         with self.lock: jobs = list(self.jobs.values())
         for job in jobs:
             if job.state == "running": self.cancel(job)
@@ -802,8 +907,8 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
                 job = manager.get(match[1])
                 if not match[2]: return self.reply(200, job.public())
                 if job.state != "complete": return self.reply(409, {"error": "job_not_complete"})
-                if match[2] == "alignment.json":
-                    try: return self.reply(200,manager.read_alignment(job))
+                if match[2] in ("alignment.json","alignment-layout.json"):
+                    try: return self.reply(200,manager.read_layout_alignment(job) if match[2]=="alignment-layout.json" else manager.read_alignment(job))
                     except ProtocolFailure: return self.reply(404,{"error":"alignment_unavailable"})
                 path = job.directory / match[2]
                 descriptor = platform.secure_open(path, os.O_RDONLY)
@@ -828,6 +933,7 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
 
         def do_POST(self):
             if not self.authorize(): return
+            if self.path == '/v1/pdf/figure-regions': return self.post_figure_regions()
             selected=SELECTION_ALIGNMENT_ROUTE.fullmatch(self.path)
             if selected: return self.post_selection_alignment(selected[1])
             upgrade=ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path)
@@ -874,6 +980,30 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
                 return self.reply(400, {"error": "incomplete_upload"})
             finally:
                 manager.upload_slots.release()
+
+        def post_figure_regions(self):
+            from figure_regions import MAX_PNG_BYTES, png_size
+            lengths = self.headers.get_all('Content-Length') or []
+            types = self.headers.get_all('Content-Type') or []
+            if (self.headers.get('Transfer-Encoding') is not None or len(lengths) != 1
+                    or not lengths[0].isdigit() or len(types) != 1
+                    or types[0].split(';', 1)[0].strip().lower() != 'image/png'):
+                return self.reply(400, {'error': 'figure_input'})
+            length = int(lengths[0])
+            if length > MAX_PNG_BYTES: return self.reply(413, {'error': 'figure_limit'})
+            if length < 33: return self.reply(400, {'error': 'figure_input'})
+            try:
+                raw = self.rfile.read(length)
+                if len(raw) != length: raise ProtocolFailure('figure_input')
+                png_size(raw)
+                return self.reply(200, manager.figure_regions.detect(raw))
+            except ProtocolFailure as error:
+                code = str(error)
+                statuses = {'figure_input': 400, 'figure_limit': 413, 'figure_busy': 429,
+                    'figure_unavailable': 503, 'figure_timeout': 504, 'figure_failed': 502}
+                return self.reply(statuses.get(code, 502), {'error': code if code in statuses else 'figure_failed'})
+            except (OSError, TimeoutError): return self.reply(400, {'error': 'figure_input'})
+            except Exception: return self.reply(502, {'error': 'figure_failed'})
 
         def selection_error(self,error):
             code=str(error)

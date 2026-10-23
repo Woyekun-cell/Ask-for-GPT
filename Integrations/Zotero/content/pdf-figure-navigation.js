@@ -123,10 +123,12 @@
     function publish(completed,done){guard();options.onBatch?.({entries:clone(record.entries||collect(record)),completed,total,done});}
     async function run(){
       guard();if(record.entries){publish(total,true);return clone(record.entries);}
+      const cached=[...record.pages.values()].filter(Array.isArray).length;if(cached)publish(cached,false);
       for(let index=0;index<total;index++){
         guard();await readPage(index);guard();
         const completed=index+1;if(completed===total){record.entries=collect(record);publish(completed,true);}
         else if(completed%batchSize===0){publish(completed,false);await pause();guard();}
+        else if(completed===1&&options.eagerFirstBatch)publish(completed,false);
       }
       guard();return clone(record.entries);
     }

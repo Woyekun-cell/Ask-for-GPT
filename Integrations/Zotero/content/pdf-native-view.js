@@ -4,6 +4,7 @@
   const PaneGestures=root.AskGPTPDFPaneGestures||(typeof require==='function'?require('./pdf-pane-gestures.js'):null);
   const ScrollSync=root.AskGPTPDFScrollSync||(typeof require==='function'?require('./pdf-scroll-sync.js'):null);
   const ReadingTools=root.AskGPTPDFReadingTools||(typeof require==='function'?(()=>{try{return require('./pdf-reading-tools.js');}catch(_){return null;}})():null);
+  const Hover=root.AskGPTPDFHoverGloss||(typeof require==='function'?require('./pdf-hover-gloss.js'):null);
   const SelectionLink=root.AskGPTPDFSelectionLink||(typeof require==='function'?require('./pdf-selection-link.js'):null);
   const FigureNavigation=root.AskGPTPDFFigureNavigation||(typeof require==='function'?require('./pdf-figure-navigation.js'):null);
   const FigurePanel=root.AskGPTPDFFigurePanel||(typeof require==='function'?require('./pdf-figure-panel.js'):null);
@@ -25,12 +26,12 @@
   const centerIn=(r,box,tolerance=.05)=>(r[0]+r[2])/2>=box[0]-tolerance&&(r[0]+r[2])/2<=box[2]+tolerance&&(r[1]+r[3])/2>=box[1]-tolerance&&(r[1]+r[3])/2<=box[3]+tolerance;
   function validatePhraseData(sentence,page,fail){
     if(Array.isArray(sentence.phrases)&&!sentence.phrases.length&&sentence.source.glyphs===undefined&&sentence.target.glyphs===undefined)return;
-    const pools={};
+    const pools={},positions={};
     for(const side of ['source','target']){
       const part=sentence[side],glyphs=part.glyphs;
       if(!Array.isArray(glyphs)||glyphs.length>100000||glyphs.some(g=>!g||typeof g.text!=='string'||!g.text.length||g.text.length>256||!(g.line==null||Number.isInteger(g.line)&&g.line>=0)||!(g.rect===null?!meaningful(g):rect(g.rect))))return fail();
       if(glyphText(glyphs.map(g=>g.text).join(''))!==glyphText(part.text))return fail();
-      const map=new Map();for(const g of glyphs){if(!meaningful(g))continue;const key=glyphKey(g);if(map.has(key))return fail();map.set(key,g);}pools[side]=map;
+      const map=new Map();for(const g of glyphs){if(!meaningful(g))continue;const key=glyphKey(g);if(map.has(key))return fail();map.set(key,g);}pools[side]=map;positions[side]=new Map([...map.keys()].map((key,index)=>[key,index]));
     }
     if(!Array.isArray(sentence.phrases)||sentence.phrases.length>10000)return fail();
     const ids=new Set(),claimed={source:new Set(),target:new Set()};
@@ -44,7 +45,7 @@
         // Kerning can put the next punctuation glyph's center inside a
         // word's genuine font bbox. Prove ownership from contiguous glyph IDs
         // and reconstruct its actual runs instead of forbidding such overlap.
-        const positions=new Map([...pools[side].keys()].map((key,index)=>[key,index])),indices=glyphs.filter(meaningful).map(g=>positions.get(glyphKey(g)));
+        const indices=glyphs.filter(meaningful).map(g=>positions[side].get(glyphKey(g)));
         if(indices.some((index,i)=>index!==indices[0]+i))return fail();
         const runs=[];for(const glyph of glyphs){if(!glyph.rect)continue;const previous=runs.at(-1);if(previous&&previous.line===glyph.line){const r=previous.rect;r[0]=Math.min(r[0],glyph.rect[0]);r[1]=Math.min(r[1],glyph.rect[1]);r[2]=Math.max(r[2],glyph.rect[2]);r[3]=Math.max(r[3],glyph.rect[3]);}else runs.push({line:glyph.line,rect:glyph.rect.slice()});}
         if(runs.length!==part.rects.length||runs.some((run,i)=>run.rect.some((n,j)=>Math.abs(n-part.rects[i][j])>.02+1e-9)))return fail();
@@ -420,15 +421,16 @@
     }
     const readerRealm=value=>typeof value==='function'?readerFunction(value):value===null||value===undefined||typeof value!=='object'||typeof value.then==='function'||!components?.utils?.cloneInto?value:components.utils.cloneInto(value,readerWindow,{cloneFunctions:true,wrapReflectors:true});
     const callReader=(target,name,...args)=>typeof target?.[name]==='function'?Reflect.apply(target[name],target,args.map(readerRealm)):undefined;
-    const host=element(doc,'div','askgpt-native-pdf'),header=element(doc,'header','askgpt-native-controls'),viewport=element(doc,'div','askgpt-native-viewport'),status=element(doc,'span','askgpt-native-status'),progress=element(doc,'span','askgpt-native-progress'),label=element(doc,'span'),bar=element(doc,'progress'),menu=element(doc,'div','askgpt-native-menu'),menuItems=[];let moreButton;
-    header.setAttribute('role','toolbar');header.setAttribute('aria-label','Translation controls');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Translation options');menu.setAttribute('id','askgpt-native-menu-'+(++controlsSequence));menu.hidden=true;status.setAttribute('role','status');status.setAttribute('aria-live','polite');
-    const annotationSlot=element(doc,'span','askgpt-native-annotation-state'),annotationIndicator=element(doc,'span','askgpt-native-annotation-indicator'),annotationSpinner=element(doc,'span','askgpt-native-annotation-spinner'),annotationHint=element(doc,'span','askgpt-native-annotation-hint'),annotationIcon=doc.createElementNS('http://www.w3.org/2000/svg','svg'),annotationPath=doc.createElementNS('http://www.w3.org/2000/svg','path');
-    annotationIcon.setAttribute('class','askgpt-native-annotation-icon');annotationIcon.setAttribute('viewBox','0 0 16 16');annotationIcon.setAttribute('aria-hidden','true');annotationPath.setAttribute('d','M5 2.5h6A1.5 1.5 0 0 1 12.5 4v8a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 12V4A1.5 1.5 0 0 1 5 2.5ZM6 6h4M6 8.5h4M6 11h2');annotationIcon.appendChild(annotationPath);annotationSpinner.setAttribute('aria-hidden','true');annotationIndicator.setAttribute('role','status');annotationIndicator.setAttribute('aria-live','polite');annotationIndicator.setAttribute('tabindex','0');annotationHint.setAttribute('role','status');annotationHint.hidden=true;annotationIndicator.append(annotationIcon,annotationSpinner);annotationSlot.append(annotationIndicator,annotationHint);
+    const host=element(doc,'div','askgpt-native-pdf'),header=element(doc,'header','askgpt-native-controls'),viewport=element(doc,'div','askgpt-native-viewport'),status=element(doc,'span','askgpt-native-status'),progress=element(doc,'span','askgpt-native-progress'),label=element(doc,'span'),bar=element(doc,'progress'),menu=element(doc,'div','askgpt-native-menu'),statusBar=element(doc,'div','askgpt-native-bottom-status'),menuItems=[];let moreButton;
+    header.setAttribute('role','toolbar');header.setAttribute('aria-label','Translation controls');header.style.setProperty('max-width','160px');menu.setAttribute('role','menu');menu.setAttribute('aria-label','Translation options');menu.setAttribute('id','askgpt-native-menu-'+(++controlsSequence));menu.hidden=true;status.setAttribute('role','status');status.setAttribute('aria-live','polite');
+    const annotationSlot=element(doc,'div','askgpt-native-annotation-state'),annotationIndicator=element(doc,'span','askgpt-native-annotation-indicator'),annotationHint=element(doc,'span','askgpt-native-annotation-hint');
+    annotationIndicator.setAttribute('role','status');annotationIndicator.setAttribute('aria-live','polite');annotationIndicator.setAttribute('tabindex','0');annotationHint.setAttribute('role','status');annotationHint.hidden=true;annotationSlot.append(annotationIndicator,annotationHint);
     host.setAttribute('style','position:absolute;inset:0;z-index:10;visibility:hidden;background:Canvas');viewport.setAttribute('style','position:absolute;inset:0');host.style.setProperty('visibility','hidden');
     const style=element(doc,'style',null,`.askgpt-native-pdf{color-scheme:light dark}.askgpt-native-viewport>iframe{width:100%;height:100%;border:0}.askgpt-native-controls{position:static;display:inline-flex;align-items:center;gap:2px;flex:none;height:28px;max-width:100%;min-width:0;white-space:nowrap;color:var(--fill-secondary,CanvasText);font:12px -apple-system,sans-serif;-moz-window-dragging:no-drag}.askgpt-native-controls button,.askgpt-native-menu button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;flex:none;width:auto;min-width:28px;height:26px;padding:3px 6px;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;cursor:default;-moz-window-dragging:no-drag}.askgpt-native-controls button[aria-pressed=true]{background:var(--fill-quarternary,#8882);color:var(--fill-primary,CanvasText)}.askgpt-native-controls button:focus-visible,.askgpt-native-menu button:focus-visible{outline:2px solid var(--accent-blue,#007aff);outline-offset:-2px}.askgpt-native-controls button:hover,.askgpt-native-menu button:hover{background:var(--fill-quinary,#8882)}.askgpt-native-group{display:flex;align-items:center;gap:2px}.askgpt-native-controls>.askgpt-native-group{gap:0;border:1px solid var(--fill-quinary,#8883);border-radius:6px}.askgpt-native-more{font-size:20px!important;padding:0!important}.askgpt-native-menu{position:fixed;z-index:90;box-sizing:border-box;min-width:180px;max-width:calc(100vw - 16px);padding:5px;border:var(--material-panedivider,1px solid #8883);border-radius:7px;background:var(--material-toolbar,Canvas);color:var(--fill-primary,CanvasText);font:12px -apple-system,sans-serif;box-shadow:0 3px 16px #0003}.askgpt-native-menu>.askgpt-native-group{justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--fill-quinary,#8883)}.askgpt-native-menu>button{width:100%;margin-top:3px}.askgpt-native-menu button{flex:1}.askgpt-native-progress{display:inline-flex;align-items:center;gap:4px;max-width:125px;margin-inline:3px;font:11px -apple-system,sans-serif}.askgpt-native-progress span{max-width:70px;overflow:hidden;text-overflow:ellipsis}.askgpt-native-progress progress{display:block;width:44px;height:3px;border:0;border-radius:3px;accent-color:var(--accent-blue,#007aff)}.askgpt-native-status{max-width:110px;overflow:hidden;text-overflow:ellipsis;margin-inline:3px;font:11px -apple-system,sans-serif}.askgpt-native-progress[hidden],.askgpt-native-status[hidden],.askgpt-native-menu[hidden]{display:none!important}`);
-    style.textContent+=`.askgpt-native-annotation-state{position:relative;display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:24px;margin:0 2px}.askgpt-native-annotation-indicator{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;color:CanvasText;opacity:.6}.askgpt-native-annotation-indicator:focus-visible{outline:2px solid #007aff;outline-offset:2px}.askgpt-native-annotation-icon{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.2;stroke-linecap:round;stroke-linejoin:round}.askgpt-native-annotation-spinner{display:none;box-sizing:border-box;width:12px;height:12px;border:1.3px solid currentColor;border-right-color:transparent;border-bottom-color:transparent;border-radius:50%;animation:askgpt-native-spin .85s linear infinite}.askgpt-native-annotation-indicator[data-state=preparing] .askgpt-native-annotation-icon{display:none}.askgpt-native-annotation-indicator[data-state=preparing] .askgpt-native-annotation-spinner{display:block}.askgpt-native-annotation-hint{position:absolute;right:-4px;top:calc(100% + 7px);z-index:1;box-sizing:border-box;width:180px;padding:7px 10px;border:1px solid #8883;border-radius:9px;background:Canvas;color:CanvasText;box-shadow:0 2px 10px #0002;font:11px -apple-system,sans-serif;line-height:1.4;white-space:normal;pointer-events:none}.askgpt-native-annotation-hint[hidden]{display:none!important}@keyframes askgpt-native-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.askgpt-native-annotation-spinner{animation:none}}`;
-    style.textContent+='.askgpt-native-controls button:disabled,.askgpt-native-menu button:disabled{opacity:.35;cursor:default}';
-    doc.head.appendChild(style);host.append(viewport);container.appendChild(host);progress.append(label,bar);doc.body.appendChild(menu);progress.hidden=true;status.hidden=true;
+    style.textContent+=`.askgpt-native-annotation-state{padding:6px 7px 3px;border-top:1px solid var(--fill-quinary,#8883);font:11px/1.4 -apple-system,sans-serif;white-space:normal;color:var(--fill-secondary,CanvasText)}.askgpt-native-annotation-indicator,.askgpt-native-annotation-hint{display:block}.askgpt-native-annotation-indicator:focus-visible{outline:2px solid #007aff;outline-offset:2px}.askgpt-native-annotation-hint{margin-top:4px;color:var(--fill-primary,CanvasText)}.askgpt-native-annotation-hint[hidden]{display:none!important}.askgpt-native-menu button{white-space:nowrap}`;
+    style.textContent+='.askgpt-native-controls{overflow-x:auto;overflow-y:hidden;scrollbar-width:none}.askgpt-native-controls>.askgpt-native-group{flex:1 1 auto;min-width:0;overflow-x:auto;scrollbar-width:none}.askgpt-native-controls>button{flex:none}.askgpt-native-controls[data-compact=true] button{padding-inline:2px}.askgpt-native-controls[data-tight=true] button{min-width:24px;padding-inline:0}.askgpt-native-controls[data-tight=true] .askgpt-native-more{min-width:20px}.askgpt-native-menu{max-height:calc(100vh - 16px);overflow-y:auto}.askgpt-native-controls button:disabled,.askgpt-native-menu button:disabled{opacity:.35;cursor:default}';
+    style.textContent+='.askgpt-native-options{display:inline-flex;align-items:center;gap:3px;flex:none}.askgpt-native-bottom-status{position:absolute;left:16px;right:16px;bottom:12px;z-index:25;display:flex;align-items:center;gap:12px;padding:7px 10px;border:1px solid var(--fill-quinary,#8883);border-radius:6px;background:var(--material-toolbar,Canvas);color:var(--fill-primary,CanvasText);box-shadow:0 2px 8px #0001;pointer-events:none;font:12px -apple-system,sans-serif}.askgpt-native-bottom-status[hidden]{display:none!important}.askgpt-native-bottom-status .askgpt-native-progress{flex:1;max-width:none;font:inherit}.askgpt-native-bottom-status .askgpt-native-progress span{max-width:none;flex:none}.askgpt-native-bottom-status .askgpt-native-progress progress{flex:1;max-width:300px;width:120px;height:4px}.askgpt-native-bottom-status .askgpt-native-status{max-width:none;font:inherit}';
+    doc.head.appendChild(style);host.append(viewport);container.appendChild(host);doc.body.appendChild(menu);progress.append(label,bar);statusBar.append(progress,status);container.appendChild(statusBar);progress.hidden=true;status.hidden=true;statusBar.hidden=true;
     const enteringTool=copy(reader._state?.tool||source._tool||{type:'pointer'}),legacyAutoTool=['highlight','underline'].includes(enteringTool.type),originalTool=legacyAutoTool?{type:'pointer'}:enteringTool;
     const removers=[],viewRemovers=[],hooks=[],initializers=new Set(),embedded=new Map(),embeddedPending=new Set(),sourceFrame=source._iframe;let disposed=false,visible=false,view=null,mapper=null,rawSelectionPopup=null,rawSourceSelectionPopup=null,rawAnnotationPopup=null,rawOverlayPopup=null,displayedAlignment=null,displayedSourcePages=[],requestedAlignmentPages=new Set(),annotationStatus=null,annotationHintTimer=null,epoch=0,forwarding=false,mappedUpdate=false,toolOverride=false,sourceState=copy(reader._state?.primaryViewState||{}),direction='en-zh',mode='mono';
     let desiredMode='mono',activeLane='target',scrollLeader='target',displayedBytes=null,sourceMoved=false,syncing=false,applyingScale=false,panSession=null,independentZoomUntil=0,dualFitDone=false,dualFitPending=null,toolbarTarget=null,toolbarReason='missingProperty',toolbarReportKey='',scrollLinked=true,figurePanel=null,figureScanner=null,figureScanning=null;const sourceStyles=new Map(['position','top','left','right','width','height','flex','max-width','visibility','z-index'].map(name=>[name,[sourceFrame?.style?.getPropertyValue(name)||'',sourceFrame?.style?.getPropertyPriority(name)||'']]));
@@ -457,33 +459,70 @@
     const initialVisibility=sourceFrame?.style?.getPropertyValue('visibility')||'',initialPriority=sourceFrame?.style?.getPropertyPriority('visibility')||'',initialZIndex=sourceFrame?.style?.getPropertyValue('z-index')||'',initialZPriority=sourceFrame?.style?.getPropertyPriority('z-index')||'';
     function listen(node,type,callback,options){node.addEventListener(type,callback,options);removers.push(()=>node.removeEventListener(type,callback,options));}
     function current(value){return !disposed&&value===epoch&&(appearance.isCurrent?.()??true);}
-    function setStatus(text){status.textContent=text||'';status.setAttribute('title',text||'');status.hidden=!text;}
+    function refreshStatusBar(){statusBar.hidden=progress.hidden&&status.hidden;}
+    function setStatus(text){status.textContent=text||'';status.setAttribute('title',text||'');status.hidden=!text;refreshStatusBar();}
+    const hoverHandles=[];let hoverButton=null;
+    function clearHover(){for(const handle of hoverHandles)handle.clear();}
+    function refreshHover(){if(!hoverButton)return;const on=appearance.hoverEnabled?.()!==false;hoverButton.textContent=(on?'✓ ':'')+'悬停释义';hoverButton.setAttribute('aria-checked',String(on));}
     function closeMenu(){menu.hidden=true;moreButton?.setAttribute('aria-expanded','false');}
     function positionMenu(){const anchor=moreButton?.getBoundingClientRect?.(),bounds=menu.getBoundingClientRect?.(),width=win.innerWidth||doc.documentElement?.clientWidth||1024,height=win.innerHeight||doc.documentElement?.clientHeight||768,menuWidth=bounds?.width||200,menuHeight=bounds?.height||190;menu.style.setProperty('left',Math.max(8,Math.min(width-menuWidth-8,(anchor?.right||width-8)-menuWidth))+'px');menu.style.setProperty('top',Math.max(8,Math.min(height-menuHeight-8,(anchor?.bottom||0)+4))+'px');}
+    function openMenu(last=false){if(disposed)return;refreshHover();figurePanel?.close();menu.hidden=false;moreButton?.setAttribute('aria-expanded','true');positionMenu();const items=menuItems.filter(node=>!node.disabled);(last?items.at(-1):items[0])?.focus?.();}
+    function toggleMenu(){if(menu.hidden)openMenu();else closeMenu();}
     function closePanels(){closeMenu();figurePanel?.close();}
-    function toggleMenu(){figurePanel?.close();if(!menu.hidden){closeMenu();return;}menu.hidden=false;moreButton.setAttribute('aria-expanded','true');positionMenu();menuItems.find(item=>!item.disabled)?.focus?.();}
     function sameDOMNode(expected,value){if(expected===value)return true;if(!expected||!value||typeof expected.isSameNode!=='function')return false;try{return Reflect.apply(expected.isSameNode,expected,[value])===true;}catch(_){return false;}}
     function toolbarSnapshot(){
       let box=null,targetBox=null,attached=false,connected=false,targetConnected=false,childCount=0;try{box=header.getBoundingClientRect?.();targetBox=toolbarTarget?.getBoundingClientRect?.();attached=Boolean(toolbarTarget&&sameDOMNode(toolbarTarget,header.parentNode));connected=header.isConnected===true;targetConnected=toolbarTarget?.isConnected===true;childCount=toolbarTarget?.childElementCount??toolbarTarget?.children?.length??0;}catch(_){}
-      return {name:'RenderSnapshot',code:toolbarReason?'compatibility':'rendered',...(toolbarReason?{errorDetail:toolbarReason}:{}),renderNumbers:{width:finite(box?.width)?Math.max(0,Math.round(box.width)):0,height:finite(box?.height)?Math.max(0,Math.round(box.height)):0,holderChildCount:Number.isInteger(childCount)?childCount:0,textItemsCount:menuItems.length,renderedCount:attached&&connected?6:0},layoutNumbers:{canvasConnected:connected?1:0,holderConnected:targetConnected?1:0,canvasLeft:box?.left,canvasTop:box?.top,canvasRectWidth:box?.width,canvasRectHeight:box?.height,holderRectWidth:targetBox?.width,holderRectHeight:targetBox?.height,holderChildCount:Number.isInteger(childCount)?childCount:0}};
+      return {name:'RenderSnapshot',code:toolbarReason?'compatibility':'rendered',...(toolbarReason?{errorDetail:toolbarReason}:{}),renderNumbers:{width:finite(box?.width)?Math.max(0,Math.round(box.width)):0,height:finite(box?.height)?Math.max(0,Math.round(box.height)):0,holderChildCount:Number.isInteger(childCount)?childCount:0,textItemsCount:menuItems.length,renderedCount:attached&&connected?6+(menu.hidden?0:menuItems.length):0},layoutNumbers:{canvasConnected:connected?1:0,holderConnected:targetConnected?1:0,canvasLeft:box?.left,canvasTop:box?.top,canvasRectWidth:box?.width,canvasRectHeight:box?.height,holderRectWidth:targetBox?.width,holderRectHeight:targetBox?.height,holderChildCount:Number.isInteger(childCount)?childCount:0}};
     }
     function reportToolbar(){const snapshot=toolbarSnapshot(),key=JSON.stringify(snapshot);if(key!==toolbarReportKey){toolbarReportKey=key;try{appearance.reportDiagnostic?.('toolbar',snapshot);}catch(_){}}}
+    let toolbarWidthObserver=null,centerPlacement=null;
+    function restoreToolbarCenter(){
+      const saved=centerPlacement;centerPlacement=null;if(!saved||saved.node.style.getPropertyValue('translate')!==saved.applied)return;
+      if(saved.value)saved.node.style.setProperty('translate',saved.value,saved.priority);else saved.node.style.removeProperty('translate');
+    }
+    function layoutToolbarWidth(){
+      if(disposed||!toolbarTarget||!sameDOMNode(toolbarTarget,header.parentNode))return null;
+      restoreToolbarCenter();let width=160,nodes=null,placement=null;
+      try{
+        const toolbar=doc.querySelector?.('.toolbar'),start=doc.querySelector?.('.toolbar .start'),center=doc.querySelector?.('.toolbar .center'),end=doc.querySelector?.('.toolbar .end');
+        const box=node=>{const r=node?.getBoundingClientRect?.();return r&&[r.left,r.right,r.width].every(finite)&&r.width>0&&r.right>r.left?{left:r.left,right:r.right}:null;},visibleBox=node=>{const r=box(node),children=node?.querySelectorAll?.('*');if(!r)return null;if(children&&Number.isInteger(children.length)&&children.length<=256)for(let i=0;i<children.length;i++){const child=box(children[i]);if(child){r.left=Math.min(r.left,child.left);r.right=Math.max(r.right,child.right);}}return r;};
+        if(box(toolbar)&&box(start)&&box(center)&&box(end)){
+          // Measure the native three-column flex layout without our width;
+          // absolute page-count text must count toward its visible left gap.
+          header.style.setProperty('max-width','0px');const startBox=visibleBox(start),centerBox=visibleBox(center),endBox=box(end),rtl=win.getComputedStyle?.(toolbar)?.direction==='rtl'||doc.documentElement?.getAttribute?.('dir')==='rtl';
+          if(startBox&&centerBox&&endBox){const first=rtl?startBox.left-centerBox.right:centerBox.left-startBox.right,second=rtl?centerBox.left-endBox.right:endBox.left-centerBox.right;width=Math.max(0,Math.floor(2*(Math.min(first,second)-8)));
+            // Use spare space between both native groups before compressing text.
+            // A bounded center offset keeps page-count and annotation tools apart.
+            if(!center.style.getPropertyValue('translate')){width=Math.max(width,Math.min(232,Math.floor(first+second-16)));placement={node:center,first,second,rtl};}}
+          nodes=[toolbar,start,center,end,header];
+        }
+      }catch(_){}
+      header.setAttribute('data-compact',String(width<216));header.setAttribute('data-tight',String(width<176));const value=width+'px';if(header.style.getPropertyValue('max-width')!==value)header.style.setProperty('max-width',value);
+      if(placement&&width>0){const measured=header.getBoundingClientRect?.()?.width;if(finite(measured)&&measured>0){const lower=8-placement.first+measured/2,upper=placement.second-measured/2-8,shift=lower<=upper?Math.max(lower,Math.min(upper,0)):0;if(Math.abs(shift)>.25){const node=placement.node,applied=(placement.rtl?-shift:shift)+'px';centerPlacement={node,value:node.style.getPropertyValue('translate'),priority:node.style.getPropertyPriority('translate'),applied};node.style.setProperty('translate',applied);}}}
+      if(!menu.hidden)positionMenu();return nodes;
+    }
+    function observeToolbarWidth(){
+      try{toolbarWidthObserver?.disconnect();}catch(_){}toolbarWidthObserver=null;
+      const nodes=layoutToolbarWidth();if(!nodes||typeof win.ResizeObserver!=='function')return;
+      try{toolbarWidthObserver=new win.ResizeObserver(readerFunction(layoutToolbarWidth));for(const node of nodes)toolbarWidthObserver.observe(node);}catch(_){try{toolbarWidthObserver?.disconnect();}catch(_){}toolbarWidthObserver=null;}
+    }
+    listen(win,'resize',layoutToolbarWidth);removers.push(()=>{try{toolbarWidthObserver?.disconnect();}catch(_){}toolbarWidthObserver=null;restoreToolbarCenter();});
     function attachToolbar(value=appearance.toolbarHost){
       if(disposed)return false;
       try{
         const provided=typeof value==='function'?value():value,target=provided||doc.querySelector?.('.toolbar .end > .custom-sections')||doc.querySelector?.('.toolbar .end');toolbarTarget=target||null;
         if(!target)toolbarReason='missingProperty';
-        // Different Xray wrappers can name the same native Document. Verify
-        // with the known reader document, never a URL or a broad Xray waiver.
+        // Keep our controls in Zotero's original toolbar slot. Its
+        // native controls and fixed reading-area geometry remain owned by it.
         else if(!sameDOMNode(doc,target.ownerDocument))toolbarReason='id';
         else if(typeof target.appendChild!=='function')toolbarReason='notFunction';
-        else {if(!sameDOMNode(target,header.parentNode)){closeMenu();target.appendChild(header);}else if(!menu.hidden)positionMenu();toolbarReason=sameDOMNode(target,header.parentNode)?null:'other';}
+        else {if(!sameDOMNode(target,header.parentNode))target.appendChild(header);toolbarReason=sameDOMNode(target,header.parentNode)?null:'other';if(!toolbarReason)observeToolbarWidth();}
       }catch(_){toolbarReason='permission';}
       reportToolbar();return toolbarReason===null;
     }
     function setAnnotationStatus(value){
-      const labels={preparing:'正在准备词语对应，可继续阅读',failed:'词语对应暂不可用，可重新划词或点重试',retry_wait:'请稍候 3 秒再重试词语对应',retry_limited:'本页已多次重试，请稍后再试'};
-      annotationStatus=Object.hasOwn(labels,value)?value:null;const text=labels[annotationStatus]||'译文标注';annotationIndicator.setAttribute('data-state',annotationStatus||'ready');annotationIndicator.setAttribute('title',text);annotationIndicator.setAttribute('aria-label',text);annotationIndicator.setAttribute('aria-busy',String(annotationStatus==='preparing'));
+      const labels={idle:'选词时准备对应',preparing:'正在准备词语对应，可继续阅读',failed:'词语对应暂不可用，可重新划词或点重试',retry_wait:'请稍候 3 秒再重试词语对应',retry_limited:'本页已多次重试，请稍后再试'};
+      annotationStatus=Object.hasOwn(labels,value)?value:null;const text=labels[annotationStatus]||'译文标注已就绪';annotationIndicator.textContent=text;annotationIndicator.setAttribute('data-state',annotationStatus||'ready');annotationIndicator.setAttribute('title',text);annotationIndicator.setAttribute('aria-label',text);annotationIndicator.setAttribute('aria-busy',String(annotationStatus==='preparing'));
       if(annotationStatus==='retry_wait'||annotationStatus==='retry_limited')showAnnotationHint(text);else if(annotationStatus===null||annotationStatus==='preparing')clearAnnotationHint();
     }
     function clearAnnotationHint(){if(annotationHintTimer!==null)win.clearTimeout(annotationHintTimer);annotationHintTimer=null;annotationHint.hidden=true;annotationHint.textContent='';}
@@ -507,23 +546,24 @@
     originalButton.setAttribute('aria-pressed','true');monoButton.setAttribute('aria-pressed','false');dualButton.setAttribute('aria-pressed','false');
     const linkedButton=button('联动','Linked scrolling · 同步滚动；点击可独立移动一侧',()=>setScrollLinked(!scrollLinked));linkedButton.setAttribute('aria-pressed','true');linkedButton.disabled=true;
     const figureButton=button('图表','Figure and table navigation · 图表定位',toggleFigures);figureButton.setAttribute('aria-haspopup','dialog');figureButton.setAttribute('aria-expanded','false');
-    moreButton=button('⋯','More translation controls · 翻译选项',toggleMenu);moreButton.className+=' askgpt-native-more';moreButton.setAttribute('aria-haspopup','menu');moreButton.setAttribute('aria-expanded','false');moreButton.setAttribute('aria-controls',menu.getAttribute('id'));
-    const scope=group(menu);button('本页','Translate current page · 本页',()=>actions.current?.(),scope);button('整份','Translate whole PDF · 整份',()=>actions.whole?.(),scope);
+    moreButton=button('⋯','More translation controls · 翻译选项',toggleMenu);moreButton.className+=' askgpt-native-more';moreButton.setAttribute('aria-haspopup','menu');moreButton.setAttribute('aria-expanded','false');moreButton.setAttribute('aria-controls',menu.getAttribute('id'));moreButton.setAttribute('tabindex','0');
+    const scope=group(menu);button('本页翻译','Translate current page · 本页',()=>actions.current?.(),scope);button('整篇翻译','Translate whole PDF · 整份',()=>actions.whole?.(),scope);
     const playback=group(menu);button('■','Stop · 停止',()=>actions.stop?.(),playback);button('▶','Retry · 重试',()=>actions.resume?.(),playback);
     const zoom=group(menu),activeView=()=>mode==='original'||mode==='dual'&&activeLane==='source'?source:view;button('−','Zoom out · 缩小',()=>activeView()?.zoomOut?.(),zoom);button('↔','Fit width · 适合宽度',()=>activeView()?.zoomPageWidth?.(),zoom);button('+','Zoom in · 放大',()=>activeView()?.zoomIn?.(),zoom);
-    const matchZoomButton=button('同步大小','Match pane zoom · 同步大小',()=>matchPaneZoom(),zoom);matchZoomButton.disabled=true;
+    const matchZoomButton=button('同步大小','Match pane zoom · 同步大小',()=>matchPaneZoom(),menu);matchZoomButton.disabled=true;
     const directionButton=button('EN→中','Translation direction · 翻译方向',()=>{direction=direction==='en-zh'?'zh-en':'en-zh';directionButton.textContent=direction==='en-zh'?'EN→中':'中→EN';actions.direction?.(direction);},menu);
-    header.append(annotationSlot,progress,status);
-    listen(doc,'pointerdown',event=>{if(menu.hidden&&!figurePanel?.open)return;const inside=node=>node&&(node===event.target||node.contains?.(event.target));if(!inside(header)&&!inside(menu)&&!inside(figurePanel?.element))closePanels();},true);
-    listen(menu,'keydown',event=>{if(menu.hidden)return;if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();closeMenu();moreButton.focus?.();return;}if(!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return;event.preventDefault();event.stopImmediatePropagation();const items=menuItems.filter(item=>!item.disabled),index=items.indexOf(doc.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;items[next]?.focus?.();},true);
-    listen(win,'resize',()=>{if(!menu.hidden)positionMenu();});
+    if(typeof appearance.lookupWord==='function'){hoverButton=button('悬停释义','Hover dictionary · 悬停释义',()=>actions.toggleHover?.(),menu);hoverButton.setAttribute('role','menuitemcheckbox');refreshHover();}
+    menu.append(annotationSlot);
+    listen(doc,'pointerdown',event=>{if(menu.hidden&&!figurePanel?.open)return;const inside=node=>{for(let target=event.target,i=0;node&&target&&i<32;i++,target=target.parentNode)if(sameDOMNode(node,target))return true;return false;};if(!inside(header)&&!inside(menu)&&!inside(figurePanel?.element))closePanels();},true);
+    listen(moreButton,'keydown',event=>{if(!['ArrowDown','ArrowUp','Enter',' '].includes(event.key))return;event.preventDefault();event.stopImmediatePropagation?.();if(event.key==='Enter'||event.key===' ')toggleMenu();else openMenu(event.key==='ArrowUp');});
+    listen(menu,'keydown',event=>{if(menu.hidden)return;if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation?.();closeMenu();moreButton.focus?.();return;}if(event.key==='Tab'){closeMenu();return;}if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;event.preventDefault();event.stopImmediatePropagation?.();const items=menuItems.filter(node=>!node.disabled),index=items.indexOf(doc.activeElement),next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;items[next]?.focus?.();},true);
     listen(win,'blur',closePanels);
     function toggleFigures(){closeMenu();figurePanel?.toggle();}
     function scanFigures(){
       if(figureScanning)return figureScanning;
       const pdf=source._iframeWindow?.PDFViewerApplication?.pdfDocument;
       if(!FigureNavigation||!pdf)throw failure();
-      figureScanner=FigureNavigation.create(pdf,{invoke:callReader,yield:()=>new Promise(resolve=>win.setTimeout(resolve,0)),unwrapPage:page=>components?.utils?.waiveXrays?components.utils.waiveXrays(page):page,isCurrent:()=>!disposed&&source._iframeWindow?.PDFViewerApplication?.pdfDocument===pdf,
+      figureScanner=FigureNavigation.create(pdf,{invoke:callReader,eagerFirstBatch:true,yield:()=>new Promise(resolve=>win.setTimeout(resolve,0)),unwrapPage:page=>components?.utils?.waiveXrays?components.utils.waiveXrays(page):page,isCurrent:()=>!disposed&&source._iframeWindow?.PDFViewerApplication?.pdfDocument===pdf,
         onBatch:batch=>{if(!disposed)figurePanel?.setEntries(batch.entries,batch);}});
       figureScanning=figureScanner.scan().catch(error=>{figureScanning=null;if(error?.name!=='AbortError')figurePanel?.setEntries([],{done:true,failed:true});throw error;});return figureScanning;
     }
@@ -629,7 +669,20 @@
       if(dualFitPending?.candidate===view)return;cancelInitialDualFit();const candidate=view,generation=epoch,timing=typeof win.requestAnimationFrame==='function'?win:candidate._iframeWindow,pending={candidate,win:timing,frame:typeof timing.requestAnimationFrame==='function',id:null};dualFitPending=pending;
       const fit=()=>{if(dualFitPending!==pending)return;dualFitPending=null;if(!current(generation)||view!==candidate||mode!=='dual'||!visible||typeof source.zoomPageWidth!=='function'||typeof candidate.zoomPageWidth!=='function')return;
         const previousForwarding=forwarding,previousSyncing=syncing;independentZoomUntil=Date.now()+220;forwarding=true;syncing=true;
-        try{callReader(source,'zoomPageWidth');callReader(candidate,'zoomPageWidth');const fitted=snapshotSourceState();if(fitted.scale!==undefined)sourceState.scale=fitted.scale;dualFitDone=true;}catch(error){appearance.reportDiagnostic?.('nativeState',diagnosticError(error));}finally{forwarding=previousForwarding;syncing=previousSyncing;}
+        try{callReader(source,'zoomPageWidth');callReader(candidate,'zoomPageWidth');
+          // Both panes display the same physical page box. Their independent
+          // fit-width values differ because PDF.js reserves scrollbar space.
+          // Fit to the smaller scale, then align the same PDF coordinate.
+          const scales=[actualScale(source),actualScale(candidate)];
+          if(scales.every(value=>finite(value)&&value>0)){
+            const scale=Math.max(.01,Math.floor(Math.min(...scales)*100)/100);
+            for(const [index,pane] of [source,candidate].entries()){
+              const viewer=pane._iframeWindow?.PDFViewerApplication?.pdfViewer;
+              if(typeof viewer?.updateScale==='function')callReader(viewer,'updateScale',{scaleFactor:scale/scales[index],drawingDelay:0});
+            }
+            navigateNative(source,sourceState);navigateNative(candidate,mapper.toOutputViewportState(sourceState));
+          }
+          const fitted=snapshotSourceState();if(fitted.scale!==undefined)sourceState.scale=fitted.scale;dualFitDone=true;}catch(error){appearance.reportDiagnostic?.('nativeState',diagnosticError(error));}finally{forwarding=previousForwarding;syncing=previousSyncing;}
       };
       pending.id=pending.frame?timing.requestAnimationFrame(fit):timing.setTimeout(fit,0);
     }
@@ -677,6 +730,7 @@
       try{callReader(viewer,'updateScale',{scaleFactor:scale/previousScale,drawingDelay:0});navigateNative(other,destination);sourceState={...state,...(other===source?{scale:Math.round(scale*10000)/100}:{})};sourceMoved=false;dualFitDone=true;return true;}finally{forwarding=previousForwarding;syncing=previousSyncing;}
     }
     function showOriginal(){
+      clearHover();
       if(disposed)return;const moveSource=Boolean(view&&visible&&mode!=='original');
       if(!moveSource){
         // A failed/unfinished translated view never owned the reading position.
@@ -684,7 +738,11 @@
         // snapshot, including when its debounced parent state is still stale.
         sourceState=snapshotSourceState();
       }
-      desiredMode='original';rawSelectionPopup=null;rawAnnotationPopup=null;rawOverlayPopup=null;pendingSelection=null;for(const name of ['setSelectionPopup','setAnnotationPopup','setOverlayPopup'])callReader(view,name,null);for(const name of ['_onSetSelectionPopup','_onSetAnnotationPopup','_onSetOverlayPopup'])callReader(source,name,null);for(const handle of readingHandles)handle.clear?.(false);showSource();mode='original';activeLane='source';leadScroll('source');matchZoomButton.disabled=true;linkedButton.disabled=true;figurePanel?.refresh();host.style.setProperty('visibility','visible');host.style.setProperty('pointer-events','none');viewport.style.setProperty('display','none');header.style.setProperty('pointer-events','auto');originalButton.setAttribute('aria-pressed','true');monoButton.setAttribute('aria-pressed','false');dualButton.setAttribute('aria-pressed','false');if(moveSource)navigateNative(source,sourceState);setProgress(null);setStatus('');
+      desiredMode='original';
+      // A hidden unfinished iframe cannot paint. Retire only its local viewer;
+      // the controller keeps the generated PDF bytes for a later local reopen.
+      if(initializers.size){epoch++;removeView();}
+      rawSelectionPopup=null;rawAnnotationPopup=null;rawOverlayPopup=null;pendingSelection=null;for(const name of ['setSelectionPopup','setAnnotationPopup','setOverlayPopup'])callReader(view,name,null);for(const name of ['_onSetSelectionPopup','_onSetAnnotationPopup','_onSetOverlayPopup'])callReader(source,name,null);for(const handle of readingHandles)handle.clear?.(false);showSource();mode='original';activeLane='source';leadScroll('source');matchZoomButton.disabled=true;linkedButton.disabled=true;figurePanel?.refresh();host.style.setProperty('visibility','visible');host.style.setProperty('pointer-events','none');viewport.style.setProperty('display','none');header.style.setProperty('pointer-events','auto');originalButton.setAttribute('aria-pressed','true');monoButton.setAttribute('aria-pressed','false');dualButton.setAttribute('aria-pressed','false');if(moveSource)navigateNative(source,sourceState);setProgress(null);setStatus('');
     }
     function layoutViewport(nextMode){
       restoreSourceStyles();host.style.setProperty('background','transparent');host.style.setProperty('visibility','visible');host.style.setProperty('pointer-events','none');host.style.setProperty('z-index','0');header.style.setProperty('pointer-events','auto');viewport.style.setProperty('pointer-events','auto');viewport.style.removeProperty('display');viewport.style.setProperty('left',nextMode==='dual'?'50%':'0');viewport.style.setProperty('background','Canvas');
@@ -695,12 +753,107 @@
       originalButton.setAttribute('aria-pressed','false');monoButton.setAttribute('aria-pressed',String(mode==='mono'));dualButton.setAttribute('aria-pressed',String(mode==='dual'));matchZoomButton.disabled=mode!=='dual';linkedButton.disabled=mode!=='dual';figurePanel?.refresh();if(mode==='dual'){if(scrollLinked)navigateNative(source,sourceState);scheduleInitialDualFit();}
     }
     function setProgress(value){
-      const valid=value&&['preparing','translating','layout','loading'].includes(value.stage);progress.hidden=!valid;if(!valid)return;
+      const valid=value&&['preparing','translating','layout','loading'].includes(value.stage);progress.hidden=!valid;refreshStatusBar();if(!valid)return;
       const labels={preparing:'准备翻译',translating:'翻译',layout:'整理版式',loading:'载入译文'},count=Number.isInteger(value.total)&&value.total>1&&Number.isInteger(value.completed)&&value.completed>=0&&value.completed<=value.total;
       label.textContent=labels[value.stage]+(count?' · '+value.completed+' / '+value.total:'');progress.setAttribute('title',label.textContent);bar.setAttribute('aria-label',label.textContent);if(count){bar.setAttribute('max',String(value.total));bar.setAttribute('value',String(value.completed));}else {bar.removeAttribute('max');bar.removeAttribute('value');}
     }
-    function removeView(){annotationProjectionCache.clear();clearAnnotationHint();pendingSelection=null;rawSourceSelectionPopup=null;panSession=null;for(const cancel of [...initializers])cancel();for(const remove of viewRemovers.splice(0))remove();const old=view;view=null;displayedBytes=null;try{if(rawSelectionPopup){rawSelectionPopup=null;callReader(source,'_onSetSelectionPopup',null);}if(rawAnnotationPopup){rawAnnotationPopup=null;callReader(source,'_onSetAnnotationPopup',null);}if(rawOverlayPopup){rawOverlayPopup=null;callReader(source,'_onSetOverlayPopup',null);}old?.destroy?.();old?._iframe?.remove?.();}catch(error){appearance.reportDiagnostic?.('nativeDispose',error);}viewport.textContent='';}
-    function initialized(promise){return new Promise((resolve,reject)=>{let finished=false,timer;const finish=error=>{if(finished)return;finished=true;win.clearTimeout(timer);initializers.delete(cancel);if(error)reject(error);else resolve();},cancel=()=>finish();initializers.add(cancel);timer=win.setTimeout(()=>finish(failure()),30000);Promise.resolve(promise).then(()=>finish(),finish);});}
+    const nativeResources=new WeakMap();
+    function resourceError(){try{appearance.reportDiagnostic?.('nativeDispose',{name:'NativeResourceDiagnostic',code:'compatibility',errorDetail:'other'});}catch(_){}}
+    function resourceReport(life,stage){try{appearance.reportDiagnostic?.(stage,{name:'NativeResourceDiagnostic',code:'rendered',resourceNumbers:{...life.counts}});}catch(_){}}
+    function replaceMethod(target,name,create){
+      let descriptor,original,replacement,installed;try{descriptor=Object.getOwnPropertyDescriptor(target,name);original=target[name];if(typeof original!=='function')return ()=>{};replacement=readerFunction(create(original));Object.defineProperty(target,name,{configurable:descriptor?.configurable??true,enumerable:descriptor?.enumerable??false,writable:true,value:replacement});installed=replacement;try{installed=Object.getOwnPropertyDescriptor(target,name)?.value||replacement;}catch(_){} }
+      catch(_){resourceError();return ()=>{};}
+      // Xray property/descriptor reads can expose another wrapper than the
+      // export return. Compare the identity actually installed in this slot.
+      return ()=>{try{const current=Object.getOwnPropertyDescriptor(target,name);if(current?.value!==installed&&current?.value!==replacement&&target[name]!==replacement)return;if(descriptor)Object.defineProperty(target,name,descriptor);else delete target[name];}catch(_){resourceError();}};
+    }
+    function removeResourceListeners(life,kind){
+      for(const [target,type,listener,settings] of life[kind].splice(0))try{Reflect.apply(target.removeEventListener,target,[type,listener,settings]);life.counts[kind==='parent'?'parentListeners':'mediaListeners']++;}catch(_){resourceError();}
+    }
+    function restoreResourceGlobal(life,name,owner){if(!owner||readerWindow[name]!==owner)return;const previous=life.globals[name];if(previous)Object.defineProperty(readerWindow,name,previous);else delete readerWindow[name];}
+    function guardNativeLoad(life,frame){
+      if(!frame||frame===source._iframe||life.frame)return;life.frame=frame;
+      let restoreTimerMethod=null;
+      const finish=()=>{restoreTimerMethod?.();restoreTimerMethod=null;};life.finishLoad=finish;
+      const begin=readerFunction(event=>{
+        if(life.retired){event.stopImmediatePropagation?.();return;}finish();
+        restoreTimerMethod=replaceMethod(readerWindow,'setTimeout',original=>function(callback,delay,...args){
+          if(typeof callback!=='function'||!(delay===undefined||delay===0))return Reflect.apply(original,this,[callback,delay,...args]);
+          let id;const guarded=readerFunction(function(...values){life.timers.delete(id);if(!life.retired)return Reflect.apply(callback,this,values);});
+          id=Reflect.apply(original,this,[guarded,delay,...args]);life.timers.add(id);return id;
+        });
+        // The final bubble listener normally restores synchronously. The
+        // microtask also covers a native load callback stopping propagation.
+        Promise.resolve().then(finish);
+      });
+      frame.addEventListener('load',begin,true);frame.addEventListener('load',readerFunction(finish),false);
+      // Retired-frame guards stay with that detached frame. They form no
+      // parent root and prevent already queued native loads reopening a PDF.
+    }
+    function releaseNative(life){
+      if(!life||life.retired)return;life.retired=true;life.finishLoad?.();removeResourceListeners(life,'parent');removeResourceListeners(life,'media');
+      for(const id of life.timers){try{readerWindow.clearTimeout(id);life.counts.pendingTimers++;}catch(_){resourceError();}}life.timers.clear();
+      const candidate=life.candidate,frame=life.frame||candidate?._iframe;
+      try{
+        const candidateWindow=candidate?._iframeWindow,frameWindow=frame?.contentWindow,target=candidateWindow?.PDFViewerApplication?candidateWindow:frameWindow,application=target?.PDFViewerApplication,originalWindow=source._iframeWindow,original=originalWindow?.PDFViewerApplication,task=application?.pdfLoadingTask,pdf=application?.pdfDocument;
+        // Public PDF.js destroy terminates the owned worker. Application.close
+        // may save form edits, so it must not be used for this cleanup.
+        if(application&&application!==original&&(!task||task!==original?.pdfLoadingTask)&&(!pdf||pdf!==original?.pdfDocument)){
+          const owner=typeof task?.destroy==='function'?task:pdf&&pdf!==original?.pdfDocument&&typeof pdf.destroy==='function'?pdf:null;
+          if(owner){life.counts.destroyRequests++;try{Promise.resolve(Reflect.apply(owner.destroy,owner,[])).catch(resourceError);}catch(_){resourceError();}}
+        }
+        restoreResourceGlobal(life,'if',target);restoreResourceGlobal(life,'PDFViewerApplication',application);
+      }catch(_){resourceError();}
+      try{candidate?.destroy?.();}catch(_){resourceError();}
+      try{frame?.remove?.();}catch(_){resourceError();}
+      resourceReport(life,'nativeResourcesReleased');
+    }
+    function constructNative(options){
+      const life={candidate:null,frame:null,parent:[],media:[],timers:new Set(),retired:false,globals:{if:Object.getOwnPropertyDescriptor(readerWindow,'if'),PDFViewerApplication:Object.getOwnPropertyDescriptor(readerWindow,'PDFViewerApplication')},counts:{parentListeners:0,mediaListeners:0,pendingTimers:0,destroyRequests:0}},restores=[];
+      try{
+        restores.push(replaceMethod(readerWindow,'addEventListener',original=>function(type,listener,settings){
+          const result=Reflect.apply(original,this,[type,listener,settings]);if(type==='webviewerloaded'&&typeof listener==='function')life.parent.push([this,type,listener,settings]);return result;
+        }));
+        restores.push(replaceMethod(readerWindow,'matchMedia',original=>function(query){
+          const media=Reflect.apply(original,this,[query]);if(query==='(prefers-color-scheme: dark)')restores.push(replaceMethod(media,'addEventListener',add=>function(type,listener,settings){const result=Reflect.apply(add,this,[type,listener,settings]);if(type==='change'&&typeof listener==='function')life.media.push([this,type,listener,settings]);return result;}));return media;
+        }));
+        const candidate=new source.constructor(options);life.candidate=candidate;nativeResources.set(candidate,life);guardNativeLoad(life,candidate._iframe);
+        resourceReport({...life,counts:{parentListeners:life.parent.length,mediaListeners:life.media.length,pendingTimers:life.timers.size,destroyRequests:0}},'nativeResourcesAttached');return candidate;
+      }catch(error){guardNativeLoad(life,viewport.firstElementChild||viewport.children?.[0]);releaseNative(life);throw error;}
+      finally{for(const restore of restores.reverse())restore();}
+    }
+    function retireNative(candidate){if(!candidate||candidate===source)return;releaseNative(nativeResources.get(candidate));}
+    function removeView(){annotationProjectionCache.clear();clearAnnotationHint();pendingSelection=null;rawSourceSelectionPopup=null;panSession=null;for(const cancel of [...initializers])cancel();for(const remove of viewRemovers.splice(0))remove();const old=view;view=null;displayedBytes=null;try{if(rawSelectionPopup){rawSelectionPopup=null;callReader(source,'_onSetSelectionPopup',null);}if(rawAnnotationPopup){rawAnnotationPopup=null;callReader(source,'_onSetAnnotationPopup',null);}if(rawOverlayPopup){rawOverlayPopup=null;callReader(source,'_onSetOverlayPopup',null);}}catch(_){resourceError();}retireNative(old);viewport.textContent='';}
+    function nativePaintState(candidate,phase,invoked={}){
+      const numbers={iframeWidth:0,iframeHeight:0,containerWidth:0,containerHeight:0,visiblePages:0,renderingState:-1,canvasWidth:0,canvasHeight:0,documentHidden:0,readerFocused:1,updateInvoked:invoked.updateInvoked||0,forceInvoked:invoked.forceInvoked||0,loadingTaskPresent:0,documentPresent:0,documentPages:0,viewerPages:0,currentPage:0,frameReadyState:0},count=value=>Number.isInteger(value)&&value>=0&&value<=100000?value:0;
+      try{const box=candidate?._iframe?.getBoundingClientRect?.();numbers.iframeWidth=count(Math.round(box?.width??candidate?._iframe?.clientWidth));numbers.iframeHeight=count(Math.round(box?.height??candidate?._iframe?.clientHeight));}catch(_){}
+      try{const target=candidate?._iframeWindow,app=target?.PDFViewerApplication;numbers.loadingTaskPresent=Number(Boolean(app?.pdfLoadingTask));numbers.documentPresent=Number(Boolean(app?.pdfDocument));numbers.documentPages=count(app?.pdfDocument?.numPages);numbers.viewerPages=count(app?.pdfViewer?.pagesCount);numbers.currentPage=count(app?.pdfViewer?.currentPageNumber);numbers.frameReadyState=({loading:1,interactive:2,complete:3})[target?.document?.readyState]||0;}catch(_){}
+      try{const target=candidate?._iframeWindow,app=target?.PDFViewerApplication,pdfViewer=app?.pdfViewer,container=target?.document?.getElementById('viewerContainer');numbers.containerWidth=count(container?.clientWidth);numbers.containerHeight=count(container?.clientHeight);numbers.documentHidden=Number(target?.document?.hidden===true||target?.document?.visibilityState==='hidden');try{const page=typeof pdfViewer?.getPageView==='function'?Reflect.apply(pdfViewer.getPageView,pdfViewer,[(pdfViewer.currentPageNumber||1)-1]):null;numbers.renderingState=Number.isInteger(page?.renderingState)&&page.renderingState>=0&&page.renderingState<=3?page.renderingState:-1;numbers.canvasWidth=count(page?.canvas?.width);numbers.canvasHeight=count(page?.canvas?.height);}catch(_){}try{const visible=typeof pdfViewer?._getVisiblePages==='function'?Reflect.apply(pdfViewer._getVisiblePages,pdfViewer,[]):null;numbers.visiblePages=count(visible?.views?.length);}catch(_){}}catch(_){}
+      try{if(typeof readerWindow.document?.hasFocus==='function')numbers.readerFocused=Number(readerWindow.document.hasFocus());}catch(_){}
+      try{appearance.reportDiagnostic?.('nativeState',{name:'RenderSnapshot',code:'rendered',errorDetail:phase,paintNumbers:numbers});}catch(_){}
+    }
+    function queueNativePaint(candidate){
+      const app=candidate?._iframeWindow?.PDFViewerApplication,invoked={updateInvoked:0,forceInvoked:0};
+      try{if(typeof app?.pdfViewer?.update==='function'){Reflect.apply(app.pdfViewer.update,app.pdfViewer,[]);invoked.updateInvoked=1;}}catch(_){}
+      try{if(typeof app?.forceRendering==='function'){Reflect.apply(app.forceRendering,app,[]);invoked.forceInvoked=1;}}catch(_){}
+      nativePaintState(candidate,'nativePaint',invoked);
+    }
+    function initialized(promise,phase,realm=readerWindow,wake=null){return new Promise((resolve,reject)=>{
+      let finished=false,timer=null;const listeners=[],Cu=components?.utils;
+      const background=()=>{try{return readerWindow.document?.hidden===true||readerWindow.document?.visibilityState==='hidden'||realm?.document?.hidden===true||realm?.document?.visibilityState==='hidden'||typeof readerWindow.document?.hasFocus==='function'&&readerWindow.document.hasFocus()===false;}catch(_){return false;}};
+      const finish=error=>{if(finished)return;finished=true;if(timer!==null)win.clearTimeout(timer);timer=null;for(const [target,type,callback] of listeners)try{target.removeEventListener(type,callback,true);}catch(_){}listeners.length=0;initializers.delete(cancel);if(error)reject(error);else resolve();},cancel=()=>finish();
+      let wasBackground=background();
+      const arm=()=>{if(timer!==null)win.clearTimeout(timer);timer=win.setTimeout(()=>{timer=null;nativePaintState(view,phase);if(background()){wasBackground=true;return;}const error=failure();error.errorDetail=phase;finish(error);},30000);};
+      const activate=event=>{if(finished||['focus','blur'].includes(event?.type)&&event.target&&event.target!==readerWindow&&event.target!==realm)return;const hidden=background(),foreground=wasBackground&&!hidden;wasBackground=hidden;if(hidden||timer!==null&&!foreground)return;try{wake?.();}catch(_){}if(!finished)arm();};
+      initializers.add(cancel);
+      try{
+        const targets=[[readerWindow,'focus'],[readerWindow,'blur'],[readerWindow.document,'visibilitychange'],...(realm!==readerWindow?[[realm,'focus'],[realm,'blur'],[realm?.document,'visibilitychange']]:[])];
+        for(const [target,type] of targets)if(target?.addEventListener){const owner=type==='visibilitychange'?target.defaultView||realm:target,callback=typeof Cu?.exportFunction==='function'?Cu.exportFunction(activate,owner):activate;if(typeof callback!=='function')throw failure();target.addEventListener(type,callback,true);listeners.push([target,type,callback]);}
+        arm();let native=promise;if(typeof Cu?.waiveXrays==='function')try{native=Cu.waiveXrays(promise);}catch(_){}
+        const done=typeof Cu?.exportFunction==='function'?Cu.exportFunction(()=>finish(),realm):()=>finish(),failed=typeof Cu?.exportFunction==='function'?Cu.exportFunction(error=>finish(error),realm):error=>finish(error);
+        if(typeof done!=='function'||typeof failed!=='function')throw failure();if(native&&typeof native.then==='function')Reflect.apply(native.then,native,[done,failed]);else if(native==null)finish();else throw failure();
+      }catch(error){finish(error);}
+    });}
     function requestAlignment(outputPage,options={}){
       const physical=displayedSourcePages[outputPage];if(!visible||!view||!Number.isInteger(physical))return 'unavailable';
       const explicit=options.explicit===true;if(!explicit)actions.page?.(physical);
@@ -709,7 +862,7 @@
       const requestEpoch=epoch;requestedAlignmentPages.add(physical);
       try{
         const result=actions.align(physical,{explicit,...(options.units?.length?{units:options.units}:{}),...(options.selection?{selection:options.selection}:{})});
-        if(['retry_wait','retry_limited','failed'].includes(result))setAnnotationStatus(result);
+        if(['idle','retry_wait','retry_limited','failed'].includes(result))setAnnotationStatus(result);
         else if(!['ready','started','pending','queued'].includes(result))setAnnotationStatus('preparing');
         if(result&&typeof result.then==='function')void Promise.resolve(result).catch(()=>{if(current(requestEpoch))setAnnotationStatus('failed');});return result;
       }catch(error){if(current(requestEpoch))setAnnotationStatus('failed');appearance.reportDiagnostic?.('nativeSelection',error);return 'failed';}
@@ -806,7 +959,7 @@
     if(FigurePanel)figurePanel=FigurePanel.create({doc,win,anchor:figureButton,exportCallback:readerFunction,onOpen:scanFigures,onJump:jumpFigure,
       getState:()=>({source:mode!=='mono',target:visible&&mode!=='original',side:mode==='mono'?'target':activeLane,pages:displayedSourcePages})});
 
-    }catch(error){for(const restore of hooks.reverse())restore();for(const remove of removers.splice(0))remove();figureScanner?.cancel();figurePanel?.dispose();host.remove();header.remove();menu.remove();style.remove();throw error;}
+    }catch(error){for(const restore of hooks.reverse())restore();for(const remove of removers.splice(0))remove();figureScanner?.cancel();figurePanel?.dispose();host.remove();header.remove();menu.remove();statusBar.remove();style.remove();throw error;}
     function makeOptions(bytes,sourcePages){
       // PDFView passes data.buf from the outer reader into another iframe.
       // PDF.js uses instanceof ArrayBuffer there, which fails for an outer-
@@ -891,33 +1044,42 @@
       const nativeListen=(target,type,callback,settings)=>{const listener=readerFunction(callback),options=readerRealm(settings);Reflect.apply(target.addEventListener,target,[type,listener,options]);return ()=>Reflect.apply(target.removeEventListener,target,[type,listener,options]);};
       viewRemovers.push(nativeListen(target,'pointerdown',closePanels,true));
       const isolateViewport=()=>{if(mode==='dual'&&dualFitPending){cancelInitialDualFit();dualFitDone=true;}independentZoomUntil=Infinity;};
-      for(const [candidateView,lane] of [[source,'source'],[candidate,'target']]){for(const type of ['pointerdown','keydown'])viewRemovers.push(nativeListen(candidateView._iframeWindow,type,event=>recordSelectionIntent(lane,event),true));const gestures=PaneGestures?.install(candidateView,{enabled:()=>lane==='source'?(mode==='dual'||mode==='original'):visible,activate:()=>{activeLane=lane;},onZoom:()=>{leadScroll(lane);scrollSync?.reset();isolateViewport();},onPan:()=>{leadScroll(lane);scrollSync?.reset();isolateViewport();},onNormalInput:()=>{leadScroll(lane);independentZoomUntil=0;},zoom:payload=>zoomPanes(candidateView,lane,payload),pan:payload=>panPanes(candidateView,lane,payload),listen:nativeListen,invoke:callReader});if(gestures){gestureHandles.add(gestures);viewRemovers.push(()=>{gestures.dispose();gestureHandles.delete(gestures);});}}
+      for(const [candidateView,lane] of [[source,'source'],[candidate,'target']]){for(const type of ['pointerdown','keydown'])viewRemovers.push(nativeListen(candidateView._iframeWindow,type,event=>recordSelectionIntent(lane,event),true));const gestures=PaneGestures?.install(candidateView,{enabled:()=>lane==='source'?(mode==='dual'||mode==='original'):visible,activate:()=>{activeLane=lane;},onZoom:()=>{leadScroll(lane);scrollSync?.reset();isolateViewport();},onPan:()=>{leadScroll(lane);scrollSync?.reset();isolateViewport();},onNormalInput:()=>{leadScroll(lane);independentZoomUntil=0;if(lane==='target'&&mode==='dual'&&scrollLinked)actions.readingInput?.();},zoom:payload=>zoomPanes(candidateView,lane,payload),pan:payload=>panPanes(candidateView,lane,payload),listen:nativeListen,invoke:callReader});if(gestures){gestureHandles.add(gestures);viewRemovers.push(()=>{gestures.dispose();gestureHandles.delete(gestures);});}}
     }
-    const readingHandles=[];
+    const readingHandles=[];let currentFigureHandle=null;
     function installReading(candidate){
       for(const [candidateView,lane] of [[source,'source'],[candidate,'target']]){
         const handle=ReadingTools?.install(candidateView,{exportCallback:readerFunction,onError:error=>appearance.reportDiagnostic?.('nativeSelection',diagnosticError(error)),getAlignment:()=>displayedAlignment,getLane:()=>lane,getOutputPage:page=>lane==='target'?page:displayedSourcePages.indexOf(page),enabled:()=>lane==='target'?visible:mode==='dual'||mode==='original',onFocus:value=>{if(mode==='dual')for(const other of readingHandles)if(other!==handle){if(value)other.focus?.(value);else other.clear?.(false);}}});
         if(handle){readingHandles.push(handle);viewRemovers.push(()=>{handle.dispose();const index=readingHandles.indexOf(handle);if(index>=0)readingHandles.splice(index,1);});}
       }
+      const figureHandle=appearance.installFigureView?.(candidate,()=>!disposed&&visible&&view===candidate&&mode!=='original');
+      if(figureHandle){currentFigureHandle=figureHandle;viewRemovers.push(()=>{figureHandle.dispose();if(currentFigureHandle===figureHandle)currentFigureHandle=null;});}
+      // The outer inline controller already owns the original pane's hover.
+      if(Hover&&typeof appearance.lookupWord==='function'){
+        const handle=Hover.install(candidate,{lookup:appearance.lookupWord,reportDiagnostic:appearance.reportDiagnostic,exportCallback:readerFunction,enabled:()=>!disposed&&visible&&view===candidate&&mode!=='original'&&appearance.hoverEnabled?.()!==false});
+        hoverHandles.push(handle);viewRemovers.push(()=>{handle.dispose();const index=hoverHandles.indexOf(handle);if(index>=0)hoverHandles.splice(index,1);});
+      }
     }
     function warmPages(candidate){
-      const target=candidate._iframeWindow,application=target?.PDFViewerApplication,document=application?.pdfDocument,bus=application?.eventBus;if(typeof document?.getPage!=='function')return;let stopped=false,loading=false,wanted=0,scheduled=null,idle=false;const done=new Set();
-      const schedule=()=>{if(stopped||loading||scheduled!==null)return;const run=()=>{scheduled=null;void warm();};idle=typeof target.requestIdleCallback==='function';scheduled=idle?target.requestIdleCallback(run,{timeout:200}):target.setTimeout(run,0);};
-      const warm=async()=>{if(loading||stopped)return;loading=true;const page=wanted,current=()=>!stopped&&wanted===page;
-        try{for(const index of [page,page+1,page+2,page-1]){
-          if(!current())break;if(index<0||index>=document.numPages||done.has(index))continue;
-          try{
-            if(typeof candidate._ensureBasicPageData==='function')await candidate._ensureBasicPageData(index);if(!current())break;
-            const returned=await document.getPage(index+1);if(!current())break;
-            const proxy=components?.utils?.waiveXrays?components.utils.waiveXrays(returned):returned;
-            await proxy.getOperatorList?.();if(!current())break;await proxy.getTextContent?.();if(!current())break;done.add(index);
-          }catch(_){done.delete(index);}
-        }}finally{loading=false;if(!stopped&&wanted!==page)schedule();}
+      const target=candidate._iframeWindow,application=target?.PDFViewerApplication,document=application?.pdfDocument,bus=application?.eventBus;
+      if(typeof candidate._ensureBasicPageData!=='function'||!Number.isInteger(document?.numPages))return;
+      let stopped=false,loading=false,wanted=(application.pdfViewer?.currentPageNumber||1)-1,timer=null,idle=null;const done=new Set();
+      const exported=fn=>components?.utils?.exportFunction?components.utils.exportFunction(fn,target):fn;
+      const ready=()=>!stopped&&visible&&view===candidate&&mode!=='original'&&target.document?.hidden!==true;
+      const cancel=()=>{if(timer!==null)target.clearTimeout(timer);if(idle!==null){if(typeof target.requestIdleCallback==='function')target.cancelIdleCallback?.(idle);else target.clearTimeout(idle);}timer=idle=null;};
+      const warm=async()=>{idle=null;if(!ready()||loading||wanted<0||wanted>=document.numPages||done.has(wanted))return;loading=true;const page=wanted;
+        try{
+          // Native PDF.js owns drawing/text parsing. Only prepare the current
+          // page's selection data after scrolling has stopped.
+          await candidate._ensureBasicPageData(page);if(!stopped)done.add(page);
+        }catch(_){}finally{loading=false;if(ready()&&wanted!==page)schedule();}
       };
-      const onPage=event=>{const page=event?.pageNumber;if(Number.isInteger(page)&&page>=1&&page<=document.numPages){wanted=page-1;schedule();}};
-      if(bus?.on&&bus?.off){bus.on('pagechanging',onPage);viewRemovers.push(()=>bus.off('pagechanging',onPage));}
-      viewRemovers.push(()=>{stopped=true;if(scheduled!==null){if(idle)target.cancelIdleCallback?.(scheduled);else target.clearTimeout(scheduled);scheduled=null;}});
-      wanted=(application.pdfViewer?.currentPageNumber||1)-1;schedule();
+      const schedule=()=>{cancel();if(!ready())return;timer=target.setTimeout(exported(()=>{timer=null;if(!ready())return;const run=exported(()=>{void warm();});idle=typeof target.requestIdleCallback==='function'?target.requestIdleCallback(run):target.setTimeout(run,0);}),600);};
+      const onInput=exported(()=>{wanted=(application.pdfViewer?.currentPageNumber||1)-1;schedule();}),onPage=readerFunction(event=>{const page=event?.pageNumber;if(Number.isInteger(page)&&page>=1&&page<=document.numPages){wanted=page-1;schedule();}}),scroll=target.document?.getElementById('viewerContainer');
+      target.addEventListener('wheel',onInput,true);scroll?.addEventListener('scroll',onInput,true);
+      if(bus?.on&&bus?.off)bus.on('pagechanging',onPage);
+      viewRemovers.push(()=>{stopped=true;cancel();target.removeEventListener('wheel',onInput,true);scroll?.removeEventListener('scroll',onInput,true);if(bus?.on&&bus?.off)bus.off('pagechanging',onPage);});
+      schedule();
     }
     function installEmbedded(candidate,sourcePages,generation){
       const originalDocument=context.pdfDocument||source._iframeWindow?.PDFViewerApplication?.pdfDocument,bus=candidate._iframeWindow?.PDFViewerApplication?.eventBus;
@@ -953,6 +1115,7 @@
       void load((candidate._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber||1)-1);
     }
     async function showOutput(bytes,sourcePages,nextMode,alignment){
+      clearHover();
       if(disposed||!['mono','dual'].includes(nextMode))throw failure();desiredMode=nextMode;
       const validated=validateAlignment(alignment,sourcePages);
       // Capture before removing/restyling either iframe. A mono translation
@@ -966,17 +1129,17 @@
       // mono/dual viewport before construction, without navigating or fitting.
       layoutViewport(nextMode);
       let candidate;
-      try{const options=readerRealm(makeOptions(bytes,sourcePages));candidate=new source.constructor(options);view=candidate;appearance.reportDiagnostic?.('nativeConstructed');await initialized(candidate.initializedPromise);if(!current(generation)){if(view===candidate)removeView();else {candidate.destroy?.();candidate._iframe?.remove?.();}return;}appearance.reportDiagnostic?.('nativeInitialized');if(!candidate._iframeWindow?.PDFViewerApplication?.pdfDocument)throw failure();
-        const rendered=candidate._iframeWindow.PDFViewerApplication.pdfViewer?.onePageRendered;if(rendered&&typeof rendered.then==='function')await initialized(rendered);if(!current(generation))return;appearance.reportDiagnostic?.('nativePainted');
+      try{const options=readerRealm(makeOptions(bytes,sourcePages));candidate=constructNative(options);view=candidate;appearance.reportDiagnostic?.('nativeConstructed');await initialized(candidate.initializedPromise,'nativeInitialize',readerWindow,()=>queueNativePaint(candidate));if(!current(generation)){if(view===candidate)removeView();else retireNative(candidate);return;}removeResourceListeners(nativeResources.get(candidate),'parent');appearance.reportDiagnostic?.('nativeInitialized');if(!candidate._iframeWindow?.PDFViewerApplication?.pdfDocument)throw failure();
+        queueNativePaint(candidate);const rendered=candidate._iframeWindow.PDFViewerApplication.pdfViewer?.onePageRendered;if(rendered)await initialized(rendered,'nativePaint',candidate._iframeWindow,()=>queueNativePaint(candidate));if(!current(generation))return;appearance.reportDiagnostic?.('nativePainted');
         setReaderTool({type:'pointer'});toolOverride=true;syncTools(candidate,{type:'pointer'});callReader(candidate,'setAnnotations',projectForDisplay());callReader(candidate,'setTool',{type:'pointer'});callReader(candidate,'setSelectedAnnotationIDs',copy(reader._state?.selectedAnnotationIDs||[]));displayedBytes=bytes;activeLane='target';leadScroll('target');layoutPanes(desiredMode==='original'?nextMode:desiredMode);installWheel(candidate);installReading(candidate);installEmbedded(candidate,sourcePages,generation);warmPages(candidate);if(desiredMode==='original')showOriginal();setProgress(null);setStatus('');appearance.reportDiagnostic?.('nativeReady',toolbarSnapshot());requestAlignment((candidate._iframeWindow.PDFViewerApplication.pdfViewer.currentPageNumber||1)-1);
       }catch(error){if(current(generation)){showSource();removeView();}throw error;}
     }
-    const result={host,frame:host,doc,body:viewport,header,menu,figurePanel,setScrollLinked,jumpFigure,get scrollLinked(){return scrollLinked;},attachToolbar,get visible(){return visible;},get nativeView(){return view;},get currentSourcePage(){const candidate=mode==='dual'&&activeLane==='source'||!visible?source:view,number=candidate?._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber;return Number.isInteger(number)?candidate===source?number-1:displayedSourcePages[number-1]:sourceState.pageIndex;},setStatus,setProgress,setAnnotationStatus,
+    const result={host,frame:host,doc,body:viewport,header,menu,statusBar,figurePanel,setScrollLinked,jumpFigure,get scrollLinked(){return scrollLinked;},attachToolbar,get visible(){return visible;},get nativeView(){return view;},get figureHandle(){return currentFigureHandle;},get currentSourcePage(){const candidate=mode==='dual'&&activeLane==='source'||!visible?source:view,number=candidate?._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber;return Number.isInteger(number)?candidate===source?number-1:displayedSourcePages[number-1]:sourceState.pageIndex;},setStatus,setProgress,setAnnotationStatus,
       updateSelectionLinks,
       updateAlignment(value){if(disposed||!view||!displayedSourcePages.length)return false;const validated=validateAlignment(value,displayedSourcePages);mapper=createMapper(validated,'mono',source,()=>view,selectionWords);displayedAlignment=validated;callReader(view,'setAnnotations',projectForDisplay());setAnnotationStatus(null);if(selectionLane==='target')linkSelection(rawSelectionPopup,'target');else linkSelection(rawSourceSelectionPopup,'source');return true;},
-      prepareOutput(){setStatus('');warmFigures();},showOutput,showOriginal,
+      clearHover,refreshHover,prepareOutput(){clearHover();setStatus('');warmFigures();},showOutput,showOriginal,
       restoreOriginal(){epoch++;showSource();removeView();setProgress(null);},
-      dispose(){if(disposed)return;disposed=true;epoch++;showSource();scrollSync?.dispose();removeView();figureScanner?.cancel();figurePanel?.dispose();for(const remove of removers.splice(0))remove();for(const restore of hooks.reverse())restore();host.remove();header.remove();menu.remove();style.remove();}
+      dispose(){if(disposed)return;disposed=true;epoch++;showSource();scrollSync?.dispose();removeView();figureScanner?.cancel();figurePanel?.dispose();for(const remove of removers.splice(0))remove();for(const restore of hooks.reverse())restore();host.remove();header.remove();menu.remove();statusBar.remove();style.remove();}
     };
     attachToolbar();
     appearance.setCancel?.(()=>result.dispose());return result;

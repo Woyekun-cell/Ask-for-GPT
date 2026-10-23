@@ -3,7 +3,7 @@
   const XHTML='http://www.w3.org/1999/xhtml';
   function create(options){
     const {doc,win,anchor}=options,removers=[],rowRemovers=[];
-    let disposed=false,entries=[],done=false,failed=false,completed=0,total=0,side='source';
+    let disposed=false,entries=[],done=false,failed=false,completed=0,total=0,side='source',renderKey=null;
     const element=(name,text)=>{const node=doc.createElementNS(XHTML,name);if(text!=null)node.textContent=text;return node;};
     const panel=element('section'),heading=element('div','图表定位'),choices=element('div'),list=element('div'),status=element('div'),style=element('style');
     panel.className='askgpt-figure-panel';panel.hidden=true;panel.setAttribute('role','dialog');panel.setAttribute('aria-label','图表定位');heading.className='askgpt-figure-heading';choices.className='askgpt-figure-targets';choices.setAttribute('role','group');choices.setAttribute('aria-label','定位到哪一侧');list.className='askgpt-figure-list';status.className='askgpt-figure-status';status.setAttribute('role','status');
@@ -13,10 +13,13 @@
     function close(){panel.hidden=true;anchor.setAttribute('aria-expanded','false');}
     function position(){const box=anchor.getBoundingClientRect?.(),bounds=panel.getBoundingClientRect?.(),width=win.innerWidth||1024,height=win.innerHeight||768;panel.style.setProperty('left',Math.max(8,Math.min(width-(bounds?.width||300)-8,(box?.right||width-8)-(bounds?.width||300)))+'px');panel.style.setProperty('top',Math.max(8,Math.min(height-(bounds?.height||380)-8,(box?.bottom||0)+4))+'px');}
     function render(){
-      if(disposed)return;for(const remove of rowRemovers.splice(0))remove();const state=options.getState?.()||{};left.disabled=!state.source;right.disabled=!state.target;
+      if(disposed||panel.hidden)return;const state=options.getState?.()||{};left.disabled=!state.source;right.disabled=!state.target;
       if(side==='source'&&left.disabled&&state.target)side='target';else if(side==='target'&&right.disabled&&state.source)side='source';
+      const key=JSON.stringify([entries,side,Boolean(state.source),Boolean(state.target),state.pages]);
+      if(key!==renderKey){renderKey=key;for(const remove of rowRemovers.splice(0))remove();
       left.setAttribute('aria-pressed',String(side==='source'));right.setAttribute('aria-pressed',String(side==='target'));list.textContent='';
       for(const entry of entries){const node=element('button'),title=element('strong',entry.label+' · '+(entry.pageIndex+1)),caption=element('small',(entry.captionPageIndex!==undefined&&entry.captionPageIndex!==entry.pageIndex?'说明 · '+(entry.captionPageIndex+1)+' 页 · ':'')+(entry.caption||''));node.setAttribute('type','button');node.setAttribute('data-figure-id',entry.id);node.setAttribute('aria-label',entry.label+'，第 '+(entry.pageIndex+1)+' 页，'+(side==='source'?'左侧':'右侧'));node.disabled=side==='source'?!state.source:!state.target||!state.pages?.includes(entry.pageIndex);node.append(title,caption);listen(node,'click',()=>{if(disposed||node.disabled)return;close();options.onJump?.(entry,side);},false,rowRemovers);list.appendChild(node);}
+      }
       status.textContent=failed?'无法读取图表标题':!done?'读取图表'+(total?' · '+completed+' / '+total:'…'):entries.length?'选择一侧后定位，另一侧位置保留':'未识别到图表标题';
       if(!panel.hidden)position();
     }

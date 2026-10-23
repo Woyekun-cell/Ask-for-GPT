@@ -1,0 +1,44 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
+const Layout=require('../content/pdf-layout.js');
+const Security=require('../content/connection-security.js');
+async function fixture(){
+  const writes=[],loads=[];let dependencies,now=1000;
+  const file={path:'/fixture',clone(){return {...this};},append(value){this.path+='/'+value;},exists:()=>true,isFile:()=>true,fileSize:240,isSymlink:()=>false,permissions:0o600};
+  const register=target=>{target.AskGPTPDFLayout=Layout;target.AskGPTConnectionSecurity=Security;target.AskGPTInline={create(value){dependencies=value;return {start(){}};}};};
+  const scope={Date:{now:()=>now},Zotero:{version:'9.0.6',initializationPromise:Promise.resolve(),uiReadyPromise:Promise.resolve(),File:{getContentsFromURLAsync:async()=>'',putContentsAsync:async(file,value)=>writes.push({file,value:JSON.parse(value)})}},Services:{dirsvc:{get:()=>file},scriptloader:{loadSubScript(url,target){loads.push({url,target});register(target);},loadSubScriptWithOptions(url,options){loads.push({url,...options});register(options.target);}}},Components:{interfaces:{nsIFile:{}}},ChromeUtils:{},IOUtils:{},setTimeout,clearTimeout};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../bootstrap.js'),'utf8'),scope,{filename:'bootstrap.js'});
+  await scope.startup({rootURI:'file:///fixture/',id:'fixture'},0);return {writes,loads,report:dependencies.reportDiagnostic,advance:value=>{now+=value;}};
+}
+(async()=>{
+  const f=await fixture(),secret='PRIVATE_PDF_TEXT_TOKEN_URL';
+  assert.equal(f.loads.length,23);assert(f.loads.every(call=>call.ignoreCache===true));
+  assert.equal(new Set(f.loads.map(call=>call.target)).size,1);assert(f.loads.every(call=>call.url.startsWith('file:///fixture/content/')));
+  assert(f.loads.findIndex(call=>call.url.endsWith('/pdf-layout.js'))<f.loads.findIndex(call=>call.url.endsWith('/inline.js')));
+  process.stdout.write('PASS every owned startup module bypasses stale compiled script caches in order\n');
+  await f.report('output',{name:'Error',code:'compatibility',errorDetail:'nativePaint',message:secret,promise:secret});
+  await f.report('nativeResourcesReleased',{name:'NativeResourceDiagnostic',code:'rendered',resourceNumbers:{parentListeners:1,mediaListeners:1,pendingTimers:0,destroyRequests:1,text:secret}});
+  let value=f.writes.at(-1).value;
+  assert.equal(value.recentRecords.length,2);assert.equal(value.recentRecords[0].errorDetail,'nativePaint');
+  assert(!JSON.stringify(f.writes).includes(secret));assert.equal(value.recentRecords[0].recentRecords,undefined);
+  process.stdout.write('PASS output phase survives later cleanup without private message fields\n');
+  for(let i=0;i<20;i++)await f.report('nativeInitialized');
+  value=f.writes.at(-1).value;assert.equal(value.recentRecords.length,12);assert(value.recentRecords.every(row=>row.stage==='nativeInitialized'));
+  process.stdout.write('PASS PDF diagnostic history stays bounded to twelve sanitized records\n');
+  await f.report('figurePreviewTiming',{code:'rendered',previewNumbers:{openMilliseconds:50,renderMilliseconds:1,snapshot:1}});
+  value=f.writes.at(-1).value;assert.equal(value.recentRecords.length,1);assert.equal(value.recentRecords[0].stage,'figurePreviewTiming');
+  await f.report('output',{code:'compatibility',errorDetail:'nativeInitialize'});
+  value=f.writes.at(-1).value;assert.equal(value.recentRecords.length,12);assert(!value.recentRecords.some(row=>row.stage.startsWith('figure')));
+  assert(f.writes.at(-1).file.endsWith('/pdf-inline-diagnostic.json'));assert(f.writes.at(-2).file.endsWith('/figure-preview-diagnostic.json'));
+  process.stdout.write('PASS PDF and figure histories stay in separate existing local files\n');
+  f.advance(125);await f.report('jobReady');const first=f.writes.at(-1).value;
+  f.advance(75);await f.report('outputReady');value=f.writes.at(-1).value;
+  assert.equal(first.elapsedMilliseconds,125);assert.equal(value.elapsedMilliseconds,200);assert.equal(value.recentRecords.at(-2).elapsedMilliseconds,125);
+  assert(!JSON.stringify(f.writes).includes(secret));
+  process.stdout.write('PASS local phase timing uses only elapsed milliseconds and survives queued diagnostic writes\n');
+  await f.report('figureOperatorShape',{figureNumbers:{glyphCount:234,glyphSource:1,modelCached:1,text:secret}});
+  value=f.writes.at(-1).value;assert.equal(value.figureNumbers.glyphCount,234);assert.equal(value.figureNumbers.glyphSource,1);assert.equal(value.figureNumbers.modelCached,1);
+  await f.report('figureOperatorShape',{figureNumbers:{glyphCount:Infinity,glyphSource:3,modelCached:2}});
+  value=f.writes.at(-1).value;assert.equal(value.figureNumbers.glyphCount,-1);assert.equal(value.figureNumbers.glyphSource,-1);assert.equal(value.figureNumbers.modelCached,-1);assert(!JSON.stringify(f.writes).includes(secret));
+  process.stdout.write('PASS figure text-readiness diagnostics retain only bounded counts and fixed source flags\n');
+})().catch(error=>{console.error(error);process.exitCode=1;});

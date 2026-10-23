@@ -10,10 +10,12 @@
 
 Look up words, ask about a passage, and read web pages and PDFs in two languages. Keep your reading notes in Zotero, then refine your wording as you write.
 
-[![Download macOS DMG](https://img.shields.io/badge/Download_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.dmg)
-[![Download ZIP](https://img.shields.io/badge/Download-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.zip)
+[![Download macOS DMG](https://img.shields.io/badge/Download_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.dmg)
+[![Download ZIP](https://img.shields.io/badge/Download-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.zip)
 
-**macOS v1.0.85 · Apple Silicon · macOS 15+**
+[![Download Windows](https://img.shields.io/badge/Download_Windows-x64-0078D4?style=for-the-badge&logo=windows)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe)
+
+**macOS v1.1.38 · Apple Silicon · macOS 15+ | Windows x64 v0.1.0-preview.1**
 
 [macOS setup (中文)](docs/INSTALL.macOS.zh-CN.md) · [Windows setup (中文)](docs/INSTALL.Windows.zh-CN.md) · [Zotero guide (中文)](docs/ZOTERO.zh-CN.md) · [Translation backends (中文)](docs/TRANSLATION-BACKENDS.zh-CN.md) · [Interface gallery](docs/GALLERY.md) · [Releases](https://github.com/Woyekun-cell/Ask-for-GPT/releases) · [Issues](https://github.com/Woyekun-cell/Ask-for-GPT/issues)
 
@@ -25,14 +27,16 @@ The app works where you already read and write: your Zotero attachment and annot
 
 ## Download and install
 
-**Windows version (x64):** [Release page (installer upload pending)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/windows-v0.1.0-preview.1) · [Setup guide (中文)](docs/INSTALL.Windows.zh-CN.md). Provides selection lookup, an offline dictionary, passage translation and questions, Chrome/Zotero reading integration, bilingual PDFs, and configurable translation backends. [Build and check records](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml) are available in the workflow. The interface examples below use the macOS version.
+This macOS update includes hover lookup, a reading-position reminder, separate figure previews, complete local-translation reuse, and layout/cache improvements. The Windows assets retain the independently validated `0.1.0-preview.1` build (source `05348ad`); these new macOS reader features are not claimed for that Windows binary.
+
+**Windows version (x64):** [Windows installer and portable ZIP](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38) · [Setup guide (中文)](docs/INSTALL.Windows.zh-CN.md). Provides selection lookup, an offline dictionary, passage translation and questions, Chrome/Zotero reading integration, bilingual PDFs, and configurable translation backends. [Build and check records](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml) are available in the workflow. The interface examples below use the macOS version.
 
 Choose a macOS installer above to start using the app. The macOS application itself is about **48 MB**, including roughly 400,000 English dictionary entries, the Chrome and Zotero integrations, and writing integration resources.
 
 | Download | How to use it |
 | --- | --- |
-| [DMG installer](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.dmg) | Recommended. Open the disk image, drag the app to Applications, and follow the included setup instructions |
-| [ZIP archive](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.0.85/Ask-for-GPT-1.0.85-macOS-arm64.zip) | Extract and install; contains the same app and setup scripts |
+| [DMG installer](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.dmg) | Recommended. Open the disk image, drag the app to Applications, and follow the included setup instructions |
+| [ZIP archive](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.zip) | Extract and install; contains the same app and setup scripts |
 | [Source code](https://github.com/Woyekun-cell/Ask-for-GPT/archive/refs/heads/main.zip) | Build the app, inspect the implementation, or adapt an integration; see the [developer handbook](docs/HANDBOOK.zh-CN.md) |
 
 First setup on macOS takes four steps:
@@ -58,7 +62,7 @@ The installer includes a guide and placeholder examples. See [translation backen
 
 Open a PDF in Zotero. The **PDF 翻译** sidebar offers scope, view, and language direction. Start with **当前页** (current page), **中英对照** (side by side), and **EN → 中** to read an abstract or key result. When the paper is relevant, choose **整篇** (whole document) to continue. **中 → EN** is also available for Chinese documents.
 
-![Zotero bilingual reading with the English original and Chinese translation side by side](docs/images/zotero/live-bilingual-reading.jpg)
+![Zotero bilingual reading with the English original and Chinese translation side by side](docs/images/zotero/live-bilingual.jpg)
 
 *Zotero bilingual reading · Liao et al., [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x) (Nature, 2023; [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). Ask for GPT generated and typeset the Chinese machine translation on the right.*
 
@@ -68,15 +72,13 @@ The translation appears in the existing attachment tab. Progress stays visible i
 
 The toolbar offers **原文 / 译文 / 对照**: original, translated, and side by side. Translated text is laid out within the PDF pages, preserving the relationship between text, figures, and tables. Side-by-side mode uses two native PDF panes, with the original on the left and the translation on the right.
 
-![Translated PDF view and whole-document progress](docs/images/zotero/02-views.png)
+![Translated PDF view: the completed first page](docs/images/zotero/live-translated.jpg)
 
 Use the translated view to follow a section, then switch to side by side for a term, equation, or important conclusion. View changes reuse completed results. The original attachment keeps its identity and reading progress.
 
 ### Select a phrase and find its counterpart
 
 Select words in either pane to see an established counterpart in the other language. You can move from English to Chinese or use the translation to find the original wording. This helps with terminology, verb choices, and modifiers in context.
-
-![Bidirectional phrase selection with Zotero's native color palette](docs/images/zotero/03-selection.png)
 
 Phrase mapping accounts for differences in word length and order. Where a reliable link exists, part of a Chinese selection can correspond to a complete English word while retaining the Chinese range you actually selected. Ordinary text selection does not automatically create an annotation, so you can look up or copy a phrase as you read.
 
@@ -86,19 +88,17 @@ Enable **悬停释义** (hover gloss) in the sidebar for quick word lookup while
 
 After selecting text, use Zotero's native eight-color popup to save a highlight or underline. A mark made on the translated side is associated with the corresponding original PDF text and retains the translated excerpt. You can continue adding comments, changing colors, and navigating from Zotero's annotation list.
 
-![A manually saved blue annotation visible in both panes](docs/images/zotero/04-annotations.png)
-
 Saved marks are projected again when you return to the original or reopen the side-by-side view. Organize questions, methods, evidence, and conclusions using your own color scheme.
 
 ### Scroll together or keep one pane in place
 
 **联动** (linked) scrolling follows your reading position from either pane. Switch to **独立** (independent) to leave one pane on the results while checking a method or definition in the other. Turn linked scrolling back on to align from the side you are reading.
 
-![Live view comparing the English abstract with its Chinese translation](docs/images/zotero/live-abstract-detail.jpg)
+![Live independent view: original Fig. 1 and the translated first page](docs/images/zotero/live-independent.jpg)
 
-*Independent scrolling keeps the abstract and main text in view together. Paper source as above.*
+*The original Fig. 1 remains on the left; the completed Chinese first page stays on the right. Paper attribution as above.*
 
-![Linked and independent scrolling, with Match pane zoom in the More menu](docs/images/zotero/05-reading-tools.png)
+![Linked and independent scrolling, with Match pane zoom in the More menu](docs/images/zotero/live-reading-tools.jpg)
 
 Use **⋯ → 同步大小** (match pane zoom) when the panes have different scales. The More menu also provides current-page and whole-document translation, stop, retry, zoom, and fit width. You can keep reading while phrase correspondence is being prepared; with a completed translation, retry prioritizes missing correspondence information.
 
@@ -108,7 +108,7 @@ Use **⋯ → 同步大小** (match pane zoom) when the panes have different sca
 
 The **图表** (figures and tables) button opens an index with labels, page numbers, and caption excerpts. Choose the left or right pane, then select an entry. That pane jumps to the figure while the other stays where it was—useful when a results paragraph refers to Fig. 3.
 
-![Figure and table index with a choice of target pane](docs/images/zotero/06-navigation.png)
+![Figure and table index with a choice of target pane](docs/images/zotero/live-navigation.jpg)
 
 A figure jump switches scrolling to independent mode. Restore linked scrolling when you are ready to continue. The caption index is reused within the current PDF session. Completed translations are stored locally for longer-term reuse, matched by document content, page range, language direction, translation revision, and a backend configuration digest. A completed whole-document result can also supply an individual page.
 

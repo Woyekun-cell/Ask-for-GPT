@@ -311,5 +311,12 @@ const selectionQuery=()=>({page:2,paragraph:'p2_0',side:'source',rects:[[40,600,
   assert.equal(PDF.diagnostic('nativeSelection',{mappingDetail:'private selected text'}).mappingDetail,undefined);
   for(const [code,text] of [['alignment_timeout','词语对应准备超时，可重试'],['alignment_invalid','词语对应校验失败，可重试'],['alignment_unavailable','词语对应尚未就绪，可重试']]){assert.equal(PDF.errorMessage({code}),text);assert.equal(PDF.diagnostic('sentence',{code}).code,code);}
  });
+ await check('hover diagnostics keep only fixed lifecycle markers and omit private event and lookup contents',()=>{
+  const secret='PRIVATE_HOVER_WORD_TOKEN';
+  for(const stage of ['hoverAttach','hoverAttached','hoverMove','hoverBlocked','hoverMiss','hoverHit','hoverLookup','hoverRendered','hoverError']){
+    const value=PDF.diagnostic(stage,{name:'HoverDiagnostic',code:'compatibility',errorDetail:'hoverGeometry',message:secret,word:secret,query:secret,event:{target:secret},token:secret});
+    assert.deepEqual(value,{stage,exception:'HoverDiagnostic',code:'compatibility',locations:[],errorDetail:'hoverGeometry'});assert(!JSON.stringify(value).includes(secret));
+  }
+ });
  process.stdout.write(JSON.stringify({status:'PASS',checks})+'\n');
 })().catch(error=>{process.stderr.write(error.stack+'\n');process.exitCode=1;});

@@ -18,9 +18,13 @@ function fixture() {
   readers.set(reader.tabID, reader); readers.set(second.tabID, second);
   const fresh = () => ({ open: false, busy: false, whole: false, mode: 'mono', direction: 'en-zh' });
   const state = r => states.get(r) || fresh();
-  let translate = () => undefined;
+  let translate = () => undefined,hover=true,resume=true;
   const actions = {
     state,
+    resumeEnabled:()=>resume,
+    setResumeEnabled(value){resume=value;calls.push({action:'resume',value});for(const reader of readers.values())for(const callback of subscribers)callback(reader,state(reader));},
+    hoverEnabled:()=>hover,
+    setHoverEnabled(value){hover=value;calls.push({action:'hover',value});for(const reader of readers.values())for(const callback of subscribers)callback(reader,state(reader));},
     translate(r, options) { calls.push({ action: 'translate', reader: r, options }); return translate(r, options); },
     setMode(r, mode) { calls.push({ action: 'mode', reader: r, mode }); },
     restore(r) { calls.push({ action: 'restore', reader: r }); },
@@ -66,6 +70,20 @@ function fixture() {
 }
 
 (async () => {
+  await check('reading resumption hint can be disabled without translating or changing the hover setting',()=>{
+    const f=fixture(),p=f.render(),toggle=p.control('resume');
+    assert(toggle,'original PDF needs a reading resumption switch');assert.equal(toggle.checked,true);
+    toggle.checked=false;toggle.emit('command');assert.equal(toggle.checked,false);assert.equal(p.control('hover').checked,true);
+    assert.deepEqual(f.calls,[{action:'resume',value:false}]);assert.equal(p.control('translate').disabled,false);
+    f.module.shutdown();toggle.checked=true;toggle.emit('command');assert.equal(f.calls.length,1);
+  });
+  await check('hover dictionary can be disabled before any PDF translation starts',()=>{
+    const f=fixture(),p=f.render(),toggle=p.control('hover');
+    assert(toggle,'untranslated PDF needs an accessible hover switch');assert.equal(toggle.checked,true);
+    toggle.checked=false;toggle.emit('command');assert.deepEqual(f.calls,[{action:'hover',value:false}]);
+    assert.equal(toggle.checked,false);assert.equal(p.control('translate').disabled,false);
+    f.module.shutdown();toggle.checked=true;toggle.emit('command');assert.equal(f.calls.length,1);
+  });
   await check('native original action retains the reader translation instead of invoking destructive restore', () => {
     const f=fixture(),p=f.render();let originals=0;f.setOriginal(reader=>{assert.equal(reader,f.reader);originals++;});
     f.notify(f.reader,{open:true,busy:false,whole:true,mode:'dual',original:false});p.control('original').emit('command');
@@ -149,6 +167,7 @@ function fixture() {
     p.control('translate').emit('command'); await tick();
     assert.deepEqual(f.calls.at(-1).options, { whole: true, mode: 'dual', direction: 'zh-en' }); f.module.shutdown();
   });
+  await check('a chosen initial side by side mode survives unrelated state updates before translation starts',async()=>{const f=fixture(),p=f.render();p.control('mode').value='dual';p.control('mode').emit('command');f.notify(f.reader,{open:false,busy:false,whole:false,mode:'mono',direction:'en-zh'});assert.equal(p.control('mode').value,'dual');p.control('translate').emit('command');await tick();assert.equal(f.calls.at(-1).options.mode,'dual');f.module.shutdown();});
   await check('completion from a replaced render cannot clear the current panels busy state', async () => {
     const f = fixture(), pending = deferred(); f.setTranslate(() => pending.promise); const p = f.render();
     p.control('translate').emit('command'); f.options.onRender(p.props);

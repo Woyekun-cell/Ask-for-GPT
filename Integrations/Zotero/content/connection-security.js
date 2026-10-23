@@ -124,13 +124,14 @@
 
   async function writeDiagnostic(dependencies, record) {
     const { Components, Zotero } = dependencies, directory = readerDirectory(dependencies);
+    const filename = typeof record.stage === 'string' && record.stage.startsWith('figure') ? 'figure-preview-diagnostic.json' : 'pdf-inline-diagnostic.json';
     if (windows(dependencies)) {
       // The application owns creation and DACL protection. Never create a
       // diagnostic in an unprotected fallback directory when it is absent.
       if (!directory.exists()) return;
       const release = nativeWindowsFile(dependencies, directory, false, true);
       try {
-        const file = directory.clone(); file.append('pdf-inline-diagnostic.json');
+        const file = directory.clone(); file.append(filename);
         const output = nativeWindowsFile(dependencies, file, true, false, !file.exists());
         try { output.write(JSON.stringify(record)); } finally { output(); }
       } finally { release(); }
@@ -138,7 +139,7 @@
     }
     if (!directory.exists()) directory.create(Components.interfaces.nsIFile.DIRECTORY_TYPE, 0o700);
     if (directory.isSymlink()) return;
-    const file = directory.clone(); file.append('pdf-inline-diagnostic.json');
+    const file = directory.clone(); file.append(filename);
     if (file.exists() && file.isSymlink()) return;
     if (!file.exists()) file.create(Components.interfaces.nsIFile.NORMAL_FILE_TYPE, 0o600);
     file.permissions = 0o600;

@@ -7,11 +7,12 @@ let state={source:true,target:true,side:'source',pages:[0,2]},opens=0;
 const panel=Panel.create({doc,win,anchor,getState:()=>state,onOpen:()=>{opens++;},onJump:(entry,side)=>jumps.push({entry,side})});
 const figures=[{id:'fig1',label:'Fig. 1',kind:'figure',pageIndex:0,top:120,left:30,caption:'A real caption'},
  {id:'table2',label:'Table 2',kind:'table',pageIndex:1,top:500,left:20,caption:'Measurements'}];
-panel.setEntries(figures,{done:true});panel.toggle();assert.equal(panel.element.hidden,false);assert.equal(opens,1);
+panel.setEntries(figures,{done:true});assert.equal(panel.element.allNodes().filter(x=>x.getAttribute?.('data-figure-id')).length,0);panel.toggle();assert.equal(panel.element.hidden,false);assert.equal(opens,1);
 const button=text=>panel.element.allNodes().find(x=>x.tagName==='button'&&x.textContent===text);
 assert.equal(button('左侧').getAttribute('aria-pressed'),'true');button('右侧').emit('click');
 let rows=panel.element.allNodes().filter(x=>x.getAttribute?.('data-figure-id'));
 assert.equal(rows[0].disabled,false);assert.equal(rows[1].disabled,true,'untranslated target pages cannot jump to an unrelated page');
+const retained=rows[0];panel.setEntries(figures,{completed:2,total:3});assert.equal(panel.element.allNodes().find(x=>x.getAttribute?.('data-figure-id')),retained,'progress updates preserve rows and focus');
 button('左侧').emit('click');rows=panel.element.allNodes().filter(x=>x.getAttribute?.('data-figure-id'));assert.equal(rows[1].disabled,false);
 rows[1].emit('click');assert.equal(jumps.length,1);assert.equal(jumps[0].side,'source');assert.equal(jumps[0].entry.pageIndex,1);assert.equal(panel.element.hidden,true);
 panel.toggle();const event=panel.element.emit('keydown',{key:'Escape'});assert.equal(event.defaultPrevented,true);assert.equal(panel.element.hidden,true);

@@ -6,7 +6,7 @@ Windows版提供快捷键划词、离线英汉词典、段落翻译与提问、C
 
 ## 下载安装
 
-安装包待上传。发布后，从 [Windows版发行页](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/windows-v0.1.0-preview.1) 选择一种：
+从 [Windows版发行页](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38) 选择一种：
 
 - `Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe`：当前用户安装，默认位置 `%LOCALAPPDATA%\Programs\Ask for GPT Windows Preview`，开始菜单生成入口，无需管理员权限。
 - `Ask-for-GPT-0.1.0-preview.1-Windows-x64-Portable.zip`：完整解压到可写目录，运行 `AskGPT.Windows.exe`；程序与随包文件夹必须保持在一起。
@@ -97,6 +97,8 @@ Claude Code 需用户自行安装并登录，设置中选择其真实 `.exe`，�
 - 固定 Codex 工具：`%APPDATA%\AskGPTReader\Tools`
 
 端口 `43792` 为阅读集成，`43795` 为 PDF 服务。若启动报端口占用，先退出旧的 Ask for GPT 进程再重开，不要结束不明进程。组件准备失败可在 PowerShell 中单独运行安装目录下的 `scripts\windows\prepare-pdf.ps1` 或 `prepare-codex.ps1` 查看错误。无须提供密钥、论文正文或整个用户目录来报告问题。
+
+本次与 macOS 1.1.38 放在同一发行页；Windows 二进制仍为 `0.1.0-preview.1`，对应源码提交 `05348ad62ad22f67dc2e7c3f9d9399f633bf3e33`。macOS 新增悬停释义、图表独立预览、阅读位置提示和本地译本管理不列为此 Windows 包已交付功能。
 
 ## 验证记录
 
