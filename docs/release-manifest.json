@@ -1041,13 +1041,13 @@
     },
     {
       "path": "README.en.md",
-      "bytes": 19932,
-      "sha256": "0b6e0e28ca7ac00690aede59462cdedf5da15f9090b9670fc17cc6c31f1f9f82"
+      "bytes": 20471,
+      "sha256": "4cedc43cf7c75a921272c69d5dc91e4b128a82565bfa7864c3a8e2629c1da5e8"
     },
     {
       "path": "README.md",
-      "bytes": 17041,
-      "sha256": "e5279a19390e1a33f693c9de16497e08707cdf8db40668bafcba9723121f40c7"
+      "bytes": 17533,
+      "sha256": "fc256a0118ec5be97585de1c1b50d8fcf9370e2af690dcbfa170c4aab2dffc8a"
     },
     {
       "path": "Resources/AppIcon.icns",
@@ -1601,8 +1601,8 @@
     },
     {
       "path": "docs/GALLERY.md",
-      "bytes": 8368,
-      "sha256": "f5d303bc10900fd975153ce34bc65a08bea56fc57e4d2a44566325bdf287ce19"
+      "bytes": 9726,
+      "sha256": "2d31314b95a1629a51d3a592def3cf1b1aa5b991c58878c3cfcef6a901df8ac2"
     },
     {
       "path": "docs/HANDBOOK.zh-CN.md",
@@ -1633,6 +1633,11 @@
       "path": "docs/demo-source/READMEPreviews.swift",
       "bytes": 5944,
       "sha256": "f8dcdc1a7a0f44ef94ba367a6491ef6e9b908a0c772c49d09a3f7fb5fae33d35"
+    },
+    {
+      "path": "docs/demo-source/feature-overview-en.md",
+      "bytes": 3028,
+      "sha256": "999eb58d9a95238e5c57e0788d02439961b76f071f809d6c57dfaf570ec0549d"
     },
     {
       "path": "docs/demo-source/reader-demo-1.1.55-en.txt",
@@ -1673,6 +1678,16 @@
       "path": "docs/images/bilingual-reading.jpg",
       "bytes": 88021,
       "sha256": "2828015dedf570917c4d83ac76d8929a34cec96553ba7511f0f236d3c5e96fae"
+    },
+    {
+      "path": "docs/images/feature-overview-cover.png",
+      "bytes": 70574,
+      "sha256": "eb5d4126cf83c3fe47c45a4ca58be6029fffd3678acd868829920beafade08e0"
+    },
+    {
+      "path": "docs/images/feature-overview-provenance.json",
+      "bytes": 5109,
+      "sha256": "8cd4dc934785b02c90cbb24d5d2ad3a883453fef9f5ef6dd606fc9dff3199aa3"
     },
     {
       "path": "docs/images/provenance.json",

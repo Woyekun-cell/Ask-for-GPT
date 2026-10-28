@@ -25,6 +25,14 @@ Ask for GPT comes in Windows and macOS versions, bringing word lookup, passage-b
 
 The app works where you already read and write: your Zotero attachment and annotations, the page open in Chrome, or a manuscript in Word. English word lookup uses a local dictionary. In macOS 1.1.55, AI features use your own ChatGPT login session through Codex.
 
+## Full feature walkthrough
+
+[![Ask for GPT full feature walkthrough: lookup, translation, questions, web and PDF reading, annotations, figures and writing](docs/images/feature-overview-cover.png)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4)
+
+**[▶ Watch the full video · English narration · about 3 minutes](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4)**
+
+Follow the complete workflow: word lookup, passage translation and contextual questions, Chrome translation, Zotero bilingual reading, phrase correspondence, native annotations, linked or independent scrolling, figure previews, and writing suggestions. Real captures and recordings are combined with clearly labeled native interface previews. [Transcript and capture details](docs/GALLERY.md#feature-overview).
+
 ## Download and install
 
 macOS 1.1.55 fixes translated-reader theme inheritance, fits both panes with Fit Width, and hides a finished correspondence indicator while preserving existing translations, caches, and annotations. The Windows assets retain the independently validated `0.1.0-preview.1` build (source `05348ad`); these new macOS reader features are not claimed for that Windows binary.
@@ -52,9 +60,6 @@ The [macOS installation guide](docs/INSTALL.macOS.zh-CN.md) covers these steps, 
 
 The **macOS 1.1.55 binary uses Codex**. Enter the signed-in Codex CLI under **CLI 路径** (CLI path), then select **保存并连接** (save and connect). The API / Claude adapters described in earlier public source snapshots are not included in this macOS binary. See the [backend notes](docs/TRANSLATION-BACKENDS.zh-CN.md) for historical and Windows configuration scope.
 
-### One-minute narrated demo
-
-[Watch real Zotero operations with English synthetic narration](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-1.1.55-Zotero-demo-en.mp4). The video shows shared reading themes, Fit Width for both panes, and cached view switching. [Capture details and scope](docs/GALLERY.md#reader-demo-155).
 
 ## Read a paper closely in Zotero
 

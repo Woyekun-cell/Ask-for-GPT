@@ -4,9 +4,21 @@
 
 Ask for GPT 提供 Windows 和 macOS 两个版本，把查词、翻译和提问放在当前阅读环境中。下面按使用流程查看 macOS版的阅读与写作界面，Windows版的安装与功能范围见[Windows 指南](INSTALL.Windows.zh-CN.md)。
 
+<a id="feature-overview"></a>
+
+## 全功能概览 · English narration
+
+[![观看完整功能介绍](images/feature-overview-cover.png)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4)
+
+[播放 / 下载完整视频](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4) · [English transcript](demo-source/feature-overview-en.md) · [素材与版本记录](images/feature-overview-provenance.json)
+
+视频按完整使用流程介绍查词、Local/GPT/Explain、选段提问、Chrome 网页翻译、Zotero 原文/译文/对照、词组对应、原生标注、阅读控制、图表预览与写作建议。英文旁白为本机 Samantha 合成。镜头中的 `Earlier Zotero capture` 为此前真实宿主截图；`Native interface preview` 为注入演示数据的原生视图渲染；`Feature guide` 用于说明问答和 Chrome 流程。素材身份始终保留，未将预览当作实际 AI 结果。
+
+Zotero 较早截图使用 Liao et al., [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x), Nature (2023), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)；右侧为机器译文及排版改编。当前阅读操作片段沿用下方 1.1.55 实录及论文署名。完整视频为 macOS 产品介绍，Windows 下载与验证范围仍见独立指南。Apple Local 翻译需受支持的 macOS 与系统语言资源；AI 功能使用个人 Codex 连接。
+
 <a id="reader-demo-155"></a>
 
-## 1.1.55 真实操作视频 · English narration
+## 1.1.55 阅读更新短片 · English narration
 
 [播放 / 下载 MP4](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-1.1.55-Zotero-demo-en.mp4) · [English transcript](demo-source/reader-demo-1.1.55-en.txt)
 
@@ -96,7 +108,7 @@ macOS 的 **PDF · 原阅读器**菜单把生成的 PDF 交回 Preview 或 WPS �
 
 ![Ask for GPT 设置](images/settings.png)
 
-Codex CLI 路径、提问模型、推理强度、可选翻译配置文件、自动划词和快捷键集中在同一张卡中。点击 **保存设置**保存修改，**测试 Codex**仅检查 Codex 连接。翻译配置文件留空使用默认路径；填写后可采用实验性的 API / Claude Code 接入，问答与写作继续使用 Codex。配置步骤和当前验证范围见[翻译后端指南](TRANSLATION-BACKENDS.zh-CN.md)。
+这张设置图保留历史版本的原生界面预览。macOS 1.1.55 在 **CLI 路径**中配置个人 Codex，并使用 **保存并连接**；历史图中的 API / Claude 可选入口不属于本次 Mac 安装包。版本范围见[翻译后端说明](TRANSLATION-BACKENDS.zh-CN.md)。
 
 ## 图像来源
 

@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "title": "Ask for GPT — full feature walkthrough",
+  "date": "2026-10-28",
+  "scope": "macOS feature overview, full reading-to-writing workflow",
+  "file": "Ask-for-GPT-feature-overview-en.mp4",
+  "bytes": 18853963,
+  "sha256": "0c86483359a1924e2891b98cf43ac4065c76d41fe586fe8741734db4e787fc8d",
+  "durationSeconds": 181,
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "videoCodec": "H.264",
+  "audioCodec": "AAC",
+  "narration": {
+    "language": "en-US",
+    "voice": "macOS Samantha synthetic voice",
+    "clips": 10,
+    "transcript": "docs/demo-source/feature-overview-en.md"
+  },
+  "chapters": [
+    {
+      "start": 0,
+      "duration": 11,
+      "title": "Meet Ask for GPT",
+      "evidence": "FEATURE OVERVIEW"
+    },
+    {
+      "start": 11,
+      "duration": 23,
+      "title": "Look up words and translate passages",
+      "evidence": "NATIVE INTERFACE PREVIEW"
+    },
+    {
+      "start": 34,
+      "duration": 16,
+      "title": "Ask with the passage attached",
+      "evidence": "FEATURE GUIDE"
+    },
+    {
+      "start": 50,
+      "duration": 18,
+      "title": "Follow translations on the original page",
+      "evidence": "FEATURE GUIDE"
+    },
+    {
+      "start": 68,
+      "duration": 19,
+      "title": "Read PDFs in two languages",
+      "evidence": "EARLIER ZOTERO CAPTURE"
+    },
+    {
+      "start": 87,
+      "duration": 20,
+      "title": "Inspect correspondences and keep notes",
+      "evidence": "EARLIER ZOTERO CAPTURE"
+    },
+    {
+      "start": 107,
+      "duration": 20,
+      "title": "Choose how the panes move",
+      "evidence": "CURRENT ZOTERO RECORDING"
+    },
+    {
+      "start": 127,
+      "duration": 17,
+      "title": "Find a figure and inspect the details",
+      "evidence": "EARLIER ZOTERO CAPTURE"
+    },
+    {
+      "start": 144,
+      "duration": 19,
+      "title": "Review writing suggestions before applying",
+      "evidence": "NATIVE INTERFACE PREVIEW"
+    },
+    {
+      "start": 163,
+      "duration": 18,
+      "title": "Read, compare, ask and revise",
+      "evidence": "MACOS FEATURE OVERVIEW"
+    }
+  ],
+  "sources": [
+    {
+      "source": "work-generated/intro.png",
+      "sha256": "3182c6e96245b687b80ebc55e620a62dc6b9932f469c014c5a46331ef3a831b9",
+      "evidence": "FEATURE OVERVIEW"
+    },
+    {
+      "source": "docs/images/translation.png",
+      "sha256": "dd12e908ca6b7d001ee738ed05cd40ed0a120819868420330bf5e07e6b89d3a4",
+      "evidence": "NATIVE INTERFACE PREVIEW"
+    },
+    {
+      "source": "work-generated/questions.png",
+      "sha256": "668315260b2b681e45916be06ae29e702edf78e52495afc3d7a9b9b3dc6d7fd8",
+      "evidence": "FEATURE GUIDE"
+    },
+    {
+      "source": "work-generated/chrome.png",
+      "sha256": "a6639ab42b2efd846ad777e02cb082c03b82a01201772fdf9c3d190eee62a54c",
+      "evidence": "FEATURE GUIDE"
+    },
+    {
+      "source": "docs/images/zotero/live-bilingual.jpg",
+      "sha256": "4f7fb803809008fbfa8b1b38cedfc3f0035c7703ee911eabc33fdf6a697f0676",
+      "evidence": "EARLIER ZOTERO CAPTURE"
+    },
+    {
+      "source": "docs/images/zotero/live-word-palette.jpg",
+      "sha256": "c396b629be48b19f8549708f6835a81c2bac4468b4d07b9b3c047755f44f2cf5",
+      "evidence": "EARLIER ZOTERO CAPTURE"
+    },
+    {
+      "source": "work-generated/reader-demo-final-raw.mov",
+      "sha256": "479472a30146e2c23424676151d3c06aedecc01f145ebf6f935209ae275103fd",
+      "evidence": "CURRENT ZOTERO RECORDING"
+    },
+    {
+      "source": "work-generated/fit-and-views-raw.mov",
+      "sha256": "5dc5708b9d5eaaef60fc208e4b109db221ac07e54c18bd67495840f576922bf1",
+      "evidence": "CURRENT ZOTERO RECORDING"
+    },
+    {
+      "source": "docs/images/zotero/live-figure-preview.jpg",
+      "sha256": "fed68f3cef21a94b556c88f8dbd661650fa93de63d8fc998cb25485b748e8888",
+      "evidence": "EARLIER ZOTERO CAPTURE"
+    },
+    {
+      "source": "docs/images/zotero/live-figure-export.jpg",
+      "sha256": "60bddfeb6dda01974fcbec0f3393daf7e02ab7a044925f661e181cfba7ac064d",
+      "evidence": "EARLIER ZOTERO CAPTURE"
+    },
+    {
+      "source": "docs/images/writing.png",
+      "sha256": "ead88180e9da8a655f6160f4a32928a77552f017e5c48ec3b520978663705e62",
+      "evidence": "NATIVE INTERFACE PREVIEW"
+    },
+    {
+      "source": "work-generated/outro.png",
+      "sha256": "9b22d87c4930556f563c3f94435e464ffbc7c6809183f699f42e8cedf1404a75",
+      "evidence": "MACOS FEATURE OVERVIEW"
+    }
+  ],
+  "sourceScope": {
+    "earlierZoteroCaptures": "Previously published genuine captures: Ask for GPT 1.1.37, plugin 0.3.76; docs/images/zotero/live-provenance.json",
+    "nativeInterfacePreviews": "Native SwiftUI renders with deterministic demonstration data, not live engine results; docs/images/provenance.json",
+    "featureGuides": "Explanatory cards for contextual questions and Chrome workflow; no generated answer displayed",
+    "currentZoteroRecordings": "Existing 1.1.55/plugin0.3.90 recordings; docs/images/zotero/reader-demo-1.1.55-provenance.json"
+  },
+  "sideEffects": "No product code changes, manuscript edits, saved annotations, or new translation/model requests during video production"
+}
