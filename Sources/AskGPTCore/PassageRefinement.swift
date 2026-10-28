@@ -65,7 +65,7 @@ public actor GPTPassageRefiner: PassageRefining {
     private var activeRequest: UUID?
     private var shutDown = false
 
-    public init(settings: CodexSettings) { backend = TranslationBackendFactory.make(settings: settings) }
+    public init(settings: CodexSettings) { backend = CodexBackend(settings: settings) }
     init(backend: any PassageRefinementBackend) { self.backend = backend }
 
     public func refine(_ text: String, mode: PassageRefinementMode,

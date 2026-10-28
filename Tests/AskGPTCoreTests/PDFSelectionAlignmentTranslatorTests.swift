@@ -157,15 +157,35 @@ struct PDFSelectionAlignmentTranslatorTests {
         }
     }
 
-    @Test func appliesTokenAndActualLatinWordLimitsToBothSides() throws {
-        let chars = "甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午"
-        let long = PDFPhraseAlignmentUnit(id: "long", sourceText: unit.sourceText, targetText: chars, source: unit.source, target: Array(chars).enumerated().map { .init(id: "c\($0.offset)", text: String($0.element)) })
-        #expect(try PDFSelectionAlignmentTranslator.decode(#"{"match":{"s":"genome","t":"甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳","context":""}}"#, unit: long, side: "source", range: [1, 1], source: "en", target: "zh-Hans")?.targetIDs.count == 16)
-        for response in [#"{"match":{"s":"genome","t":"甲乙丙丁戊己庚辛壬癸子丑寅卯辰巳午","context":""}}"#, #"{"match":{"s":"Human genome sequencing is accurate","t":"甲乙","context":""}}"#] {
-            #expect(throws: PDFSelectionAlignmentError.invalidResponse) { try PDFSelectionAlignmentTranslator.decode(response, unit: long, side: "target", range: [0, 0], source: "en", target: "zh-Hans") }
+    @Test func appliesIndependentPassageLimitsWithoutExpandingTheSelection() throws {
+        let response: (String, String) -> String = { source, target in
+            String(data: try! JSONSerialization.data(withJSONObject: ["match": ["s": source, "t": target, "context": ""]]), encoding: .utf8)!
         }
-        let bundledWords = PDFPhraseAlignmentUnit(id: "bundled", sourceText: "one two three four five", targetText: "字", source: [.init(id: "all", text: "one two three four five")], target: [.init(id: "c", text: "字")])
-        #expect(throws: PDFSelectionAlignmentError.invalidResponse) { try PDFSelectionAlignmentTranslator.decode(#"{"match":{"s":"one two three four five","t":"字","context":""}}"#, unit: bundledWords, side: "target", range: [0, 0], source: "en", target: "zh-Hans") }
+        let words = (0..<33).map { "word\($0)" }, chars = (0..<129).map { String(UnicodeScalar(0x4e00 + $0)!) }
+        let bounded = PDFPhraseAlignmentUnit(id: "passage", sourceText: words.joined(separator: " "), targetText: chars.joined(),
+            source: words.enumerated().map { .init(id: "s\($0.offset)", text: $0.element) },
+            target: chars.enumerated().map { .init(id: "t\($0.offset)", text: $0.element) })
+        let accepted = response(words.prefix(32).joined(separator: " "), chars.prefix(128).joined())
+        #expect(try PDFSelectionAlignmentTranslator.decode(accepted, unit: bounded, side: "source", range: [0, 31], source: "en", target: "zh-Hans")?.sourceIDs.count == 32)
+        #expect(try PDFSelectionAlignmentTranslator.decode(accepted, unit: bounded, side: "target", range: [0, 127], source: "en", target: "zh-Hans")?.targetIDs.count == 128)
+        #expect(throws: PDFSelectionAlignmentError.invalidResponse) { try PDFSelectionAlignmentTranslator.decode(response(words.joined(separator: " "), chars.prefix(128).joined()), unit: bounded, side: "target", range: [0, 0], source: "en", target: "zh-Hans") }
+        #expect(throws: PDFSelectionAlignmentError.invalidResponse) { try PDFSelectionAlignmentTranslator.decode(response(words[0], chars.joined()), unit: bounded, side: "source", range: [0, 0], source: "en", target: "zh-Hans") }
+        // Actual Latin word counts also apply to a malformed bundled token.
+        let bundled = PDFPhraseAlignmentUnit(id: "bundled", sourceText: words.joined(separator: " "), targetText: "字",
+            source: [.init(id: "all", text: words.joined(separator: " "))], target: [.init(id: "c", text: "字")])
+        #expect(throws: PDFSelectionAlignmentError.invalidResponse) { try PDFSelectionAlignmentTranslator.decode(response(bundled.sourceText, "字"), unit: bundled, side: "target", range: [0, 0], source: "en", target: "zh-Hans") }
+        #expect(throws: PDFSelectionAlignmentError.invalidResponse) { try PDFSelectionAlignmentTranslator.decode(response("Human genome", "人类基因组"), unit: unit, side: "source", range: [1, 1], source: "en", target: "zh-Hans") }
+    }
+
+    @Test func explicitFiveWordAndSentenceSelectionsReachOneTurnWithExactQuotes() async throws {
+        let phrase = #"{"match":{"s":"Human genome sequencing is accurate","t":"人类基因组测序准确","context":""}}"#
+        let sentence = #"{"match":{"s":"Human genome sequencing is accurate.","t":"人类基因组测序准确。","context":""}}"#
+        let backend = SelectionAlignmentBackend(responses: [phrase, sentence]), client = PDFSelectionAlignmentTranslator(backend: backend)
+        #expect(try await client.align(unit: unit, side: "source", range: [0, 4], source: "en", target: "zh-Hans").match?.sourceIDs.count == 5)
+        #expect(try await client.align(unit: unit, side: "source", range: [0, 5], source: "en", target: "zh-Hans").match?.sourceIDs.count == 6)
+        #expect(await backend.inputs.count == 2)
+        #expect(await backend.instructions.first?.contains("128 tokens and 32 Latin words") == true)
+        await client.shutdown()
     }
 
     @Test func repeatedSelectedQuoteUsesKnownRangeAndCounterpartNeedsUniqueExactContext() throws {
@@ -241,7 +261,7 @@ struct PDFSelectionAlignmentTranslatorTests {
 
     @Test func rejectsInvalidInputBeforeStartingModel() async throws {
         let backend = SelectionAlignmentBackend(responses: [valid]), client = PDFSelectionAlignmentTranslator(backend: backend)
-        for (side, range) in [("other", [1, 1]), ("source", []), ("source", [1]), ("source", [-1, 1]), ("source", [2, 1]), ("source", [0, 5]), ("source", [0, 4])] {
+        for (side, range) in [("other", [1, 1]), ("source", []), ("source", [1]), ("source", [-1, 1]), ("source", [2, 1]), ("source", [0, 6]), ("source", [0, 128])] {
             await #expect(throws: PDFSelectionAlignmentError.invalidInput) { try await client.align(unit: unit, side: side, range: range, source: "en", target: "zh-Hans") }
         }
         let duplicate = PDFPhraseAlignmentUnit(id: "duplicate", sourceText: "human", targetText: "人", source: [.init(id: "same", text: "human")], target: [.init(id: "same", text: "人")])

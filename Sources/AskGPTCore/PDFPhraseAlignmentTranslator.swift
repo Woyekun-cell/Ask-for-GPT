@@ -45,7 +45,7 @@ public actor PDFPhraseAlignmentTranslator {
     private var active: UUID?
     private var stopped = false
     public private(set) var lastValidationReason: PDFPhraseAlignmentValidationReason?
-    public init(settings: CodexSettings) { backend = TranslationBackendFactory.make(settings: PDFPhraseAlignmentConfiguration.settings(from: settings)) }
+    public init(settings: CodexSettings) { backend = CodexBackend(settings: PDFPhraseAlignmentConfiguration.settings(from: settings)) }
     init(backend: any PassageRefinementBackend) { self.backend = backend }
 
     public func align(_ units: [PDFPhraseAlignmentUnit], source: String, target: String) async throws -> PDFPhraseAlignmentResult {

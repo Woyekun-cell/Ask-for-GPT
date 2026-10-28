@@ -53,6 +53,6 @@ if [[ "${1:-}" == --prepare-only || "${1:-}" == --download-only ]]; then
 fi
 printf '\n接下来会打开浏览器，请登录你自己的 ChatGPT 账号。\n'
 "$task_cli" login
-printf '\n登录完成。请打开 Ask for GPT 设置，把“Codex 路径”改为：\n%s\n' "$task_cli"
+printf '\n登录完成。请打开 Ask for GPT 设置，把“CLI 路径”改为：\n%s\n' "$task_cli"
 printf '%s' "$task_cli" | /usr/bin/pbcopy
-printf '路径已复制，可直接粘贴；然后点击“保存设置”。\n'
+printf '路径已复制，可直接粘贴；然后点击“保存并连接”。\n'

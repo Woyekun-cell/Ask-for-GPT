@@ -1,5 +1,7 @@
 # 选择自己的翻译服务
 
+> 版本范围：macOS 1.1.55 安装包使用 Codex，未包含本文的 API / Claude 可选适配。本文保留历史版本及 Windows 预览版配置参考；不要将这些选项视为 1.1.55 macOS 界面功能。
+
 [返回首页](../README.md) · [macOS 安装指南](INSTALL.macOS.zh-CN.md) · [Zotero 阅读指南](ZOTERO.zh-CN.md)
 
 Ask for GPT 默认通过 Codex 翻译。设置中的 **翻译配置文件**为其他服务留出了入口：可以填写 DeepSeek 等 Chat Completions API，也可以使用本机已经安装并登录的 Claude Code。把连接信息保存在一个 JSON 文件里，再让应用读取这个文件即可。

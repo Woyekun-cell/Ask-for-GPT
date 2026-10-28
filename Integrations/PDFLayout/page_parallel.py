@@ -34,21 +34,29 @@ class NativeHelperPool:
             self.close();raise
         return self
 
-    def translate_batch(self,segments,context=None):
+    @contextmanager
+    def lease(self):
+        """Borrow one isolated helper for exactly one bounded model turn."""
         while True:
             with self.lock:
-                if self.closed: raise ProtocolFailure("gpt_unavailable")
-            try: helper=self.available.get(timeout=.05);break
-            except queue.Empty: continue
+                if self.closed:raise ProtocolFailure("gpt_unavailable")
+            try:helper=self.available.get(timeout=.05);break
+            except queue.Empty:continue
         try:
             with self.permits.hold(self.cancelled) if self.permits else nullcontext():
                 with self.lock:
-                    if self.closed: raise ProtocolFailure("gpt_unavailable")
-                return (helper.translate_batch(segments,context=context) if context is not None
-                        else helper.translate_batch(segments))
+                    if self.closed:raise ProtocolFailure("gpt_unavailable")
+                yield helper
         finally:
             with self.lock:
                 if not self.closed:self.available.put(helper)
+
+    def translate_batch(self,segments,context=None):
+        with self.lease() as helper:
+            return (helper.translate_batch(segments,context=context) if context is not None
+                    else helper.translate_batch(segments))
+
+    def cancel(self):self.close()
 
     def close(self):
         with self.lock:

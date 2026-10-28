@@ -119,6 +119,52 @@ class PageParallelTests(unittest.TestCase):
                 self.assertEqual([f.result(3)[0]["text"] for f in futures],["translated page0","translated page1"])
         self.assertEqual(len(clients),2);self.assertTrue(all(c.calls==1 and c.closed for c in clients))
 
+    def test_generic_lease_reuses_the_same_bounded_clients_and_retires_waiters_on_cancel(self):
+        clients=[]
+        class Helper:
+            def __init__(self):self.closed=False;self.bound=None;clients.append(self)
+            def __enter__(self):return self
+            def __exit__(self,*args):self.closed=True
+            def cancel(self):self.closed=True
+            def bind_batch_cancellation(self,event):self.bound=event
+        with NativeHelperPool(Helper,2) as pool:
+            with pool.lease() as first,pool.lease() as second:
+                self.assertIsNot(first,second);self.assertIs(first.bound,pool.cancelled)
+                waiting=threading.Event()
+                def lease_waiter():
+                    waiting.set()
+                    with self.assertRaises(ProtocolFailure):
+                        with pool.lease():self.fail('closed pool handed out a helper')
+                thread=threading.Thread(target=lease_waiter);thread.start();self.assertTrue(waiting.wait(1));pool.cancel();thread.join(1);self.assertFalse(thread.is_alive())
+            with self.assertRaises(ProtocolFailure):
+                with pool.lease():pass
+        self.assertTrue(all(h.closed for h in clients))
+
+    def test_alignment_leases_and_translation_share_the_existing_four_global_permits(self):
+        lock=threading.Lock();release=threading.Event();active=peak=0;started=[]
+        class Helper:
+            def __enter__(helper):return helper
+            def __exit__(helper,*args):pass
+            def work(helper,rows):
+                nonlocal active,peak
+                with lock:active+=1;peak=max(peak,active);started.append(rows)
+                try:self.assertTrue(release.wait(3));return rows
+                finally:
+                    with lock:active-=1
+            def translate_batch(helper,rows):return helper.work(rows)
+        with tempfile.TemporaryDirectory() as temporary:
+            shared=Path(temporary)/'batch-model-permits'
+            with NativeHelperPool(Helper,2,global_permit_directory=shared) as first,NativeHelperPool(Helper,2,global_permit_directory=shared) as second,NativeHelperPool(Helper,4,global_permit_directory=shared) as translation,ThreadPoolExecutor(8) as workers:
+                def align(pool,index):
+                    with pool.lease() as helper:return helper.work(index)
+                futures=[workers.submit(align,pool,index) for index,pool in enumerate([first,first,second,second])]+[workers.submit(translation.translate_batch,index) for index in range(4,8)]
+                try:
+                    until=time.monotonic()+2
+                    while len(started)<4 and time.monotonic()<until:time.sleep(.005)
+                    time.sleep(.04);self.assertEqual(len(started),4);self.assertEqual(peak,4,'alignment cannot bypass translation permits')
+                finally:release.set()
+                self.assertEqual([future.result(3) for future in futures],list(range(8)));self.assertEqual(peak,4)
+
     def test_closing_one_helper_pool_does_not_close_another_document(self):
         self.assertIsNotNone(NativeHelperPool)
         class Helper:

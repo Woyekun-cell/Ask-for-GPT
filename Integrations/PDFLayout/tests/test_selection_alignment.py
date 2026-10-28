@@ -32,7 +32,7 @@ class SelectionAlignmentTests(unittest.TestCase):
             rect = list(found[0] * ~pdf[0].transformation_matrix)
         return {"page": 0, "paragraph": "p0_0", "side": side, "rects": [rect], "text": text}
 
-    def selection_helper(self, *, null=False, warm_delay=0, warm_ready=True):
+    def selection_helper(self, *, null=False, warm_delay=0, warm_ready=True, selection_delay=0):
         self.helper.write_text("#!/usr/bin/env python3\nimport sys,json,pathlib,time,os\n"
             "assert sys.argv[1:]==['--gpt-selection-align']\n"
             f"calls=pathlib.Path({str(self.calls)!r})\n"
@@ -51,16 +51,255 @@ class SelectionAlignmentTests(unittest.TestCase):
             " match=None if counterpart is None else {side+'IDs':[t['id'] for t in chosen],other+'IDs':[counterpart['id']]}\n"
             + (" match=None\n" if null else "") +
             " with calls.open('a') as f:f.write('selection\\n')\n"
+            f" time.sleep({selection_delay!r})\n"
             " print(json.dumps({'id':r['id'],'match':match,'totalSeconds':0.01,'firstDeltaSeconds':0.005}),flush=True)\n")
         self.helper.chmod(0o700)
 
-    def post(self, service, job, query, *, upload=False, token="a"*64):
+    def post(self, service, job, query, *, upload=False, token="a"*64, retry=None):
         route=f"/v1/pdf/jobs/{job.id}/selection-alignment"
         headers={"Content-Type":"application/pdf" if upload else "application/json"}
         body=self.source.read_bytes() if upload else json.dumps(query).encode()
         if upload:headers['X-AskGPT-Selection']=json.dumps(query)
+        if retry is not None:headers['X-AskGPT-Selection-Retry']=retry
         status,raw=self.request(service,"POST",route,body,token=token,extra_headers=headers)
         return status,json.loads(raw)
+
+    def test_valid_delayed_jsonl_selection_survives_the_old_eight_second_cutoff(self):
+        import io
+        self.selection_helper(selection_delay=8.25);manager=self.manager();job=self.install(manager);service=manager.selection_alignments
+        original=(self.source.read_bytes(),(job.directory/'mono.pdf').read_bytes(),manager.read_alignment(job))
+        service.install_source(job,io.BytesIO(original[0]),len(original[0]))
+        began=time.monotonic();value=service.align(job,self.query());elapsed=time.monotonic()-began
+        self.assertGreater(elapsed,8);self.assertLess(elapsed,20)
+        self.assertFalse(value['cached']);self.assertEqual(value['link']['source']['text'],'binds')
+        self.assertEqual(value['link']['target']['text'],'Binding')
+        self.assertEqual(self.calls.read_text().splitlines(),['selection'])
+        self.assertEqual(len(list(job.directory.glob('selection-*.json'))),1)
+        self.assertEqual((self.source.read_bytes(),(job.directory/'mono.pdf').read_bytes(),manager.read_alignment(job)),original)
+        with patch.object(NativeHelper,'align_selection',side_effect=AssertionError('completed slow turn was not cached')):
+            self.assertTrue(service.align(job,self.query())['cached'])
+
+    def test_configured_selection_stall_times_out_once_reaps_helper_and_preserves_cache(self):
+        import io
+        import selection_service as selection
+        self.selection_helper(selection_delay=1);manager=self.manager();job=self.install(manager);service=manager.selection_alignments
+        original=(self.source.read_bytes(),(job.directory/'mono.pdf').read_bytes(),manager.read_alignment(job))
+        service.install_source(job,io.BytesIO(original[0]),len(original[0]))
+        # Prepare the fake interpreter before the deliberately tiny turn
+        # deadline, so slow process startup cannot replace the intended stall.
+        helper=NativeHelper(self.helper,'en','zh-Hans',batch_timeout=.25);helper.warm_selection(timeout=3)
+        service.helpers.append(helper)
+        began=time.monotonic()
+        with patch.object(selection,'MODEL_TIMEOUT',.25),self.assertRaisesRegex(ProtocolFailure,'selection_timeout'):
+            service.align(job,self.query())
+        self.assertLess(time.monotonic()-began,.8,'timeout must not wait for helper retirement')
+        self.assertEqual(self.calls.read_text().splitlines(),['selection'],'a stalled turn must not retry')
+        self.assertFalse(list(job.directory.glob('selection-*.json')))
+        frames=[json.loads(line) for line in (self.root/'selection-frames.jsonl').read_text().splitlines() if not json.loads(line)['request'].get('warmup')]
+        self.assertEqual(len(frames),1);identity=frames[0]['pid']
+        deadline=time.monotonic()+4.5
+        while service.retired_helpers and time.monotonic()<deadline:time.sleep(.01)
+        self.assertFalse(service.retired_helpers);self.assertFalse(service.active_helpers);self.assertFalse(service.helpers)
+        with self.assertRaises(ProcessLookupError):os.kill(identity,0)
+        self.assertEqual((self.source.read_bytes(),(job.directory/'mono.pdf').read_bytes(),manager.read_alignment(job)),original)
+
+    @staticmethod
+    def exact_binding(helper, unit, side, start, end):
+        return {'sourceIDs':[next(t['id'] for t in unit['source'] if t['text']=='binds')],
+            'targetIDs':[next(t['id'] for t in unit['target'] if t['text']=='Binding')]}
+
+    def semantic_first_page(self):
+        import sentence_alignment as sentence
+        prepared=fixtures.SentenceAlignmentTests.prepared(self)
+        relation={s['id']:[prepared[0]['target'][-1-i]['id']] for i,s in enumerate(prepared[0]['source'])}
+        self.value['pages'][0]=sentence.upgrade_page(self.value['pages'][0],prepared,relation)
+        self.value.update(granularity='sentence',sentenceAlignmentRevision=sentence.SENTENCE_REVISION,sentencePages=[0])
+
+    def test_single_sentence_model_context_keeps_parent_ids_and_complete_cache_in_both_directions(self):
+        import io
+        import server
+        from phrase_alignment import request_unit
+        self.semantic_first_page()
+        for side,word,left,right,opposite in [('source','blocks','Second fact blocks.','Blocking happens.','Blocking'),
+                ('target','Binding','First fact binds.','Binding happens.','binds')]:
+            manager=self.manager();job=self.install(manager);service=manager.selection_alignments;query=self.query(side=side,text=word)
+            source=self.source.read_bytes();service.install_source(job,io.BytesIO(source),len(source))
+            binding,prepared,start,end,key=service._prepare(job,query);parent=request_unit(prepared['unit'])
+            before=(source,(job.directory/'mono.pdf').read_bytes(),server._alignment_path(job.directory,job.cache_info).read_bytes())
+            def capture(helper,unit,selected_side,local_start,local_end):
+                self.assertEqual((unit['sourceText'],unit['targetText']),(left,right))
+                self.assertEqual(unit['id'],parent['id']);self.assertEqual(selected_side,side)
+                for name in ('source','target'):
+                    original={t['id']:t['text'] for t in parent[name]}
+                    self.assertTrue(all(original.get(t['id'])==t['text'] for t in unit[name]))
+                    self.assertLess(len(unit[name]),len(parent[name]))
+                chosen=unit[side][local_start:local_end+1]
+                self.assertEqual([t['id'] for t in chosen],[t['id'] for t in parent[side][start:end+1]])
+                self.assertLess(local_start,start,'the second sentence starts later in the parent token stream')
+                other='target' if side=='source' else 'source';peer=next(t for t in unit[other] if t['text']==opposite)
+                return {side+'IDs':[t['id'] for t in chosen],other+'IDs':[peer['id']]}
+            with patch.object(NativeHelper,'align_selection',autospec=True,side_effect=capture) as align:
+                value=service.align(job,query);self.assertEqual(align.call_count,1)
+            self.assertFalse(value['cached']);self.assertIsNotNone(value['link']);self.assertEqual(value['link']['paragraph'],parent['id'])
+            record=json.loads((job.directory/('selection-'+key+'.json')).read_text())
+            self.assertEqual(record['binding'],binding);self.assertEqual(record['ownerSHA256'],prepared['ownerSHA256']);self.assertEqual(record['key'],key)
+            for name in ('source','target'):self.assertTrue(set(record['match'][name+'IDs'])<={t['id'] for t in parent[name]})
+            with patch.object(NativeHelper,'align_selection',side_effect=AssertionError('positive sentence context was not cached')):
+                cached=service.align(job,query);self.assertTrue(cached['cached']);self.assertEqual(cached['link'],value['link'])
+                self.assertEqual(service.links(job,0)['links'],[value['link']])
+            self.assertEqual((self.source.read_bytes(),(job.directory/'mono.pdf').read_bytes(),server._alignment_path(job.directory,job.cache_info).read_bytes()),before)
+
+    def test_cross_sentence_selection_keeps_the_original_model_context(self):
+        import io
+        from phrase_alignment import request_unit
+        self.semantic_first_page();manager=self.manager();job=self.install(manager);service=manager.selection_alignments
+        source=self.source.read_bytes();service.install_source(job,io.BytesIO(source),len(source));query=self.query(text='binds. Second')
+        _,prepared,start,end,_=service._prepare(job,query);parent=request_unit(prepared['unit'])
+        def capture(helper,unit,side,local_start,local_end):
+            self.assertEqual(unit,parent);self.assertEqual((side,local_start,local_end),('source',start,end));return None
+        with patch.object(NativeHelper,'align_selection',autospec=True,side_effect=capture) as align:
+            self.assertIsNone(service.align(job,query)['link']);self.assertEqual(align.call_count,1)
+
+    def test_sentence_context_requires_unique_both_side_ownership_and_complete_parent_tokens(self):
+        import io
+        import selection_service as selection
+        from phrase_alignment import request_unit
+        self.semantic_first_page();manager=self.manager();job=self.install(manager);service=manager.selection_alignments
+        source=self.source.read_bytes();service.install_source(job,io.BytesIO(source),len(source));query=self.query()
+        _,prepared,start,end,_=service._prepare(job,query);fallback=(request_unit(prepared['unit']),start,end)
+        for change in ('duplicate_source','duplicate_target','missing_peer_glyph','sentence_splits_latin_token','unverified_method'):
+            altered=copy.deepcopy(prepared);parent=altered['page']['paragraphs'][0];row=parent['sentences'][0]
+            if change=='duplicate_source':
+                duplicate=copy.deepcopy(row);duplicate['id']+='duplicate';parent['sentences'].append(duplicate)
+            if change=='duplicate_target':parent['sentences'][1]['target']=copy.deepcopy(row['target'])
+            if change=='missing_peer_glyph':
+                removed=next(g for rows in altered['rows']['target'] for g in rows if g['text']=='B' and any(selection._center_in(g,r) for r in row['target']['rects']))
+                for rows in altered['rows']['target']:
+                    if removed in rows:rows.remove(removed);break
+            if change=='sentence_splits_latin_token':row['source']['text']=row['source']['text'][1:]
+            if change=='unverified_method':row['method']='unverified'
+            self.assertEqual(selection._model_request(altered,query,start,end),fallback,change)
+        partial=self.query(text='bind')
+        with patch.object(NativeHelper,'align_selection',side_effect=AssertionError('partial Latin must fail before model')):
+            with self.assertRaisesRegex(ProtocolFailure,'selection_invalid'):service.align(job,partial)
+
+    def test_manual_retry_bypasses_only_negative_cache_and_keeps_pdf_binding(self):
+        self.selection_helper(null=True);manager=self.manager();job=self.install(manager);service=self.service(manager)
+        query=self.query();before=(self.source.read_bytes(),(job.directory/'mono.pdf').read_bytes(),manager.read_alignment(job))
+        status,first=self.post(service,job,query,upload=True)
+        self.assertEqual(status,200,first);self.assertIsNone(first['link'])
+        path=next(job.directory.glob('selection-*.json'));negative=path.read_bytes()
+        with patch.object(NativeHelper,'align_selection',side_effect=AssertionError('ordinary negative replay called model')):
+            status,ordinary=self.post(service,job,query)
+            self.assertEqual(status,200,ordinary);self.assertTrue(ordinary['cached']);self.assertIsNone(ordinary['link'])
+        with patch.object(NativeHelper,'align_selection',autospec=True,side_effect=self.exact_binding) as align:
+            status,retried=self.post(service,job,query,retry='1')
+            self.assertEqual(status,200,retried);self.assertFalse(retried['cached']);self.assertEqual(align.call_count,1)
+            self.assertEqual(retried['link']['source']['text'],'binds');self.assertEqual(retried['link']['target']['text'],'Binding')
+        self.assertNotEqual(path.read_bytes(),negative);positive=path.read_bytes()
+        with patch.object(NativeHelper,'align_selection',side_effect=AssertionError('positive retry called model')):
+            status,cached=self.post(service,job,query,retry='1')
+            self.assertEqual(status,200,cached);self.assertTrue(cached['cached']);self.assertEqual(cached['link'],retried['link'])
+        self.assertEqual(path.read_bytes(),positive);self.assertEqual(len(list(job.directory.glob('selection-*.json'))),1)
+        self.assertEqual((self.source.read_bytes(),(job.directory/'mono.pdf').read_bytes(),manager.read_alignment(job)),before)
+        self.assertEqual(retried['sourceSHA256'],self.sha)
+
+    def test_concurrent_manual_retries_share_one_turn_and_timeout_is_not_retried(self):
+        self.selection_helper(null=True);manager=self.manager();job=self.install(manager);service=self.service(manager)
+        query=self.query();self.assertEqual(self.post(service,job,query,upload=True)[0],200)
+        entered=threading.Event();release=threading.Event();results=[]
+        def delayed(helper,*args):
+            entered.set();release.wait(3);return self.exact_binding(helper,*args)
+        try:
+            with patch.object(NativeHelper,'align_selection',autospec=True,side_effect=delayed) as align:
+                first=threading.Thread(target=lambda:results.append(self.post(service,job,query,retry='1')));first.start()
+                self.assertTrue(entered.wait(2))
+                second=threading.Thread(target=lambda:results.append(self.post(service,job,query,retry='1')));second.start()
+                time.sleep(.05);release.set();first.join(3);second.join(3)
+                self.assertEqual(align.call_count,1)
+        finally:release.set()
+        self.assertEqual(len(results),2);self.assertTrue(all(code==200 and value['link'] for code,value in results),results)
+        self.assertEqual(results[0][1]['link'],results[1][1]['link'])
+        self.assertTrue(next(value for _,value in results if value['cached'])['timing']['sharedPending'])
+        # A failed explicit retry leaves its previous null record intact and
+        # returns the failure after one attempt, without an automatic retry.
+        path=next(job.directory.glob('selection-*.json'));saved=json.loads(path.read_text());saved.update(match=None,link=None)
+        path.write_text(json.dumps(saved));before=path.read_bytes()
+        with patch.object(NativeHelper,'align_selection',side_effect=ProtocolFailure('selection_timeout')) as align:
+            status,value=self.post(service,job,query,retry='1')
+            self.assertEqual((status,value.get('error')),(504,'selection_timeout'));self.assertEqual(align.call_count,1)
+        self.assertEqual(path.read_bytes(),before)
+
+    def test_retry_header_accepts_only_one_explicit_value(self):
+        import http.client
+        self.selection_helper();manager=self.manager();job=self.install(manager);service=self.service(manager);query=self.query()
+        for value in ('','0','true','1, 1','2'):
+            status,result=self.post(service,job,query,upload=True,retry=value)
+            self.assertEqual((status,result.get('error')),(400,'selection_invalid'),value)
+        route=f'/v1/pdf/jobs/{job.id}/selection-alignment';payload=json.dumps(query).encode()
+        connection=http.client.HTTPConnection('127.0.0.1',service.server_address[1],timeout=5)
+        connection.putrequest('POST',route);connection.putheader('Authorization','Bearer '+'a'*64)
+        connection.putheader('Content-Length',str(len(payload)));connection.putheader('Content-Type','application/json')
+        connection.putheader('X-AskGPT-Selection-Retry','1');connection.putheader('X-AskGPT-Selection-Retry','1')
+        connection.endheaders(payload);response=connection.getresponse()
+        self.assertEqual(response.status,400);self.assertEqual(json.loads(response.read())['error'],'selection_invalid');connection.close()
+        self.assertFalse(self.calls.exists());self.assertFalse((job.directory/'selection-source.pdf').exists())
+
+    def test_retry_header_is_available_to_authorized_browser_preflight(self):
+        import http.client
+        import server
+        manager=self.manager();origin='chrome-extension://'+'a'*32
+        service=server.create_server(manager,'a'*64,port=0,extension_origin=origin);self.services.append(service)
+        threading.Thread(target=service.serve_forever,daemon=True).start()
+        connection=http.client.HTTPConnection('127.0.0.1',service.server_address[1],timeout=5)
+        connection.request('OPTIONS','/v1/pdf/jobs/'+'b'*32+'/selection-alignment',headers={'Origin':origin,
+            'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'Authorization, Content-Type, X-AskGPT-Selection-Retry'})
+        response=connection.getresponse();self.assertEqual(response.status,204)
+        self.assertIn('x-askgpt-selection-retry',response.getheader('Access-Control-Allow-Headers'));response.read();connection.close()
+
+    def test_partial_latin_token_never_expands_or_calls_the_model(self):
+        self.selection_helper();manager=self.manager();job=self.install(manager);service=self.service(manager)
+        for side,text in [('source','bind'),('target','Bind')]:
+            status,value=self.post(service,job,self.query(side=side,text=text),upload=True)
+            self.assertEqual((status,value.get('error')),(400,'selection_invalid'))
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(list(job.directory.glob('selection-*.json')))
+
+    def test_legacy_partial_word_record_cannot_poison_restore_or_new_queries(self):
+        self.selection_helper();manager=self.manager();job=self.install(manager);service=self.service(manager)
+        status,first=self.post(service,job,self.query(),upload=True);self.assertEqual(status,200,first)
+        path=next(job.directory.glob('selection-*.json'));saved=json.loads(path.read_text())
+        saved['query']=self.query(text='bind');path.write_text(json.dumps(saved));before=path.read_bytes()
+        status,second=self.post(service,job,self.query(text='blocks'));self.assertEqual(status,200,second)
+        with patch.object(NativeHelper,'align_selection',side_effect=AssertionError('restoration called model')):
+            code,raw=self.request(service,'GET',f'/v1/pdf/jobs/{job.id}/selection-alignment?page=0')
+            self.assertEqual(code,200,raw);links=json.loads(raw)['links']
+            self.assertEqual(links,[] if second['link'] is None else [second['link']])
+            status,whole=self.post(service,job,self.query());self.assertEqual(status,200,whole)
+            self.assertTrue(whole['cached']);self.assertEqual(whole['link'],first['link'])
+        self.assertEqual(path.read_bytes(),before,'legacy cache must be retained rather than deleted')
+
+    def test_explicit_selection_accepts_a_passage_without_changing_phrase_batch_limits(self):
+        from selection_service import validate_selection_request,validate_selection_match
+        from phrase_alignment import validate_phrase_matches
+        words=['word'+str(i) for i in range(33)];chars=[chr(0x4e00+i) for i in range(129)]
+        unit={'id':'u0','sourceText':' '.join(words),'targetText':''.join(chars),
+            'source':[{'id':f's{i}','text':v} for i,v in enumerate(words)],'target':[{'id':f't{i}','text':v} for i,v in enumerate(chars)]}
+        validate_selection_request(unit,'source',0,31);validate_selection_request(unit,'target',0,127)
+        match={'sourceIDs':[f's{i}' for i in range(32)],'targetIDs':[f't{i}' for i in range(128)]}
+        self.assertEqual(validate_selection_match(unit,'source',0,31,match,language='en'),match)
+        with self.assertRaises(ProtocolFailure):validate_phrase_matches({'u0':[match]},[unit])
+        for side,end in [('source',32),('target',128)]:
+            with self.assertRaises(ProtocolFailure):validate_selection_request(unit,side,0,end)
+        with self.assertRaises(ProtocolFailure):validate_selection_match(unit,'source',0,31,{**match,'targetIDs':[f't{i}' for i in range(129)]},language='en')
+        bundled={'id':'bundled','sourceText':' '.join(words),'targetText':'甲',
+            'source':[{'id':'bs','text':' '.join(words)}],'target':[{'id':'bt','text':'甲'}]}
+        with self.assertRaises(ProtocolFailure):validate_selection_request(bundled,'source',0,0)
+        with self.assertRaises(ProtocolFailure):validate_selection_match(bundled,'target',0,0,
+            {'sourceIDs':['bs'],'targetIDs':['bt']},language='zh-Hans')
+        self.selection_helper(null=True);manager=self.manager();job=self.install(manager);service=self.service(manager)
+        status,value=self.post(service,job,self.query(text=self.source_text[0]),upload=True)
+        self.assertEqual(status,200,value);self.assertIsNone(value['link']);self.assertEqual(self.calls.read_text().splitlines(),['selection'])
 
     def test_get_prewarms_without_source_returns_promptly_and_reuses_one_ready_helper(self):
         self.selection_helper(warm_delay=.8);manager=self.manager();job=self.install(manager);service=self.service(manager)
@@ -588,11 +827,12 @@ class SelectionHelperTests(unittest.TestCase):
 
     def test_limits_refuse_long_selection_before_native_process_starts(self):
         import tempfile
-        unit={'id':'u0','sourceText':'one two three four five','targetText':'甲',
-            'source':[{'id':f's{i}','text':text} for i,text in enumerate('one two three four five'.split())],
+        words=['word'+str(i) for i in range(33)]
+        unit={'id':'u0','sourceText':' '.join(words),'targetText':'甲',
+            'source':[{'id':f's{i}','text':text} for i,text in enumerate(words)],
             'target':[{'id':'t0','text':'甲'}]}
         with tempfile.TemporaryDirectory() as folder,NativeHelper(Path(folder)/'must-not-exist','en','zh-Hans') as helper:
-            with self.assertRaises(ProtocolFailure):helper.align_selection(unit,'source',0,4)
+            with self.assertRaises(ProtocolFailure):helper.align_selection(unit,'source',0,32)
             self.assertIsNone(helper.process)
 
     def test_selection_timeout_returns_before_stalled_helper_cleanup_grace_and_reaps_it(self):

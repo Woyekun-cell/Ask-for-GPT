@@ -1,10 +1,14 @@
 (function(root){
   'use strict';
-  const PREFIX='extensions.askgpt-inline.localPDF.',MAX_PDF=450*1024*1024;
+  const PREFIX='extensions.askgpt-inline.localPDF.',MAX_PDF=450*1024*1024,MAX_ALIGNMENT=32*1024*1024;
   const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
+  function hasAlignmentMetadata(info){
+    const value=info.alignment,name=info.alignmentFile??'alignment.json';
+    return value&&typeof value==='object'&&!Array.isArray(value)&&digest(value.sha256)
+      &&Number.isInteger(value.bytes)&&value.bytes>=5&&value.bytes<=MAX_ALIGNMENT
+      &&(name==='alignment.json'||typeof name==='string'&&/^alignment-[a-f0-9]{64}\.json$/.test(name));
+  }
   function create({Zotero,Services,Components,IOUtils,hashFile}={}){
-    // Native attachment discovery currently uses the macOS cache layout.
-    if(Zotero?.isWin||Zotero?.isLinux)return null;
     if(!Zotero?.Items?.get||!Zotero?.Attachments?.importFromFile||!Zotero?.File?.pathToFile||!IOUtils?.readUTF8)return null;
     const pending=new Map();
     function file(path){return Zotero.File.pathToFile(path);}
@@ -123,7 +127,7 @@
           ||info.sourcePages.some((page,index)=>page!==index))continue;
         const output=await IOUtils.read(saved.path);
         if(output.byteLength!==info.outputs.mono.bytes||sha(saved)!==targetSHA)throw Error('local_version_changed');
-        return {item,output,job:{id:entry.leafName,state:'complete',sourcePages:info.sourcePages,pageCount:info.pageCount}};
+        return {item,output,sourceSHA256:sourceSHA,alignmentBinding:{sourceLanguage:info.source,targetLanguage:info.target,targetSHA256:targetSHA,targetBytes:output.byteLength},...(!hasAlignmentMetadata(info)?{alignmentKnownMissing:true}:{}),job:{id:entry.leafName,state:'complete',sourcePages:info.sourcePages,pageCount:info.pageCount}};
       }
       // A saved PDF must not trigger a paid replacement job because its
       // original correspondence metadata is temporarily unavailable.

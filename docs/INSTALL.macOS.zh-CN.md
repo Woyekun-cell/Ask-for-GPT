@@ -2,11 +2,11 @@
 
 [下载最新版](https://github.com/Woyekun-cell/Ask-for-GPT/releases/latest) · [Zotero 图文指南](https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/docs/ZOTERO.zh-CN.md) · [翻译后端配置](TRANSLATION-BACKENDS.zh-CN.md)
 
-这份指南面向直接下载使用的读者。安装包里已经有编译好的 Ask for GPT、离线词典和阅读插件，不需要安装 Xcode 或自己编译。模型连接和 PDF 支持在第一次使用时配置，之后可以直接打开应用阅读。默认使用 Codex CLI 的 ChatGPT 登录；翻译另有可选的 API / Claude Code 配置入口。
+这份指南面向直接下载使用的读者。安装包里已经有编译好的 Ask for GPT、离线词典和阅读插件，不需要安装 Xcode 或自己编译。模型连接和 PDF 支持在第一次使用时配置，之后可以直接打开应用阅读。本次 macOS 1.1.55 使用 Codex CLI 的 ChatGPT 登录。
 
 ## 先选对下载文件
 
-在 GitHub Releases 的 **Assets** 中下载 `Ask-for-GPT-1.1.38-macOS-arm64.dmg`。如果你更习惯解压文件，也可以选同版本的 `.zip`；两者内容相同。
+在 GitHub Releases 的 **Assets** 中下载 `Ask-for-GPT-1.1.55-macOS-arm64.dmg`。如果你更习惯解压文件，也可以选同版本的 `.zip`；两者内容相同。
 
 当前安装版适用于 **Apple Silicon Mac（M1、M2、M3、M4 等 M 系列芯片）**。可以在苹果菜单 **关于本机**中查看芯片。完整 PDF 支持需要 macOS 15 或更新版本；Apple 本机短段翻译需要 macOS 26 和对应语言包。Intel Mac 暂无此安装包。
 
@@ -20,7 +20,7 @@
 
 | 文件 | 什么时候运行 |
 |---|---|
-| `01-登录ChatGPT.command` | 首次配置默认 Codex 翻译、问答与写作时；独立翻译后端另行配置 |
+| `01-登录ChatGPT.command` | 首次配置 Codex 翻译、问答与写作时 |
 | `02-准备PDF翻译.command` | 首次准备 PDF 的 Python、排版模型和字体时 |
 
 双击后会打开终端显示进度。完成时会提示按回车关闭窗口。它们是配置工具，正常阅读时不需要反复运行。
@@ -33,7 +33,7 @@
 
 ## 2. 配置模型连接
 
-默认路径使用 Codex CLI，适合沿用 ChatGPT 账号的翻译、问答和写作。若只想通过自己的 API 或 Claude Code 做翻译，也可以直接按本节后面的“可选翻译配置”操作。
+macOS 1.1.55 使用 Codex CLI，沿用你自己的 ChatGPT 账号进行翻译、问答和写作。
 
 ### 默认路径：登录自己的 ChatGPT 账号
 
@@ -45,7 +45,7 @@
 /Users/你的用户名/Library/Application Support/AskGPTReader/Tools/codex-0.163.0/bin/codex
 ```
 
-在 Ask for GPT 菜单栏选择 **设置…**，把它粘贴到 **Codex 路径**，点击 **保存设置**，再点击 **测试 Codex**。如果你本来就有 Codex CLI，也可以直接填写自己已安装、版本不低于 0.162.1 的可执行文件路径。
+在 Ask for GPT 菜单栏选择 **设置…**，把它粘贴到 **CLI 路径**，点击 **保存并连接**。如果你本来就有 Codex CLI，也可以直接填写自己已安装、版本不低于 0.162.1 的可执行文件路径。
 
 ![设置：Codex CLI 路径与可选翻译配置文件](images/settings.png)
 
@@ -53,13 +53,9 @@
 
 随包的登录入口使用 ChatGPT 浏览器登录，默认 Codex 路径无需另填 API Key。安装和认证的来源说明见 [Codex CLI 官方文档](https://learn.chatgpt.com/docs/codex/cli)与[认证文档](https://learn.chatgpt.com/docs/auth)。
 
-### 可选翻译配置：API 或 Claude Code
+### 历史可选后端说明
 
-设置中的 **翻译配置文件**留空，翻译继续使用 Codex。填写自己保存的 JSON 文件路径后，短段 **GPT 精译 / Explain**、PDF 正文翻译以及句词映射会读取这份配置；**问答和写作仍使用 Codex**。可选配置可以直接点击 **保存设置**保存，不要求先连接 Codex；**测试 Codex**只检查 Codex，并不测试这份翻译配置。
-
-安装包中附有 **翻译后端配置.md**和相邻的 `examples/`。API 示例通过 `apiKeyFile`引用你本机的纯文本密钥文件；Claude Code 示例通过 `cliPath`引用你自己安装并预先登录的 CLI。复制示例、填入实际路径，再到设置指定 JSON 文件即可。修改配置或密钥文件后，保存设置并重启 Ask for GPT。
-
-默认 Codex 路径沿用既有验证；API / Claude Code 是**实验性接入，已构建，未做连通或效果测试**。API 请求会发送至填写的服务，费用和额度计入该服务账户。字段与完整步骤见[翻译后端配置](TRANSLATION-BACKENDS.zh-CN.md)。
+macOS 1.1.55 安装包未包含 API / Claude 可选适配，设置中使用 **CLI 路径**与 **保存并连接**。随包保留的[翻译后端说明](TRANSLATION-BACKENDS.zh-CN.md)和占位示例用于历史版本及 Windows 预览版参考。
 
 ## 3. 允许读取你选中的文字
 
@@ -69,7 +65,7 @@
 
 ![查词浮窗](images/translation.png)
 
-本地词典已经包含在安装包中。需要 Apple 本机短段翻译时，使用 macOS 26，并按系统提示准备相应语言资源；选择 **GPT**或 **Explain**时使用当前翻译后端，未填写可选配置时为 Codex。
+本地词典已经包含在安装包中。需要 Apple 本机短段翻译时，使用 macOS 26，并按系统提示准备相应语言资源；选择 **GPT**或 **Explain**时使用 Codex。
 
 ## 4. 第一次准备 PDF 支持
 
@@ -85,7 +81,7 @@
 ~/Library/Application Support/AskGPTReader/PDFLayout/
 ```
 
-普通阅读时不需要进入这个目录。PDF 在本机提取与排版，需要翻译的正文和句词对应上下文提交给当前翻译配置的模型服务；未填写可选配置时使用 Codex。请使用有权提交给相应服务的材料。
+普通阅读时不需要进入这个目录。PDF 在本机提取与排版，需要翻译的正文和句词对应上下文提交给 Codex。请使用有权提交给相应服务的材料。
 
 ## 5. 在 Zotero 安装插件
 
@@ -110,7 +106,7 @@ Word/WPS 写作加载项还需要单独的 localhost HTTPS 配置。若需要写
 
 ## 常见问题
 
-**Codex 连接失败。** 检查 CLI 路径是否指向实际文件，以及是否已用 ChatGPT 登录。重新运行登录入口后，保存设置并点击 **测试 Codex**。模型名需符合账号权限。
+**Codex 连接失败。** 检查 CLI 路径是否指向实际文件，以及是否已用 ChatGPT 登录。重新运行登录入口后，点击 **保存并连接**。模型名需符合账号权限。
 
 **可选翻译配置失败。** 检查 JSON 文件路径与字段；API 方式还需检查 HTTPS 地址、模型 ID 和密钥文件权限，Claude Code 方式检查 CLI 路径、参数兼容性和终端登录。修改后重启应用，具体见[配置指南](TRANSLATION-BACKENDS.zh-CN.md)。此入口失败会报告错误，不自动改用另一服务。
 
@@ -131,5 +127,5 @@ Word/WPS 写作加载项还需要单独的 localhost HTTPS 配置。若需要写
 每次 Release 附带 `SHA256SUMS.txt`。下载后可以在终端检查安装包，输出应与文件内对应行相同：
 
 ```bash
-shasum -a 256 ~/Downloads/Ask-for-GPT-1.1.38-macOS-arm64.dmg
+shasum -a 256 ~/Downloads/Ask-for-GPT-1.1.55-macOS-arm64.dmg
 ```

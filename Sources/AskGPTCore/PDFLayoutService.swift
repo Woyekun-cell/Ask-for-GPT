@@ -165,17 +165,6 @@ public actor PDFLayoutService: PDFLayoutServing {
         var environment = ProcessInfo.processInfo.environment
         environment["PYTHONUNBUFFERED"] = "1"
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
-        // Freeze the selected configuration path for this service lifetime.
-        // Switching providers takes effect after an application restart.
-        let preferences = UserDefaults(suiteName: "local.askgpt.reader")
-        let translationSettings = preferences?.data(forKey: "codexSettings")
-            .flatMap { try? JSONDecoder().decode(CodexSettings.self, from: $0) } ?? CodexSettings()
-        environment["ASKGPT_TRANSLATION_CONFIGURATION_PATH"] = translationSettings.translationConfigurationPath
-        if !translationSettings.translationConfigurationPath.isEmpty {
-            environment["ASKGPT_TRANSLATION_CACHE_ID"] = TranslationBackendFactory.cacheIdentity(settings: translationSettings)
-        } else {
-            environment.removeValue(forKey: "ASKGPT_TRANSLATION_CACHE_ID")
-        }
         worker.environment = environment
         do { try worker.run() } catch { throw PDFLayoutServiceError.startup }
         process = worker

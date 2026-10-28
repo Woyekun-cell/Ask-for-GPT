@@ -21,9 +21,11 @@ from phrase_alignment import (EXTRACTION_REVISION, prepare_unit, request_unit,
     validate_phrase_request, validate_phrase_matches, materialize_unit, _lexical)
 
 REVISION = "pdf-selection-semantic-v1"
+MAX_SELECTION_TOKENS = 128
+MAX_SELECTION_WORDS = 32
 MAX_QUERY_BYTES = 8192
 MAX_RECORD_BYTES = 512 * 1024
-MODEL_TIMEOUT = 8.0
+MODEL_TIMEOUT = 20.0
 WARMUP_TIMEOUT = 20.0
 QUEUE_TIMEOUT = .2
 MAX_HELPERS = 2
@@ -61,11 +63,15 @@ def validate_query(value):
     return deepcopy(value)
 
 
+def _selection_word_count(tokens):
+    return sum(len(re.findall(r"[A-Za-z]+(?:['’\-][A-Za-z]+)*",token["text"])) for token in tokens)
+
+
 def validate_selection_request(unit, side, start, end):
     validate_phrase_request([unit])
     if (side not in ("source", "target") or type(start) is not int or type(end) is not int
-            or not 0 <= start <= end < len(unit[side]) or end-start+1 > 16
-            or sum(_lexical(token) for token in unit[side][start:end+1]) > 4):
+            or not 0 <= start <= end < len(unit[side]) or end-start+1 > MAX_SELECTION_TOKENS
+            or _selection_word_count(unit[side][start:end+1]) > MAX_SELECTION_WORDS):
         raise ProtocolFailure("selection_invalid")
 
 
@@ -73,7 +79,12 @@ def validate_selection_match(unit, side, start, end, match, *, language=None):
     validate_selection_request(unit, side, start, end)
     if match is None: return None
     try:
-        validate_phrase_matches({unit["id"]: [match]}, [unit])
+        validate_phrase_matches({unit["id"]: [match]}, [unit],
+            max_group_tokens=MAX_SELECTION_TOKENS,max_group_words=MAX_SELECTION_WORDS)
+        for name in ("source","target"):
+            claimed_ids=set(match[name+"IDs"])
+            if _selection_word_count(token for token in unit[name] if token["id"] in claimed_ids)>MAX_SELECTION_WORDS:
+                raise ValueError()
         selected = [row["id"] for row in unit[side][start:end+1]]
         claimed = match[side+"IDs"]
         chinese = language == "zh-Hans" if language is not None else any(
@@ -124,6 +135,63 @@ def _owner_side(rows, side):
             glyphs = glyphs[first:first+len(selected)]
     if not glyphs: raise ProtocolFailure("selection_unavailable")
     return {"text":"".join(g["text"] for g in glyphs), "glyphs":glyphs}
+
+
+def _model_request(prepared, query, start, end):
+    """Narrow only proven sentence context; retain immutable parent token IDs."""
+    parent=prepared["unit"]; fallback=(request_unit(parent),start,end)
+    try:
+        side=query["side"]
+        paragraphs=[p for p in prepared["page"]["paragraphs"] if p["id"]==parent["id"]==query["paragraph"]]
+        if len(paragraphs)!=1:return fallback
+        paragraph=paragraphs[0];sentences=paragraph.get("sentences",[])
+        real=[g for row in prepared["rows"][side] for g in row if _normal(g["text"])
+            and any(_center_in(g,r) for r in query["rects"])]
+        if not real or _normal("".join(g["text"] for g in real))!=_normal(query["text"]):return fallback
+        touches=[row for row in sentences if any(_inside(g["rect"],row[side]["rects"],g.get("origin"),g["text"]) for g in real)]
+        if len(touches)!=1:return fallback
+        sentence=touches[0]
+        if sentence.get("method") not in {"semantic-model","glyph-identity"} or not all(
+                _inside(g["rect"],sentence[side]["rects"],g.get("origin"),g["text"]) for g in real):return fallback
+        sides={name:_owner_side(prepared["rows"][name],sentence[name]) for name in ("source","target")}
+        local=prepare_unit(parent["id"],sides["source"],sides["target"])
+        if local is None:return fallback
+        request=request_unit(local);indices={}
+        for name in ("source","target"):
+            owned=Counter(_glyph_key(g) for g in parent[name+"Glyphs"] if g.get("rect") is not None)
+            claimed=Counter(_glyph_key(g) for g in sides[name]["glyphs"] if g.get("rect") is not None)
+            if not claimed or claimed-owned or any(count!=1 or owned[key]!=1 for key,count in claimed.items()):return fallback
+            actual={}
+            for row in prepared["rows"][name]:
+                for glyph in row:actual.setdefault(_glyph_key(glyph),[]).append(glyph)
+            for key in claimed:
+                if len(actual.get(key,[]))!=1:return fallback
+                glyph=actual[key][0]
+                if not _normal(glyph["text"]):continue
+                if any(row is not sentence and _inside(glyph["rect"],row[name]["rects"],glyph.get("origin"),glyph["text"]) for row in sentences):return fallback
+                if any(p is not paragraph and _inside(glyph["rect"],p[name]["rects"],glyph.get("origin"),glyph["text"]) for p in prepared["page"]["paragraphs"]):return fallback
+            # A sentence boundary may not split a Latin token or PDF ligature.
+            # Match complete physical glyph tuples, never text/offset guesses.
+            lookup={}
+            for index,token in enumerate(parent[name]):
+                signature=tuple(_glyph_key(g) for g in token["glyphs"] if g.get("rect") is not None)
+                lookup.setdefault(signature,[]).append(index)
+            positions=[]
+            for token in local[name]:
+                signature=tuple(_glyph_key(g) for g in token["glyphs"] if g.get("rect") is not None)
+                matches=lookup.get(signature,[])
+                if len(matches)!=1 or token["text"]!=parent[name][matches[0]]["text"]:return fallback
+                positions.append(matches[0])
+            if not positions or positions!=list(range(positions[0],positions[-1]+1)):return fallback
+            indices[name]=positions
+            request[name]=[{"id":parent[name][i]["id"],"text":parent[name][i]["text"]} for i in positions]
+        selected=indices[side]
+        if start not in selected or end not in selected:return fallback
+        local_start,local_end=selected.index(start),selected.index(end)
+        validate_selection_request(request,side,local_start,local_end)
+        return request,local_start,local_end
+    except (ProtocolFailure,KeyError,TypeError,ValueError,IndexError):
+        return fallback
 
 
 @dataclass
@@ -262,6 +330,14 @@ class SelectionAlignmentService:
         indices = [i for i,token in enumerate(unit[side]) if any(_glyph_key(g) in selected for g in token["glyphs"])]
         if not indices or indices != list(range(indices[0], indices[-1]+1)): raise ProtocolFailure("selection_invalid")
         start, end = indices[0], indices[-1]
+        # A selected Latin fragment must not silently become its whole token.
+        # CJK may still expand later to its proven complete lexical equivalent.
+        for token in unit[side][start:end+1]:
+            if not _lexical(token): continue
+            required=Counter(_glyph_key(g) for g in token["glyphs"] if g.get("rect") is not None and _normal(g["text"]))
+            if required-selected:
+                failure=ProtocolFailure("selection_invalid");failure.error_detail="partial_latin_token"
+                raise failure
         validate_selection_request(request_unit(unit), side, start, end)
         key = _input_digest([binding, EXTRACTION_REVISION, query["page"], query["paragraph"],
             prepared["ownerSHA256"], side, start, end])
@@ -360,6 +436,9 @@ class SelectionAlignmentService:
                 other={side:set(_glyph_key(g) for g in record["link"][side]["glyphs"]) for side in ("source","target")}
                 if any(incoming[side]&other[side] for side in incoming) and not self._compatible_groups(incoming,other):
                     raise ProtocolFailure("selection_invalid")
+            except ProtocolFailure as error:
+                if getattr(error,"error_detail",None)=="partial_latin_token": continue
+                raise
             except (OSError,ValueError,TypeError,KeyError): raise ProtocolFailure("selection_invalid") from None
 
     @staticmethod
@@ -367,7 +446,8 @@ class SelectionAlignmentService:
         return {**binding, "page":page, "key":key, "link":deepcopy(link), "cached":cached,
             "timing":{**deepcopy(phases or {}), "totalSeconds":round(time.monotonic()-began,6)}}
 
-    def align(self, job, query):
+    def align(self, job, query, *, retry=False):
+        if type(retry) is not bool: raise ProtocolFailure("selection_invalid")
         began = time.monotonic(); query = validate_query(query)
         binding, prepared, start, end, key = self._prepare(job, query)
         phases = {"prepareSeconds":round(time.monotonic()-began,6)}
@@ -375,7 +455,10 @@ class SelectionAlignmentService:
         path = job.directory/("selection-"+key+".json")
         record = self._record(job, path, binding, prepared, query, start, end, key)
         phases["cacheReadSeconds"] = round(time.monotonic()-phase_began,6)
-        if record is not None: return self._response(binding, query["page"], key, record["link"], True, began, phases)
+        # Only an explicit retry may revisit a saved null. Proven links keep
+        # their instant cache path, and concurrent retries join the same turn.
+        if record is not None and (record["link"] is not None or not retry):
+            return self._response(binding, query["page"], key, record["link"], True, began, phases)
         with self.lock:
             if self.closed or self.manager.stopping: raise ProtocolFailure("service_stopping")
             pending = self.pending.get((job.id,key)); owner = pending is None
@@ -388,7 +471,7 @@ class SelectionAlignmentService:
             phases["deduplicatedWaitSeconds"] = round(time.monotonic()-phase_began,6)
             phases["sharedPending"] = True
             return self._response(binding,query["page"],key,pending.result["link"],True,began,phases)
-        helper = None; acquired = False
+        helper = None; acquired = False; foreground = None
         try:
             phase_began = time.monotonic()
             if not self.slots.acquire(timeout=QUEUE_TIMEOUT): raise ProtocolFailure("selection_busy")
@@ -397,7 +480,7 @@ class SelectionAlignmentService:
             phase_began = time.monotonic()
             record = self._record(job,path,binding,prepared,query,start,end,key)
             phases["cacheReadSeconds"] += round(time.monotonic()-phase_began,6)
-            if record is not None:
+            if record is not None and (record["link"] is not None or not retry):
                 pending.result = self._response(binding,query["page"],key,record["link"],True,began,phases)
                 return deepcopy(pending.result)
             phase_began = time.monotonic()
@@ -415,7 +498,9 @@ class SelectionAlignmentService:
                 self.active_helpers.add(helper)
             phases["helperSetupSeconds"] = round(time.monotonic()-phase_began,6)
             phase_began = time.monotonic()
-            match = helper.align_selection(request_unit(prepared["unit"]), query["side"], start, end)
+            model_unit,model_start,model_end=_model_request(prepared,query,start,end)
+            foreground=self.manager.sentence_upgrades.foreground();foreground.__enter__()
+            match = helper.align_selection(model_unit, query["side"], model_start, model_end)
             phases["helperExchangeSeconds"] = round(time.monotonic()-phase_began,6)
             if helper.selection_timing: phases["native"] = deepcopy(helper.selection_timing)
             phase_began = time.monotonic()
@@ -446,6 +531,7 @@ class SelectionAlignmentService:
         except Exception:
             pending.error = "selection_invalid"; raise ProtocolFailure("selection_invalid") from None
         finally:
+            if foreground is not None:foreground.__exit__(None,None,None)
             release_slot=acquired
             with self.lock:
                 if helper is not None:
@@ -540,6 +626,9 @@ class SelectionAlignmentService:
                         total+=len(json.dumps(link,ensure_ascii=False).encode())
                         if total>MAX_RESTORE_BYTES: raise ProtocolFailure("selection_invalid")
                         links.append(link);seen.add(identity)
+            except ProtocolFailure as error:
+                if getattr(error,"error_detail",None)=="partial_latin_token": continue
+                raise
             except (OSError, ValueError, TypeError, KeyError): raise ProtocolFailure("selection_invalid") from None
             if len(links) > MAX_RESTORED_LINKS: raise ProtocolFailure("selection_invalid")
         self._prewarm(job)

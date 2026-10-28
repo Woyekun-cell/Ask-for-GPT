@@ -10,12 +10,12 @@
 
 Look up words, ask about a passage, and read web pages and PDFs in two languages. Keep your reading notes in Zotero, then refine your wording as you write.
 
-[![Download macOS DMG](https://img.shields.io/badge/Download_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.dmg)
-[![Download ZIP](https://img.shields.io/badge/Download-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.zip)
+[![Download macOS DMG](https://img.shields.io/badge/Download_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-1.1.55-macOS-arm64.dmg)
+[![Download ZIP](https://img.shields.io/badge/Download-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-1.1.55-macOS-arm64.zip)
 
 [![Download Windows](https://img.shields.io/badge/Download_Windows-x64-0078D4?style=for-the-badge&logo=windows)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe)
 
-**macOS v1.1.38 · Apple Silicon · macOS 15+ | Windows x64 v0.1.0-preview.1**
+**macOS v1.1.55 · Apple Silicon · macOS 15+ | Windows x64 v0.1.0-preview.1**
 
 [macOS setup (中文)](docs/INSTALL.macOS.zh-CN.md) · [Windows setup (中文)](docs/INSTALL.Windows.zh-CN.md) · [Zotero guide (中文)](docs/ZOTERO.zh-CN.md) · [Translation backends (中文)](docs/TRANSLATION-BACKENDS.zh-CN.md) · [Interface gallery](docs/GALLERY.md) · [Releases](https://github.com/Woyekun-cell/Ask-for-GPT/releases) · [Issues](https://github.com/Woyekun-cell/Ask-for-GPT/issues)
 
@@ -23,11 +23,11 @@ Look up words, ask about a passage, and read web pages and PDFs in two languages
 
 Ask for GPT comes in Windows and macOS versions, bringing word lookup, passage-based questions, and bilingual web and PDF reading together while keeping annotations and notes in Zotero. The macOS version also provides Word/WPS writing assistance. I continue to develop it around the practical needs of reading and academic writing.
 
-The app works where you already read and write: your Zotero attachment and annotations, the page open in Chrome, or a manuscript in Word. English word lookup uses a local dictionary. AI features use your own ChatGPT login session by default, with an optional configuration file for alternative translation backends.
+The app works where you already read and write: your Zotero attachment and annotations, the page open in Chrome, or a manuscript in Word. English word lookup uses a local dictionary. In macOS 1.1.55, AI features use your own ChatGPT login session through Codex.
 
 ## Download and install
 
-This macOS update includes hover lookup, a reading-position reminder, separate figure previews, complete local-translation reuse, and layout/cache improvements. The Windows assets retain the independently validated `0.1.0-preview.1` build (source `05348ad`); these new macOS reader features are not claimed for that Windows binary.
+macOS 1.1.55 fixes translated-reader theme inheritance, fits both panes with Fit Width, and hides a finished correspondence indicator while preserving existing translations, caches, and annotations. The Windows assets retain the independently validated `0.1.0-preview.1` build (source `05348ad`); these new macOS reader features are not claimed for that Windows binary.
 
 **Windows version (x64):** [Windows installer and portable ZIP](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38) · [Setup guide (中文)](docs/INSTALL.Windows.zh-CN.md). Provides selection lookup, an offline dictionary, passage translation and questions, Chrome/Zotero reading integration, bilingual PDFs, and configurable translation backends. [Build and check records](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml) are available in the workflow. The interface examples below use the macOS version.
 
@@ -35,26 +35,26 @@ Choose a macOS installer above to start using the app. The macOS application its
 
 | Download | How to use it |
 | --- | --- |
-| [DMG installer](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.dmg) | Recommended. Open the disk image, drag the app to Applications, and follow the included setup instructions |
-| [ZIP archive](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-1.1.38-macOS-arm64.zip) | Extract and install; contains the same app and setup scripts |
+| [DMG installer](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-1.1.55-macOS-arm64.dmg) | Recommended. Open the disk image, drag the app to Applications, and follow the included setup instructions |
+| [ZIP archive](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-1.1.55-macOS-arm64.zip) | Extract and install; contains the same app and setup scripts |
 | [Source code](https://github.com/Woyekun-cell/Ask-for-GPT/archive/refs/heads/main.zip) | Build the app, inspect the implementation, or adapt an integration; see the [developer handbook](docs/HANDBOOK.zh-CN.md) |
 
 First setup on macOS takes four steps:
 
 1. **Install the app.** Move Ask for GPT into Applications and open it. This release is not notarized by Apple. If macOS blocks the first launch, follow its confirmation in System Settings → Privacy & Security.
-2. **Configure the model connection.** The default route is the included **`01-登录ChatGPT.command`**. It unpacks and verifies official Codex CLI 0.163.0, then opens browser sign-in. Copy its CLI path into settings, click **保存设置** (save settings), then **测试 Codex** (test Codex). No npm or Homebrew installation is needed. Alternative translation backends are described below.
+2. **Configure the model connection.** The default route is the included **`01-登录ChatGPT.command`**. It unpacks and verifies official Codex CLI 0.163.0, then opens browser sign-in. Copy its CLI path into settings, click **保存并连接** (save and connect). No npm or Homebrew installation is needed. This Mac binary uses Codex.
 3. **Prepare PDF translation when needed.** Run **`02-准备PDF翻译.command`** to download pinned uv, Python 3.12.15, prebuilt dependencies, and the public fonts and models used for layout. This one-time preparation needs internet access and about 1 GB of local storage, with no compilation. Everyday PDF translation still needs a network connection for model requests.
 4. **Connect your reader.** Open **页面内翻译…** from the app's menu bar to install the Zotero add-on or load the Chrome extension.
 
 The [macOS installation guide](docs/INSTALL.macOS.zh-CN.md) covers these steps, permissions, and common problems. The local English dictionary works offline.
 
-### Choose a translation backend when needed
+### Model connection in this build
 
-Leave **翻译配置文件** (translation configuration file) empty to keep the default Codex route. To try a Chat Completions API such as DeepSeek, or a locally installed and signed-in Claude Code, enter the full path to a JSON configuration file, click **保存设置**, and restart the app. API configurations specify a full HTTPS endpoint, model ID, and local key file; Claude Code configurations specify its executable path and an optional model.
+The **macOS 1.1.55 binary uses Codex**. Enter the signed-in Codex CLI under **CLI 路径** (CLI path), then select **保存并连接** (save and connect). The API / Claude adapters described in earlier public source snapshots are not included in this macOS binary. See the [backend notes](docs/TRANSLATION-BACKENDS.zh-CN.md) for historical and Windows configuration scope.
 
-This setting applies to **passage refinement, PDF text translation, and sentence/phrase mapping**. Questions and writing continue to use Codex, and **测试 Codex** tests only that connection. The new API and Claude Code adapters are **experimental: built, with no connectivity or translation-quality testing in this release**.
+### One-minute narrated demo
 
-The installer includes a guide and placeholder examples. See [translation backend configuration](docs/TRANSLATION-BACKENDS.zh-CN.md) for fields and setup. API requests go to the configured service, with billing and usage charged to that service account.
+[Watch real Zotero operations with English synthetic narration](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-1.1.55-Zotero-demo-en.mp4). The video shows shared reading themes, Fit Width for both panes, and cached view switching. [Capture details and scope](docs/GALLERY.md#reader-demo-155).
 
 ## Read a paper closely in Zotero
 
@@ -168,7 +168,7 @@ Reading and writing share the same app settings, making it easy to move from und
 
 ## Settings and shortcuts
 
-The settings card brings together the Codex CLI path, question model, reasoning effort, optional translation configuration file, automatic selection translation, and shortcuts. Click **保存设置** (save settings) to keep changes. **测试 Codex** checks the Codex connection used for questions and default translation; an independent translation configuration can be saved separately.
+In macOS 1.1.55, set **CLI 路径** (CLI path), the question model, and reasoning effort, then select **保存并连接** (save and connect). The settings screenshot below is retained from an earlier version; its optional translation configuration does not describe this Mac binary.
 
 ![Settings for CLI connection, translation, questions, and shortcuts](docs/images/settings.png)
 
@@ -193,7 +193,7 @@ The settings card brings together the Codex CLI path, question model, reasoning 
 | PDF content | Requires a text layer; scans need OCR first, and image text stays unchanged; complex vertical figure text may lack exact phrase correspondence |
 | Word / WPS (macOS) | Word offers inline suggestions; WPS currently uses explicit sidebar checks without inline colored underlines, and replacement and undo need testing in the target host version |
 
-Dictionary lookup and Apple translation run on your device. AI translation and sentence/phrase mapping send the relevant text and necessary context to the model service configured for the task: Codex by default, or the configured API or Claude Code route. Questions and writing still use Codex. PDF extraction and layout run locally. Use content you have permission to submit to the selected service.
+Dictionary lookup and Apple translation run on your device. In the macOS 1.1.55 binary, AI translation, sentence/phrase mapping, questions, and writing send relevant text and necessary context through your Codex connection. The Windows preview retains its separately documented backend options. PDF extraction and layout run locally. Use content you have permission to submit to the selected service.
 
 Original PDFs are preserved. Manually saved Zotero annotations belong to the original attachment. Completed translations remain stored locally, while unfinished working files have separate cleanup rules. Check terminology, numbers, equations, and meaning before quoting a translation. Physical modifier-wheel gestures, displayed frame rates, and a complete fresh-Mac installation still need further live testing.
 

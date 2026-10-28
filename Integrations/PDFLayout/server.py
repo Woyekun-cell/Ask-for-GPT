@@ -30,9 +30,11 @@ from gpt_batch import ERROR_DETAILS
 from alignment import MAX_ALIGNMENT_BYTES, subset_alignment, validate_alignment
 
 JOB_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})(?:/(mono\.pdf|dual\.pdf|alignment\.json|alignment-layout\.json))?")
+ALIGNMENT_WORK_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/alignment-work")
 ALIGNMENT_UPGRADE_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/alignment-upgrade")
 SELECTION_ALIGNMENT_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/selection-alignment")
 SELECTION_LINKS_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/selection-alignment\?page=(0|[1-9][0-9]{0,3})")
+ALIGNMENT_PAGE_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/alignment-page\.json\?page=(0|[1-9][0-9]{0,3})")
 MAX_CACHE_BYTES = 768 * 1024 * 1024
 MAX_INACTIVE_JOBS = 64
 MAX_JOB_AGE = 7 * 24 * 60 * 60
@@ -48,6 +50,8 @@ MAX_RUNNING_JOBS = 2
 MAX_CONCURRENT_UPLOADS = 2
 MAX_ALIGNMENT_SNAPSHOT_JOBS = 2
 MAX_ALIGNMENT_SNAPSHOT_BYTES = 32 * 1024 * 1024
+MAX_ALIGNMENT_PROJECTION_BYTES = 16 * 1024 * 1024
+MAX_ALIGNMENT_PROJECTIONS = 6
 
 
 def _finish_owned_group(process, *, grace=PROCESS_GROUP_GRACE):
@@ -219,6 +223,8 @@ class JobManager:
         self.stopping = False
         self._alignment_snapshots = OrderedDict()
         self._alignment_snapshot_bytes = 0
+        self._alignment_projections = OrderedDict()
+        self._alignment_projection_bytes = 0
         from sentence_service import SentenceUpgradeService
         self.sentence_upgrades = SentenceUpgradeService(self)
         from selection_service import SelectionAlignmentService
@@ -227,6 +233,41 @@ class JobManager:
         self.figure_regions = FigureRegionService(self.cache_root)
         self._load_completed()
         self.prune()
+        self.sentence_upgrades.resume_work()
+
+    def _reusable_revisions(self):
+        # Backend identity is part of translation semantics, not a version to
+        # drop during migration. Unknown/custom generations stay exact-only.
+        suffix = self.translation_revision.removeprefix(TRANSLATION_REVISION)
+        if self.translation_revision != TRANSLATION_REVISION and not re.fullmatch(r"-backend-[0-9a-f]{64}", suffix):
+            return (self.translation_revision,)
+        return (self.translation_revision, *(revision + suffix for revision in LEGACY_OUTPUT_REVISIONS))
+
+    @staticmethod
+    def _validate_legacy_outputs(directory, pages, signatures, alignment):
+        """Check real PDF pages through verified descriptors, without text reads."""
+        import pymupdf
+        from alignment import _geometry
+        for kind in ("mono", "dual"):
+            path = directory / (kind + ".pdf")
+            descriptor = platform.secure_open(path, os.O_RDONLY)
+            with os.fdopen(descriptor, "rb") as handle:
+                expected = signatures[kind]
+                if _signature(os.fstat(handle.fileno())) != expected: raise ValueError("changed_cache_file")
+                try:
+                    with _open_pdf_descriptor(handle) as document:
+                        if document.needs_pass or not document.is_pdf or len(document) != len(pages):
+                            raise ValueError("invalid_cached_page_mapping")
+                        if alignment is not None:
+                            for index, page in enumerate(document):
+                                if _geometry(page) != {name: alignment["pages"][index][kind][name]
+                                        for name in ("mediaBox", "cropBox", "rotation")}:
+                                    raise ValueError("invalid_cached_page_geometry")
+                except Exception:
+                    # Malformed historical PDFs must not prevent service startup.
+                    raise ValueError("invalid_cached_pdf") from None
+                if _signature(os.fstat(handle.fileno())) != expected or _output_signature(path) != expected:
+                    raise ValueError("changed_cache_file")
 
     def _reusable_revisions(self):
         # Backend identity is part of translation semantics, not a version to
@@ -271,7 +312,7 @@ class JobManager:
                 value = json.loads(raw)
                 pages, count = value["sourcePages"], value["pageCount"]
                 if (value.get("schema") != CACHE_SCHEMA or value.get("state") != "complete"
-                        or value.get("revision") not in self._reusable_revisions()
+                        or value.get("revision") not in (*self._reusable_revisions(),"pdf-layout-gpt-v3")
                         or value.get("babeldoc") != BABELDOC_VERSION
                         or type(count) is not int or not 1 <= count <= 2000
                         or not isinstance(pages, list) or not pages
@@ -294,14 +335,20 @@ class JobManager:
                     if value["outputs"][kind] != {"sha256": digest, "bytes": signature[2]}:
                         raise ValueError("changed_cache_file")
                     signatures[kind] = signature
+                if value["revision"]=="pdf-layout-gpt-v3" and "alignment" not in value:continue
                 alignment_raw, alignment = None, None
                 if "alignment" in value:
                     signature, raw = _private_file(_alignment_path(directory,value), MAX_ALIGNMENT_BYTES)
                     if value["alignment"] != {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": signature[2]}:
                         raise ValueError("changed_cache_file")
                     alignment = validate_alignment(json.loads(raw), pages, count, value["sourceSHA256"])
+                    if value["revision"]=="pdf-layout-gpt-v3":
+                        from legacy_alignment import validate_recovery
+                        validate_recovery(alignment,value)
                     signatures["alignment"] = signature
-                    alignment_raw = raw
+                    from sentence_alignment import filter_unsafe_numeric_sentence_links
+                    alignment_raw = (json.dumps(alignment,ensure_ascii=False,separators=(",",":")).encode()
+                        if filter_unsafe_numeric_sentence_links(alignment) else raw)
                 legacy = value["revision"] != self.translation_revision
                 if legacy: self._validate_legacy_outputs(directory, pages, signatures, alignment)
                 job = Job(directory.name, directory, state="complete", source_pages=pages,
@@ -311,6 +358,7 @@ class JobManager:
                 self.permanent.add(job.id)
                 if alignment_raw is not None:
                     self._remember_alignment_snapshot(job,alignment_raw)
+                    self.sentence_upgrades.restore_work(job,alignment)
             except (OSError, ValueError, TypeError, KeyError):
                 continue
 
@@ -368,10 +416,12 @@ class JobManager:
         alignment_raw = None
         if alignment_path.exists() or alignment_path.is_symlink():
             signature, raw = _private_file(alignment_path, MAX_ALIGNMENT_BYTES)
-            validate_alignment(json.loads(raw), job.source_pages, job.page_count, job.cache_info["sourceSHA256"])
+            parsed = validate_alignment(json.loads(raw), job.source_pages, job.page_count, job.cache_info["sourceSHA256"])
             value["alignment"] = {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": signature[2]}
             signatures["alignment"] = signature
-            alignment_raw = raw
+            from sentence_alignment import filter_unsafe_numeric_sentence_links
+            alignment_raw = (json.dumps(parsed,ensure_ascii=False,separators=(",",":")).encode()
+                if filter_unsafe_numeric_sentence_links(parsed) else raw)
         atomic_json(job.directory / "cache.json", value)
         job.cache_info, job.output_signatures = value, signatures
         self.completed[value["cacheKey"]] = job.id
@@ -387,6 +437,8 @@ class JobManager:
     def _forget_alignment_snapshot(self,identity):
         entry=self._alignment_snapshots.pop(identity,None)
         if entry is not None:self._alignment_snapshot_bytes-=len(entry[1])
+        for key in list(getattr(self,"_alignment_projections",{})):
+            if key[0]==identity:self._alignment_projection_bytes-=len(self._alignment_projections.pop(key))
 
     def _remember_alignment_snapshot(self,job,raw):
         # Only bytes whose complete semantic/geometry validation has already
@@ -422,6 +474,9 @@ class JobManager:
                     # generation already passed the complete semantic checks.
                     if job._validated_alignment_binding!=binding:
                         value=validate_alignment(value,job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
+                    from sentence_alignment import filter_unsafe_numeric_sentence_links
+                    if filter_unsafe_numeric_sentence_links(value):
+                        raw=json.dumps(value,ensure_ascii=False,separators=(",",":")).encode()
                     self._remember_alignment_snapshot(job,raw)
                 # Changes while copying/validating must not return a stale
                 # trusted tree, even when size or mtime was restored.
@@ -434,21 +489,63 @@ class JobManager:
     def read_layout_alignment(self,job):
         # Project only after the full snapshot passed the same integrity and
         # semantic checks as alignment.json; paragraph layout claims no precision.
-        value=self.read_alignment(job)
+        return self._read_alignment_projection(job,None)
+
+    def read_page_alignment(self,job,physical):
+        if type(physical) is not int or physical not in job.source_pages:raise ProtocolFailure("alignment_unavailable")
+        return self._read_alignment_projection(job,physical)
+
+    def _read_alignment_projection(self,job,physical):
+        with self.lock:
+            if (job.state!="complete" or self._cached_job(job.cache_info["cacheKey"]) is not job
+                    or "alignment" not in job.output_signatures):raise ProtocolFailure("alignment_unavailable")
+            binding=self._alignment_snapshot_binding(job)
+            key=(job.id,binding,physical)
+            if not hasattr(self,"_alignment_projections"):
+                self._alignment_projections=OrderedDict();self._alignment_projection_bytes=0
+            raw=self._alignment_projections.get(key)
+            if raw is not None:
+                self._alignment_projections.move_to_end(key)
+                result=json.loads(raw)
+                if self._cached_job(job.cache_info["cacheKey"]) is not job or self._alignment_snapshot_binding(job)!=binding:raise ProtocolFailure("alignment_unavailable")
+                return result
+            value=self.read_alignment(job)
+            result=self._project_alignment(value,physical)
+            raw=json.dumps(result,ensure_ascii=False,separators=(",",":")).encode()
+            if self._cached_job(job.cache_info["cacheKey"]) is not job or self._alignment_snapshot_binding(job)!=binding:raise ProtocolFailure("alignment_unavailable")
+            if len(raw)<=MAX_ALIGNMENT_PROJECTION_BYTES and MAX_ALIGNMENT_PROJECTIONS>0:
+                while self._alignment_projections and (len(self._alignment_projections)>=MAX_ALIGNMENT_PROJECTIONS
+                        or self._alignment_projection_bytes+len(raw)>MAX_ALIGNMENT_PROJECTION_BYTES):
+                    _,old=self._alignment_projections.popitem(last=False);self._alignment_projection_bytes-=len(old)
+                self._alignment_projections[key]=raw;self._alignment_projection_bytes+=len(raw)
+            return result
+
+    @staticmethod
+    def _project_alignment(value,physical):
         result={key:value[key] for key in ("schema","coordinateSpace","provenance",
             "sourcePages","pageCount","sourceSHA256")}
-        result.update(granularity="paragraph",pages=[])
-        if "layoutRevision" in value:result["layoutRevision"]=value["layoutRevision"]
+        result.update(granularity=value["granularity"] if physical is not None else "paragraph",pages=[])
+        for name in ("layoutRevision","recoveryRevision","targetSHA256"):
+            if name in value:result[name]=value[name]
+        if physical is not None:
+            for name in ("sentenceAlignmentRevision","phraseAlignmentRevision","phraseExtractionRevision"):
+                if name in value:result[name]=value[name]
+            for name in ("sentencePages","sentencePartialPages","phrasePages","phraseExtractedPages"):
+                if name in value:result[name]=[p for p in value[name] if p==physical]
+            if "phraseCoverage" in value:
+                result["phraseCoverage"]={str(physical):value["phraseCoverage"][str(physical)]} if str(physical) in value["phraseCoverage"] else {}
         for page in value["pages"]:
             row={key:page[key] for key in ("sourcePage","outputPage","sourceToDual","targetToDual")}
             for name in ("source","mono","dual"):
                 row[name]={key:page[name][key] for key in ("mediaBox","cropBox","rotation")}
             row["paragraphs"]=[]
+            if "candidateTextUnavailable" in page:row["candidateTextUnavailable"]=page["candidateTextUnavailable"]
             for paragraph in page["paragraphs"]:
                 part={"id":paragraph["id"]}
                 for name in ("source","target","dualSource","dualTarget"):
                     keys=("text","rects") if name in ("source","target") else ("rects",)
                     part[name]={key:paragraph[name][key] for key in keys}
+                if page["sourcePage"]==physical and "sentences" in paragraph:part["sentences"]=paragraph["sentences"]
                 row["paragraphs"].append(part)
             result["pages"].append(row)
         return result
@@ -470,6 +567,9 @@ class JobManager:
             previous=job.cache_info.get("alignmentFile")
             atomic_json(job.directory/"cache.json",metadata)
             job.cache_info=metadata;job.output_signatures["alignment"]=signature
+            from sentence_alignment import filter_unsafe_numeric_sentence_links
+            if filter_unsafe_numeric_sentence_links(snapshot):
+                saved=json.dumps(snapshot,ensure_ascii=False,separators=(",",":")).encode()
             self._remember_alignment_snapshot(job,saved)
             if previous and previous!=name:
                 old=_alignment_path(job.directory,{"alignmentFile":previous})
@@ -832,7 +932,7 @@ class PDFHTTPServer(ThreadingHTTPServer):
 def create_server(manager: JobManager, token: str, *, port: int = PORT, extension_origin: str | None = None):
     if extension_origin is not None and not re.fullmatch(r"chrome-extension://[a-p]{32}", extension_origin):
         raise ProtocolFailure("invalid_configuration")
-    cors_headers = {"authorization", "content-type", "x-askgpt-pages", "x-askgpt-source", "x-askgpt-target", "x-askgpt-units", "x-askgpt-selection"}
+    cors_headers = {"authorization", "content-type", "x-askgpt-pages", "x-askgpt-source", "x-askgpt-target", "x-askgpt-units", "x-askgpt-background", "x-askgpt-background-scope", "x-askgpt-selection", "x-askgpt-selection-retry", "x-askgpt-full-translation"}
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         server_version = "AskGPTPDF/1"
@@ -897,10 +997,25 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
                     return self.reply(200,manager.selection_alignments.links(parent,int(selected[2])))
                 except ProtocolFailure as error: return self.selection_error(error)
                 except (OSError,ValueError,TypeError,KeyError): return self.reply(400,{"error":"selection_invalid"})
+            work=ALIGNMENT_WORK_ROUTE.fullmatch(self.path)
+            if work:
+                try:
+                    parent=manager.get(work[1])
+                    if parent.state!="complete":return self.reply(409,{"error":"job_not_complete"})
+                    return self.reply(200,manager.sentence_upgrades.work_status(parent))
+                except ProtocolFailure:return self.reply(404,{"error":"job_not_found"})
             upgrade=ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path)
             if upgrade:
                 try: return self.reply(200,manager.sentence_upgrades.status(manager.get(upgrade[1])))
                 except ProtocolFailure: return self.reply(404,{"error":"job_not_found"})
+            page=ALIGNMENT_PAGE_ROUTE.fullmatch(self.path)
+            if page:
+                try:
+                    job=manager.get(page[1])
+                    if job.state!="complete":return self.reply(409,{"error":"job_not_complete"})
+                    return self.reply(200,manager.read_page_alignment(job,int(page[2])))
+                except ProtocolFailure:return self.reply(404,{"error":"alignment_unavailable"})
+                except (OSError,ValueError,TypeError,KeyError):return self.reply(404,{"error":"alignment_unavailable"})
             match = JOB_ROUTE.fullmatch(self.path)
             if not match: return self.reply(404, {"error": "not_found"})
             try:
@@ -934,6 +1049,8 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
         def do_POST(self):
             if not self.authorize(): return
             if self.path == '/v1/pdf/figure-regions': return self.post_figure_regions()
+            work=ALIGNMENT_WORK_ROUTE.fullmatch(self.path)
+            if work:return self.post_alignment_work(work[1])
             selected=SELECTION_ALIGNMENT_ROUTE.fullmatch(self.path)
             if selected: return self.post_selection_alignment(selected[1])
             upgrade=ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path)
@@ -1027,6 +1144,9 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
             content_type=types[0].split(";",1)[0].strip().lower()
             selection_headers=self.headers.get_all("X-AskGPT-Selection") or []
             try:
+                retry_headers=self.headers.get_all("X-AskGPT-Selection-Retry") or []
+                if retry_headers and retry_headers!=["1"]: raise ProtocolFailure("selection_invalid")
+                retry=bool(retry_headers)
                 if content_type=="application/json":
                     if selection_headers or not 1<=length<=MAX_QUERY_BYTES: raise ProtocolFailure("selection_invalid")
                     raw=self.rfile.read(length)
@@ -1042,9 +1162,50 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
                     try: manager.selection_alignments.install_source(parent,self.rfile,length)
                     finally: manager.upload_slots.release()
                 else: return self.reply(415,{"error":"invalid_content_type"})
-                return self.reply(200,manager.selection_alignments.align(parent,query))
+                return self.reply(200,manager.selection_alignments.align(parent,query,retry=retry))
             except ProtocolFailure as error: return self.selection_error(error)
             except (OSError,TimeoutError,ValueError,TypeError,KeyError): return self.reply(400,{"error":"selection_invalid"})
+
+        def post_alignment_work(self,identity):
+            try:parent=manager.get(identity)
+            except ProtocolFailure:parent=None
+            if parent is not None and parent.state!="complete":return self.reply(409,{"error":"job_not_complete"})
+            if self.headers.get_all("X-AskGPT-Full-Translation")!=["1"]:return self.reply(400,{"error":"invalid_units"})
+            if self.headers.get("Transfer-Encoding") is not None:return self.reply(400,{"error":"unsupported_transfer_encoding"})
+            lengths=self.headers.get_all("Content-Length") or [];types=self.headers.get_all("Content-Type") or []
+            if len(lengths)!=1 or not lengths[0].isdigit():return self.reply(411,{"error":"content_length_required"})
+            length=int(lengths[0])
+            if len(types)!=1 or types[0].split(';',1)[0].strip().lower()!='application/pdf':return self.reply(415,{"error":"pdf_content_type_required"})
+            if not 5<=length<=MAX_PDF_BYTES:return self.reply(413,{"error":"pdf_too_large"})
+            names={'sourceLanguage':'X-AskGPT-Source-Language','targetLanguage':'X-AskGPT-Target-Language',
+                'targetSHA256':'X-AskGPT-Target-SHA256','targetBytes':'X-AskGPT-Target-Bytes'}
+            binding=None
+            if any(self.headers.get_all(name) is not None for name in names.values()):
+                values={key:self.headers.get_all(name) for key,name in names.items()}
+                if any(not value or len(value)!=1 for value in values.values()):return self.reply(400,{'error':'alignment_invalid'})
+                binding={key:value[0] for key,value in values.items()}
+                if not re.fullmatch(r'[1-9][0-9]{0,9}',binding['targetBytes']):return self.reply(400,{'error':'alignment_invalid'})
+                binding['targetBytes']=int(binding['targetBytes'])
+            if parent is None and binding is None:return self.reply(404,{'error':'job_not_found'})
+            try:
+                if parent is not None:
+                    manager.sentence_upgrades.validate_work_parent(parent)
+                    if binding is not None:
+                        from legacy_alignment import validate_binding
+                        validate_binding(parent.cache_info,binding)
+            except (ProtocolFailure,OSError,ValueError,TypeError,KeyError):return self.reply(400,{"error":"alignment_invalid"})
+            if not manager.upload_slots.acquire(blocking=False):return self.reply(409,{"error":"alignment_conflict"})
+            try:
+                if parent is None:
+                    from legacy_alignment import adopt
+                    parent=adopt(manager,identity,binding,self.rfile,length)
+                else:manager.selection_alignments.install_source(parent,self.rfile,length)
+                return self.reply(202,manager.sentence_upgrades.register_work(parent))
+            except ProtocolFailure as error:
+                if str(error)=='job_not_found':return self.reply(404,{'error':'job_not_found'})
+                return self.reply(400,{"error":str(error) if str(error) in {"source_changed","incomplete_upload","service_stopping"} else "alignment_invalid"})
+            except (OSError,ValueError,TypeError,KeyError):return self.reply(400,{"error":"alignment_invalid"})
+            finally:manager.upload_slots.release()
 
         def post_alignment_upgrade(self,identity):
             try: parent=manager.get(identity)
@@ -1060,8 +1221,12 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
             content_type=types[0].split(";",1)[0].strip().lower()
             unit_headers=self.headers.get_all("X-AskGPT-Units") or []
             if len(unit_headers)>1:return self.reply(400,{"error":"invalid_units"})
+            background_headers=self.headers.get_all("X-AskGPT-Background") or []
+            if background_headers and background_headers!=["1"]:return self.reply(400,{"error":"invalid_units"})
+            scopes=self.headers.get_all("X-AskGPT-Background-Scope") or []
+            if scopes and (not background_headers or len(scopes)!=1 or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}",scopes[0])):return self.reply(400,{"error":"invalid_units"})
             if content_type=="application/json":
-                if not 1<=length<=2048 or unit_headers:return self.reply(400,{"error":"invalid_units"})
+                if not 1<=length<=2048 or unit_headers or background_headers:return self.reply(400,{"error":"invalid_units"})
                 try:
                     def unique_object(pairs):
                         result=dict(pairs)
@@ -1070,6 +1235,9 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
                     raw=self.rfile.read(length)
                     if len(raw)!=length:raise ValueError("incomplete_priority")
                     value=json.loads(raw,object_pairs_hook=unique_object)
+                    if isinstance(value,dict) and set(value) in ({"action"},{"action","scope"}):
+                        if "scope" in value and (not isinstance(value["scope"],str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}",value["scope"])):raise ValueError("invalid_scope")
+                        return self.reply(200,manager.sentence_upgrades.control(parent,value["action"],value.get("scope")))
                     if not isinstance(value,dict) or set(value)!={"page","units"}:raise ValueError("invalid_priority")
                     return self.reply(200,manager.sentence_upgrades.prioritize(parent,value["page"],value["units"]))
                 except (ProtocolFailure,OSError,TimeoutError,ValueError,TypeError,KeyError):
@@ -1098,7 +1266,7 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
                         output.write(chunk);remaining-=len(chunk)
                 _,digest=_private_file(temporary.directory/"input.pdf",MAX_PDF_BYTES,checksum=True)
                 if digest!=parent.cache_info["sourceSHA256"]: raise ProtocolFailure("source_changed")
-                result=manager.sentence_upgrades.submit(parent,temporary,selected,priority_units)
+                result=manager.sentence_upgrades.submit(parent,temporary,selected,priority_units,background=bool(background_headers),scope=scopes[0] if scopes else None)
                 temporary=None
                 return self.reply(202,result)
             except ProtocolFailure as error:
@@ -1120,7 +1288,7 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
             if not self.valid_host_origin(require_origin=True):
                 return self.reply(403, {"error": "invalid_origin_or_host"})
             if (self.path not in {"/v1/pdf/jobs", "/v1/pdf/health"} and not JOB_ROUTE.fullmatch(self.path)
-                    and not ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path)):
+                    and not ALIGNMENT_UPGRADE_ROUTE.fullmatch(self.path) and not SELECTION_ALIGNMENT_ROUTE.fullmatch(self.path) and not ALIGNMENT_WORK_ROUTE.fullmatch(self.path)):
                 return self.reply(404, {"error": "not_found"})
             methods = self.headers.get_all("Access-Control-Request-Method") or []
             requested = self.headers.get_all("Access-Control-Request-Headers") or []

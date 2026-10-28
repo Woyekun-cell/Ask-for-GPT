@@ -1,0 +1,40 @@
+{
+  "SourcesExactlyMatchIsolatedBuildInputs": true,
+  "SwiftTestsExactlyMatchIsolatedBuildInputs": true,
+  "AppBuild": "PASS",
+  "HelperBuild": "PASS",
+  "SwiftUnitTests": "UNAVAILABLE: compiler installation lacks Testing module",
+  "JSSuite": "PASS: scripts/zotero-inline-test",
+  "JSNamedPASSLines": 1097,
+  "resourcePackages": {
+    "PDFLayout": 22,
+    "Zotero": 31,
+    "pluginVersion": "0.3.90"
+  },
+  "privateDocsModelsKeysUsed": false,
+  "installedAppChanged": false,
+  "WindowsDesktopAcceptance": "NOT_RUN: macOS host",
+  "integrationSourceDeviationsFromInstalledMac": {
+    "Integrations/PDFLayout/batch_permits.py": "retained or reused published Windows private-file/IPC platform adapter",
+    "Integrations/PDFLayout/layout_common.py": "retained or reused published Windows private-file/IPC platform adapter",
+    "Integrations/PDFLayout/legacy_alignment.py": "retained or reused published Windows private-file/IPC platform adapter",
+    "Integrations/PDFLayout/prepare-assets.py": "retained or reused published Windows private-file/IPC platform adapter",
+    "Integrations/PDFLayout/selection_service.py": "retained or reused published Windows private-file/IPC platform adapter",
+    "Integrations/PDFLayout/server.py": "retained or reused published Windows private-file/IPC platform adapter",
+    "Integrations/PDFLayout/worker.py": "retained or reused published Windows private-file/IPC platform adapter",
+    "Integrations/Zotero/bootstrap.js": "retained or reused published Windows private-file/IPC platform adapter",
+    "Integrations/Zotero/content/inline.js": "retained or reused published Windows private-file/IPC platform adapter"
+  },
+  "PythonSuite": {
+    "status": "PASS",
+    "testsRun": 484,
+    "skipped": 4,
+    "assertionFailures": 0,
+    "errors": 0,
+    "seconds": 159.242,
+    "runtime": "local PDFLayout Python 3.12.15",
+    "fixtureMode": "local fake helpers; temporary loopback HTTP; BabelDOC cache isolated under /private/tmp"
+  },
+  "WindowsOnlyImplementationUnchanged": true,
+  "unitTestLimitation": "Swift test target cannot compile because local toolchain lacks module Testing; both real Swift products built successfully"
+}

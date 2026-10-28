@@ -1,0 +1,33 @@
+{
+  "capturedDate": "2026-10-28",
+  "application": "Ask for GPT 1.1.55",
+  "addon": "0.3.90",
+  "host": "Zotero on macOS",
+  "recording": "edited real screen recording; no simulated UI",
+  "durationSeconds": 57.8,
+  "width": 2940,
+  "height": 1600,
+  "framesPerSecond": 30,
+  "videoCodec": "H.264",
+  "audioCodec": "AAC",
+  "narration": {
+    "language": "en-US",
+    "voice": "macOS Samantha synthetic voice",
+    "microphoneRecorded": false,
+    "source": "docs/demo-source/reader-demo-1.1.55-en.txt"
+  },
+  "privacyCrop": "Zotero reading toolbar and PDF viewport only; system menu, document tabs, library and Dock excluded",
+  "paper": {
+    "title": "Long-read human genome sequencing and its applications",
+    "authors": "Logsdon et al.",
+    "year": 2020,
+    "doi": "10.1038/s41576-020-0236-x",
+    "scope": "short software UI demonstration; no PDF distributed; machine-generated Chinese translation"
+  },
+  "evidenceScope": "existing cached document first page; theme changes, enlarged view and Fit Width, original-view switch, finished indicator hidden, existing highlights visible; no claim of complete semantic coverage or Windows desktop acceptance",
+  "file": {
+    "name": "Ask-for-GPT-1.1.55-Zotero-demo-en.mp4",
+    "bytes": 77264170,
+    "sha256": "3a2776b17a63ce2a1077e7e15efb7ad0c36cb62f6a6c56dc46a30f86055d89e7"
+  }
+}

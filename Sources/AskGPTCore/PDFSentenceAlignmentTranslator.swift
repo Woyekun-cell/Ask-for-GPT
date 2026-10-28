@@ -26,7 +26,7 @@ public actor PDFSentenceAlignmentTranslator {
     private var stopped = false
     public private(set) var lastValidationReason: PDFSentenceAlignmentValidationReason?
 
-    public init(settings: CodexSettings) { backend = TranslationBackendFactory.make(settings: PassageRefinementConfiguration.settings(from: settings)) }
+    public init(settings: CodexSettings) { backend = CodexBackend(settings: PassageRefinementConfiguration.settings(from: settings)) }
     init(backend: any PassageRefinementBackend) { self.backend = backend }
 
     public func align(_ paragraphs: [PDFSentenceAlignmentParagraph], source: String, target: String) async throws -> PDFSentenceAlignmentResult {
@@ -159,16 +159,16 @@ public actor PDFSentenceAlignmentTranslator {
     }
 
     private static func schema(_ plan: Plan) -> RPCObject {
-        var properties: [String: Any] = [:]
-        for paragraph in plan.paragraphs {
-            let targets = paragraph.target.map(\.id)
+        var properties: [String: Any] = [:], definitions: [String: Any] = [:]
+        for (index, paragraph) in plan.paragraphs.enumerated() {
+            let targets = paragraph.target.map(\.id), name = "targets\(index)"
+            if !targets.isEmpty { definitions[name] = ["type": "string", "enum": targets] }
+            let items: [String: Any] = targets.isEmpty ? ["type": "string"] : ["$ref": "#/$defs/\(name)"]
             for source in paragraph.source {
-                var items: [String: Any] = ["type": "string"]
-                if !targets.isEmpty { items["enum"] = targets }
                 properties[source.id] = ["type": "array", "items": items, "maxItems": min(3, targets.count)]
             }
         }
-        return RPCObject(["type": "object", "properties": ["alignments": ["type": "object", "properties": properties, "required": plan.sources, "additionalProperties": false]], "required": ["alignments"], "additionalProperties": false])
+        return RPCObject(["type": "object", "$defs": definitions, "properties": ["alignments": ["type": "object", "properties": properties, "required": plan.sources, "additionalProperties": false]], "required": ["alignments"], "additionalProperties": false])
     }
 
     private static func instructions(source: String, target: String) -> String {

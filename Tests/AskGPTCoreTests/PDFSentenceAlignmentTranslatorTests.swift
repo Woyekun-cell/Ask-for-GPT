@@ -27,6 +27,61 @@ struct PDFSentenceAlignmentTranslatorTests {
         await client.shutdown()
     }
 
+    @Test func largeParagraphReusesItsTargetEnumOnceAndBoundsTheStructuredSchema() async throws {
+        let source = (0..<100).map { PDFTranslationSegment(id: "p16_0_s\($0)", text: "Source sentence \($0).") }
+        let target = (0..<118).map { PDFTranslationSegment(id: "p16_0_t\($0)", text: "目标句 \($0)。") }
+        let p = [PDFSentenceAlignmentParagraph(id: "p16_0", source: source, target: target),
+                 .init(id: "p16_3", source: [.init(id: "p16_3_s0", text: "A neighboring sentence.")], target: [.init(id: "p16_3_t0", text: "相邻句。")])]
+        let rows = Dictionary(uniqueKeysWithValues: p.flatMap(\.source).map { ($0.id, [String]()) })
+        let response = String(decoding: try JSONSerialization.data(withJSONObject: ["alignments": rows]), as: UTF8.self)
+        let backend = SentenceAlignmentBackend(response: response), client = PDFSentenceAlignmentTranslator(backend: backend)
+        #expect(try await client.align(p, source: "en", target: "zh-Hans").alignments == rows)
+        let schema = try #require(await backend.schemas.first)
+        let enumCount = Self.enumValues(in: schema.value), schemaBytes = try JSONSerialization.data(withJSONObject: schema.value).count
+        print("Sentence schema bounded fixture: \(enumCount) enum values, \(schemaBytes) bytes")
+        #expect(enumCount == 119); #expect(schemaBytes < 120_000)
+        let definitions = try #require(schema.value["$defs"] as? [String: Any])
+        #expect(Set(definitions.keys) == ["targets0", "targets1"])
+        #expect(((definitions["targets0"] as? [String: Any])?["enum"] as? [String]) == target.map(\.id))
+        #expect(((definitions["targets1"] as? [String: Any])?["enum"] as? [String]) == ["p16_3_t0"])
+        let properties = try Self.sourceProperties(schema)
+        for id in source.map(\.id) {
+            let items = try #require((properties[id] as? [String: Any])?["items"] as? [String: String])
+            #expect(items == ["$ref": "#/$defs/targets0"])
+        }
+        #expect((properties["p16_3_s0"] as? [String: Any])?["items"] as? [String: String] == ["$ref": "#/$defs/targets1"])
+        #expect(await backend.inputs.count == 1)
+        await client.shutdown()
+    }
+
+    @Test func emptyTargetInMixedRequestStaysAnEmptyArrayWithoutAnEmptyEnum() async throws {
+        let p = [PDFSentenceAlignmentParagraph(id: "empty", source: [.init(id: "s0", text: "Unmatched.")], target: []),
+                 .init(id: "matched", source: [.init(id: "s1", text: "Matched.")], target: [.init(id: "t1", text: "有对应。")])]
+        let backend = SentenceAlignmentBackend(response: #"{"alignments":{"s0":[],"s1":["t1"]}}"#), client = PDFSentenceAlignmentTranslator(backend: backend)
+        #expect(try await client.align(p, source: "en", target: "zh-Hans").alignments == ["s0": [], "s1": ["t1"]])
+        let schema = try #require(await backend.schemas.first), properties = try Self.sourceProperties(schema)
+        let empty = try #require(properties["s0"] as? [String: Any])
+        #expect(empty["maxItems"] as? Int == 0)
+        #expect(empty["items"] as? [String: String] == ["type": "string"])
+        let definitions = try #require(schema.value["$defs"] as? [String: Any])
+        #expect(Set(definitions.keys) == ["targets1"]); #expect(Self.enumValues(in: schema.value) == 1)
+        #expect((properties["s1"] as? [String: Any])?["items"] as? [String: String] == ["$ref": "#/$defs/targets1"])
+        await client.shutdown()
+    }
+
+    private static func sourceProperties(_ schema: RPCObject) throws -> [String: Any] {
+        let top = try #require(schema.value["properties"] as? [String: Any])
+        let alignments = try #require(top["alignments"] as? [String: Any])
+        return try #require(alignments["properties"] as? [String: Any])
+    }
+    private static func enumValues(in value: Any) -> Int {
+        if let object = value as? [String: Any] {
+            return ((object["enum"] as? [String])?.count ?? 0) + object.values.reduce(0) { $0 + enumValues(in: $1) }
+        }
+        if let array = value as? [Any] { return array.reduce(0) { $0 + enumValues(in: $1) } }
+        return 0
+    }
+
     @Test func supportsSplitMergedUnmatchedAndSemanticReorderingWithoutOrdinalGuessing() throws {
         let p = paragraphs
         #expect(try PDFSentenceAlignmentTranslator.decode(#"{"alignments":{"s0":["t0","t1"],"s1":[]}}"#, paragraphs: p) == ["s0": ["t0", "t1"], "s1": []])

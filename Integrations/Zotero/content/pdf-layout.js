@@ -5,13 +5,13 @@
   const MAX_OUTPUT_BYTES = 450 * 1024 * 1024;
   const MAX_ALIGNMENT_BYTES = 32 * 1024 * 1024;
   const XHTML = 'http://www.w3.org/1999/xhtml';
-  const knownErrors = new Set(['connection', 'permissions', 'runtime_missing', 'already_translated', 'local_version_save', 'translation_failed', 'gpt_unavailable', 'batch_invalid', 'batch_limit', 'translation_timeout', 'formula_placeholder_mismatch', 'invalid_pdf', 'pdf', 'direction', 'response', 'stopped', 'timeout', 'compatibility', 'limit', 'bridge', 'alignment_unavailable', 'alignment_timeout', 'alignment_invalid', 'selection_busy', 'selection_timeout', 'selection_invalid', 'selection_unavailable', 'annotation_sentence', 'annotation_mapping', 'rendered', 'recycled', 'layout']);
+  const knownErrors = new Set(['connection', 'permissions', 'runtime_missing', 'already_translated', 'local_version_save', 'translation_failed', 'gpt_unavailable', 'batch_invalid', 'batch_limit', 'translation_timeout', 'formula_placeholder_mismatch', 'invalid_pdf', 'pdf', 'direction', 'response', 'stopped', 'timeout', 'compatibility', 'limit', 'bridge', 'job_missing', 'alignment_unavailable', 'alignment_timeout', 'alignment_invalid', 'selection_busy', 'selection_timeout', 'selection_invalid', 'selection_unavailable', 'annotation_sentence', 'annotation_mapping', 'rendered', 'recycled', 'layout']);
   const validationDetails=new Set(['jsonObject','count','rowShape','id','empty','formula','content','notFunction','missingProperty','permission','other','nativeInitialize','nativePaint','hoverAttach','hoverInput','hoverDisabled','hoverSelection','hoverGeometry','hoverLookup','hoverRender','hoverEvent','resumeAttach','resumeSave','resumeRestore','resumeLoad','resumeCapture','figureBinding','figureRender','figureNativeAttach','figureInactive','figureInput','figureSelection','figureTool','figureTarget','figurePoint','figureGlyph','figureDrag','figurePrevented']);
   const nativeErrorProperties=new Set(['map','flatMap','some','apply','cloneInto','setSelectedAnnotationIDs','_onSelectAnnotations','setAnnotations','_onAddAnnotation','_onUpdateAnnotations','_onDeleteAnnotations','_getPageLabel','getAnnotations','then','slice','filter','find','every','other']);
   class PDFError extends Error { constructor(code) { super(code); this.code = code; } }
   function errorMessage(error) {
     const messages = { connection: '请启动 Ask for GPT 并开启页面翻译连接', permissions: '页面翻译连接权限异常',
-      local_version_save: '译文版本未能保存或打开，请检查文献库的写入权限与磁盘空间；已有缓存已保留', already_translated: '当前 PDF 已是译文，可直接阅读，无需重复翻译', runtime_missing: '保版翻译组件尚未就绪', translation_failed: '保版翻译失败，请重试', invalid_pdf: '无法读取这份 PDF', pdf: '无法读取这份 PDF',
+      job_missing: '这份中文版的对应数据不可用，已有 PDF 已保留', local_version_save: '译文版本未能保存或打开，请检查文献库的写入权限与磁盘空间；已有缓存已保留', already_translated: '当前 PDF 已是译文，可直接阅读，无需重复翻译', runtime_missing: '保版翻译组件尚未就绪', translation_failed: '保版翻译失败，请重试', invalid_pdf: '无法读取这份 PDF', pdf: '无法读取这份 PDF',
       gpt_unavailable: 'GPT 翻译连接不可用，请在 Ask for GPT 设置中测试连接', batch_invalid: '页面翻译校验失败，请重试', batch_limit: '当前页文字超出批量翻译上限', translation_timeout: 'GPT 翻译超时，请重试', formula_placeholder_mismatch:'公式标记校验失败，请重试',
       direction: '仅支持英语与中文互译', response: 'PDF 翻译结果无效，请重试', stopped: '', timeout: 'PDF 翻译连接超时，请重试',
       alignment_unavailable: '词语对应尚未就绪，可重试', alignment_timeout: '词语对应准备超时，可重试', alignment_invalid: '词语对应校验失败，可重试', selection_busy: '词语对应正在准备，请稍后重试', selection_timeout: '词语对应准备超时，可重试', selection_invalid: '词语对应校验失败，可重试', selection_unavailable: '这几个词暂无精确对应', compatibility: 'PDF 阅读接口暂不可用，请重新打开 PDF', limit: '这份 PDF 超出本地处理上限', bridge: '无法连接本机 PDF 翻译服务' };
@@ -20,7 +20,7 @@
     return text?page+text:'';
   }
   function diagnostic(stage,error){
-    const stages=new Set(['context','mount','start','output','render','text','toolbar','bootstrap','rendered','recycled','layout','startBegin','localVersionReady','localVersionError','retired','jobReady','outputBegin','outputReady','alignmentBegin','alignmentReady','alignment','stale','loadBegin','loadReady','renderBegin','sentence','native','nativeState','nativeSearch','nativeAnnotation','nativeSelection','nativePopup','nativeCopy','nativeMenu','nativeFocus','nativeEmbedded','nativeDispose','nativeConstructed','nativeResourcesAttached','nativeResourcesReleased','nativeInitialized','nativePainted','nativeReady','nativeReused','hoverAttach','hoverAttached','hoverMove','hoverBlocked','hoverMiss','hoverHit','hoverLookup','hoverRendered','hoverError','resumeAttached','resumeSaved','resumeRestored','resumeSkipped','resumeError','figureOpened','figureError','figureAttached','figureClick','figureBlocked','figureDetected','figureNoRegions','figureMiss','figureOperatorError','figureEventError','figureToolbar','figureOperatorShape','figureExport','figureWindow','figureInputTiming','figurePreviewTiming']);
+    const stages=new Set(['context','mount','start','output','render','text','toolbar','bootstrap','rendered','recycled','layout','startBegin','localVersionReady','localVersionError','retired','jobReady','outputBegin','outputReady','alignmentBegin','alignmentReady','alignment','stale','loadBegin','loadReady','renderBegin','sentence','native','nativeState','nativeSearch','nativeAnnotation','nativeSelection','nativePopup','nativeCopy','nativeMenu','nativeFocus','nativeEmbedded','nativeDispose','nativeConstructed','nativeResourcesAttached','nativeResourcesReleased','nativeInitialized','nativePainted','nativeReady','nativeReused','nativeLoadTiming','hoverAttach','hoverAttached','hoverMove','hoverBlocked','hoverMiss','hoverHit','hoverLookup','hoverRendered','hoverError','resumeAttached','resumeSaved','resumeRestored','resumeSkipped','resumeError','figureOpened','figureError','figureAttached','figureClick','figureBlocked','figureDetected','figureNoRegions','figureMiss','figureOperatorError','figureEventError','figureToolbar','figureOperatorShape','figureExport','figureWindow','figureInputTiming','figurePreviewTiming']);
     const names=new Set(['Error','TypeError','ReferenceError','SecurityError','NetworkError','AbortError','TimeoutException','NS_ERROR_FAILURE','NS_ERROR_XPC_BAD_OP_ON_WN_PROTO','DataCloneError','RenderSnapshot','HoverDiagnostic','ResumeDiagnostic','NativeResourceDiagnostic','FigureDiagnostic']);
     const locations=[];const stack=typeof error?.stack==='string'?error.stack.slice(0,12000):'';
     for(const match of stack.matchAll(/(?:^|[/\\])(inline\.js|pdf-layout\.js|pdf-native-view\.js|reader\.js|pdf\.mjs):(\d+)(?::\d+)?/gm)){
@@ -37,6 +37,7 @@
     if(stage==='nativeState'&&error?.paintNumbers){record.paintNumbers={};for(const key of ['iframeWidth','iframeHeight','containerWidth','containerHeight','visiblePages','renderingState','canvasWidth','canvasHeight','documentHidden','readerFocused','updateInvoked','forceInvoked','loadingTaskPresent','documentPresent','documentPages','viewerPages','currentPage','frameReadyState']){const value=error.paintNumbers[key],maximum=['documentHidden','readerFocused','updateInvoked','forceInvoked','loadingTaskPresent','documentPresent'].includes(key)?1:['renderingState','frameReadyState'].includes(key)?3:['visiblePages','documentPages','viewerPages','currentPage'].includes(key)?2000:100000;record.paintNumbers[key]=Number.isInteger(value)&&value>=0&&value<=maximum?value:key==='renderingState'?-1:0;}}
     if(stage.startsWith('figure')&&error?.figureNumbers){record.figureNumbers={};for(const key of ['opsCount','argsCount','opsReady','viewBoxReady','regions','thenReady','fieldsReady','waitMilliseconds','cacheReady','inputKind','detectionMilliseconds','modelMilliseconds','operatorsMilliseconds','geometryMilliseconds','width','height','glyphCount','glyphSource','modelCached']){const n=error.figureNumbers[key],maximum=['opsCount','argsCount'].includes(key)?500000:key.endsWith('Milliseconds')?60000:['cacheReady','modelCached'].includes(key)?1:['inputKind','glyphSource'].includes(key)?2:100000;record.figureNumbers[key]=Number.isInteger(n)&&n>=0&&n<=maximum?n:-1;}}
     if(stage==='figurePreviewTiming'&&error?.previewNumbers){record.previewNumbers={};for(const key of ['openMilliseconds','renderMilliseconds','snapshot']){const n=error.previewNumbers[key];record.previewNumbers[key]=Number.isInteger(n)&&n>=0&&n<=(key==='snapshot'?1:60000)?n:-1;}}
+    if(stage==='nativeLoadTiming'&&error?.loadNumbers){record.loadNumbers={};for(const key of ['validateMilliseconds','projectionMilliseconds','mirrorMilliseconds','totalMilliseconds','pageCount','semanticPages']){const n=error.loadNumbers[key];if(typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=1000000)record.loadNumbers[key]=Math.round(n);}}
     if(error?.renderNumbers){const numbers={};for(const key of ['width','height','holderChildCount','textItemsCount','renderedCount','nonWhiteSamples']){const n=error.renderNumbers[key];numbers[key]=Number.isInteger(n)&&n>=0&&n<=100000?n:-1;}record.renderNumbers=numbers;}
     if(error?.layoutNumbers){record.layoutNumbers={};for(const key of ['canvasWidth','canvasHeight','canvasClientWidth','canvasClientHeight','canvasOffsetWidth','canvasOffsetHeight','canvasLeft','canvasTop','canvasRectWidth','canvasRectHeight','holderLeft','holderTop','holderRectWidth','holderRectHeight','frameRectWidth','frameRectHeight','canvasDisplay','canvasVisibility','canvasOpacity','holderDisplay','holderVisibility','holderOpacity','frameVisibility','styleWidth','styleHeight','canvasConnected','holderConnected','holderChildCount','textSpanCount','renderedCount','hiddenAncestors','alphaZero','opaque','nonWhiteSamples']){const value=error.layoutNumbers[key];record.layoutNumbers[key]=Number.isFinite(value)&&value>=-10000000&&value<=10000000?Math.round(value):-1;}}
     return record;
@@ -175,6 +176,8 @@
     if(!value||value.schema!==1||value.coordinateSpace!=='pdf'||!['paragraph','sentence'].includes(value.granularity)
       ||!Array.isArray(sourcePages)||!sourcePages.length||sourcePages.length>2000
       ||!Array.isArray(value.pages)||value.pages.length!==sourcePages.length)return fail();
+    const candidate=value.provenance==='pdf-glyph-candidates';
+    if(value.provenance!==undefined&&value.provenance!=='babeldoc-ir'&&!candidate||candidate&&(value.recoveryRevision!=='pdf-glyph-candidates-v1'||![value.sourceSHA256,value.targetSHA256].every(v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v)))||!candidate&&value.recoveryRevision!==undefined)return fail();
     if(value.sourceSHA256!==undefined&&(typeof value.sourceSHA256!=='string'||!/^[0-9a-f]{64}$/.test(value.sourceSHA256)))return fail();
     const rect=value=>{if(!Array.isArray(value)||value.length!==4||!value.every(x=>Number.isFinite(x)&&Math.abs(x)<=1000000)||value[2]<=value[0]||value[3]<=value[1])return fail();return value.slice();};
     const geometry=value=>{if(!value||![0,90,180,270].includes(value.rotation))return fail();return {mediaBox:rect(value.mediaBox),cropBox:rect(value.cropBox),rotation:value.rotation};};
@@ -201,11 +204,12 @@
     }
     const glyphs=values=>values.map(g=>({text:g.text,rect:g.rect===null?null:rect(g.rect),line:g.line??null}));
     let total=0,totalSentences=0;
-    return {schema:1,coordinateSpace:'pdf',granularity:value.granularity,...(value.sourceSHA256!==undefined?{sourceSHA256:value.sourceSHA256}:{}),...(semantic?{sentenceAlignmentRevision:value.sentenceAlignmentRevision,sentencePages:sentencePages.slice(),...(value.sentencePartialPages!==undefined?{sentencePartialPages:partialPages.slice()}:{})}:{}),...(precise?{phraseAlignmentRevision:value.phraseAlignmentRevision,phrasePages:phrasePages.slice()}:{}),...extraction,pages:value.pages.map((page,index)=>{
+    return {schema:1,coordinateSpace:'pdf',granularity:value.granularity,...(value.provenance!==undefined?{provenance:value.provenance}:{}),...(candidate?{recoveryRevision:value.recoveryRevision,targetSHA256:value.targetSHA256}:{}),...(value.sourceSHA256!==undefined?{sourceSHA256:value.sourceSHA256}:{}),...(semantic?{sentenceAlignmentRevision:value.sentenceAlignmentRevision,sentencePages:sentencePages.slice(),...(value.sentencePartialPages!==undefined?{sentencePartialPages:partialPages.slice()}:{})}:{}),...(precise?{phraseAlignmentRevision:value.phraseAlignmentRevision,phrasePages:phrasePages.slice()}:{}),...extraction,pages:value.pages.map((page,index)=>{
       if(!page||page.outputPage!==index||page.sourcePage!==sourcePages[index]||!Number.isInteger(page.sourcePage)||page.sourcePage<0||page.sourcePage>=2000
         ||!Array.isArray(page.paragraphs)||page.paragraphs.length>10000)return fail();
+      if(page.candidateTextUnavailable!==undefined&&(!candidate||page.candidateTextUnavailable!==true||page.paragraphs.length))return fail();
       total+=page.paragraphs.length;if(total>100000)return fail();const seen=new Set();
-      return {sourcePage:page.sourcePage,outputPage:index,source:geometry(page.source),mono:geometry(page.mono),dual:geometry(page.dual),sourceToDual:affine(page.sourceToDual),targetToDual:affine(page.targetToDual),paragraphs:page.paragraphs.map(row=>{
+      return {sourcePage:page.sourcePage,outputPage:index,...(page.candidateTextUnavailable?{candidateTextUnavailable:true}:{}),source:geometry(page.source),mono:geometry(page.mono),dual:geometry(page.dual),sourceToDual:affine(page.sourceToDual),targetToDual:affine(page.targetToDual),paragraphs:page.paragraphs.map(row=>{
         if(!row||typeof row.id!=='string'||!row.id.length||row.id.length>128||seen.has(row.id))return fail();seen.add(row.id);
         const source=part(row.source),target=part(row.target);
         const result={id:row.id,source,target,dualSource:part(row.dualSource,source.text),dualTarget:part(row.dualTarget,target.text)};
@@ -237,17 +241,23 @@
       entry.active++;entry.latest=token;alignmentIntents.set(id,entry);
       return {current:()=>entry.latest===token,release:()=>{if(!--entry.active)alignmentIntents.delete(id);}};
     }
-    async function request(method, suffix, connection, body, headers = {}, control = null, binary = false, jsonLimit = 65536, selectionHandshake = false) {
+    async function idleGate(hook,control){
+      if(!hook)return;if(control?.aborted)throw new PDFError('stopped');
+      await new Promise((resolve,reject)=>{const cancel=error=>reject(error);if(control)control.rejectGate=cancel;Promise.resolve().then(hook).then(resolve,reject).finally(()=>{if(control?.rejectGate===cancel)control.rejectGate=null;});});
+      if(control?.aborted)throw new PDFError('stopped');
+    }
+    async function request(method, suffix, connection, body, headers = {}, control = null, binary = false, jsonLimit = 65536, selectionHandshake = false, beforeDecode = null) {
       if (control?.aborted) throw new PDFError('stopped');
       if(control)control.requestMethod=method;
       try {
         const response = await Zotero.HTTP.request(method, BASE + suffix, {
           ...(body ? {body} : {}), headers: {Authorization: 'Bearer ' + connection.token, ...headers},
-          timeout: binary ? 60000 : 20000, responseType: binary ? 'arraybuffer' : 'text',
+          timeout: binary ? 60000 : method==='POST'&&suffix.endsWith('/selection-alignment') ? 45000 : 20000, responseType: binary ? 'arraybuffer' : 'text',
           anon: true, noCache: true, debug: false, logBodyLength: 0, followRedirects: false,
           errorDelayMax: 0, successCodes: [200,202,204,...(selectionHandshake?[409]:[])],
           cancellerReceiver(cancel) { if (control) { control.abortRequest = cancel; if (control.aborted && method !== 'POST') cancel(); } }
         });
+        if(beforeDecode)await beforeDecode();
         if (control?.aborted && method !== 'POST') throw new PDFError('stopped');
         if (binary) {
           if (response.status !== 200) throw new PDFError('response');
@@ -255,16 +265,22 @@
           return output.buffer.slice(output.byteOffset, output.byteOffset + output.byteLength);
         }
         if (method === 'DELETE' && response.status === 204) return null;
-        if(selectionHandshake&&response.status===409){let code;if(typeof response.responseText!=='string'||response.responseText.length>65536)throw new PDFError('response');try{const parsed=JSON.parse(response.responseText);code=typeof parsed.error==='string'?parsed.error:parsed.error?.code;}catch(_){}throw new PDFError(['selection_source_required','selection_busy'].includes(code)?code:'response');}
-        if (![200,202].includes(response.status) || typeof response.responseText !== 'string' || response.responseText.length > jsonLimit) throw new PDFError('response');
-        try { return JSON.parse(response.responseText); } catch (_) { throw new PDFError('response'); }
+        const responseText=response.responseText;
+        if(suffix.endsWith('/alignment-layout.json')&&response.status===404){let code;try{if(typeof responseText==='string'&&responseText.length<=65536){const parsed=JSON.parse(responseText);code=typeof parsed.error==='string'?parsed.error:parsed.error?.code;}}catch(_){}throw new PDFError(code==='not_found'?'layout_missing':code==='job_not_found'?'job_missing':knownErrors.has(code)?code:'response');}
+        if(suffix.endsWith('/alignment-work')&&response.status===404)throw new PDFError('alignment_unavailable');
+        if(selectionHandshake&&response.status===409){let code;if(typeof responseText!=='string'||responseText.length>65536)throw new PDFError('response');try{const parsed=JSON.parse(responseText);code=typeof parsed.error==='string'?parsed.error:parsed.error?.code;}catch(_){}throw new PDFError(['selection_source_required','selection_busy'].includes(code)?code:'response');}
+        if (![200,202].includes(response.status) || typeof responseText !== 'string' || responseText.length > jsonLimit) throw new PDFError('response');
+        try { return JSON.parse(responseText); } catch (_) { throw new PDFError('response'); }
       } catch (error) {
         if (control?.aborted) throw new PDFError('stopped');
         if (error instanceof PDFError) throw error;
-        const xhr = error?.xmlhttp;
+        if(beforeDecode)await beforeDecode();const xhr = error?.xmlhttp;
         if (xhr?.status === 401) throw new PDFError('connection');
         let code;
         try { const parsed = JSON.parse(xhr?.responseText || '{}'); code = typeof parsed.error === 'string' ? parsed.error : parsed.error?.code; } catch (_) {}
+        if(suffix.endsWith('/alignment-layout.json')&&xhr?.status===404&&code==='not_found')throw new PDFError('layout_missing');
+        if(suffix.endsWith('/alignment-work')&&xhr?.status===404)throw new PDFError('alignment_unavailable');
+        if(xhr?.status===404&&code==='job_not_found')throw new PDFError('job_missing');
         if(selectionHandshake&&xhr?.status===409)throw new PDFError(['selection_source_required','selection_busy'].includes(code)&&typeof xhr.responseText==='string'&&xhr.responseText.length<=65536?code:'response');
         if (knownErrors.has(code)) throw new PDFError(code);
         if (error?.name === 'TimeoutException') throw new PDFError('timeout');
@@ -308,17 +324,38 @@
       if(value.alignmentVersion!==undefined&&(typeof value.alignmentVersion!=='string'||!/^[0-9a-f]{64}$/.test(value.alignmentVersion)))throw new PDFError('response');
       if(value.currentPage!==undefined&&value.currentPage!==null&&(!Number.isInteger(value.currentPage)||!sourcePages.includes(value.currentPage)))throw new PDFError('response');
       if(value.pendingPages!==undefined&&(!Array.isArray(value.pendingPages)||value.pendingPages.length>sourcePages.length||new Set(value.pendingPages).size!==value.pendingPages.length||value.pendingPages.some(page=>!Number.isInteger(page)||!sourcePages.includes(page))))throw new PDFError('response');
+      for(const name of ['preparedPages','partialPages'])if(value[name]!==undefined&&(!Array.isArray(value[name])||value[name].length>sourcePages.length||new Set(value[name]).size!==value[name].length||value[name].some(page=>!Number.isInteger(page)||!sourcePages.includes(page))))throw new PDFError('response');
+      if(value.partialPages?.some(page=>!value.preparedPages?.includes(page)))throw new PDFError('response');
+      for(const name of ['background','paused'])if(value[name]!==undefined&&typeof value[name]!=='boolean')throw new PDFError('response');
+      if(value.scope!==undefined&&(typeof value.scope!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(value.scope)))throw new PDFError('response');
+      return value;
+    }
+    function validateWorkState(value,id,sourcePages){
+      validateUpgradeState(value,id,sourcePages);
+      const states={unregistered:'idle',queued:'running',running:'running',complete:'complete',partial:'complete',blocked:'failed'};
+      if(typeof value.durable!=='boolean'||typeof value.eligible!=='boolean'||value.durable!==value.eligible||typeof value.workState!=='string'||!Object.prototype.hasOwnProperty.call(states,value.workState)||states[value.workState]!==value.state||value.eligible!==(value.workState!=='unregistered'))throw new PDFError('response');
+      if(value.eligible&&(value.sourcePages.length!==sourcePages.length||sourcePages.some(page=>!value.sourcePages.includes(page))))throw new PDFError('response');
       return value;
     }
     async function prioritize(id,page,sourcePages,units,connection,control=null){
       const body=JSON.stringify({page,units});
       return validateUpgradeState(await mutateAlignment(id,connection,body,{'Content-Type':'application/json'},control),id,sourcePages);
     }
-    async function alignment(id,sourcePages,setCancel=()=>{}){
-      if(!validID(id)||!Array.isArray(sourcePages)||!sourcePages.length)throw new PDFError('response');
-      const control={aborted:false,abortRequest:null};setCancel(()=>{control.aborted=true;try{control.abortRequest?.();}catch(_){}});
+    async function alignment(id,sourcePages,setCancel=()=>{},options={}){
+      if(!validID(id)||!Array.isArray(sourcePages)||!sourcePages.length||!options||options.beforeAlignment!==undefined&&typeof options.beforeAlignment!=='function')throw new PDFError('response');
+      const control={aborted:false,abortRequest:null};setCancel(()=>{control.aborted=true;control.rejectGate?.(new PDFError('stopped'));try{control.abortRequest?.();}catch(_){}});
       try{const connection=await readConnection(dependencies);if(control.aborted)throw new PDFError('stopped');
-        return validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},control,false,MAX_ALIGNMENT_BYTES),sourcePages);
+        const before=()=>idleGate(options.beforeAlignment,control);await before();return validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},control,false,MAX_ALIGNMENT_BYTES,false,before),sourcePages);
+      }finally{setCancel(null);}
+    }
+    async function pageAlignment(id,page,sourcePages,setCancel=()=>{},options={}){
+      if(!validID(id)||!validSourcePages(sourcePages)||!sourcePages.includes(page)||typeof setCancel!=='function'||!options||options.beforeAlignment!==undefined&&typeof options.beforeAlignment!=='function')throw new PDFError('response');
+      const control={aborted:false,abortRequest:null};setCancel(()=>{control.aborted=true;control.rejectGate?.(new PDFError('stopped'));try{control.abortRequest?.();}catch(_){}});
+      try{const connection=await readConnection(dependencies);if(control.aborted)throw new PDFError('stopped');const before=()=>idleGate(options.beforeAlignment,control);await before();
+        const value=validateAlignment(await request('GET','/'+id+'/alignment-page.json?page='+page,connection,null,{},control,false,MAX_ALIGNMENT_BYTES,false,before),sourcePages);
+        for(const key of ['sentencePages','sentencePartialPages','phrasePages','phraseExtractedPages'])if(value[key]?.some(item=>item!==page))throw new PDFError('response');
+        if(value.pages.some(item=>item.sourcePage!==page&&item.paragraphs.some(row=>row.sentences!==undefined)))throw new PDFError('response');
+        return value;
       }finally{setCancel(null);}
     }
     return {
@@ -373,7 +410,7 @@
         const connection = await readConnection(dependencies);
         return request('GET', '/' + id + '/' + mode + '.pdf', connection, null, {}, null, true);
       },
-      alignment,
+      alignment,pageAlignment,
       async layoutAlignment(id,sourcePages){
         if(!validID(id)||!Array.isArray(sourcePages)||!sourcePages.length)throw new PDFError('response');
         try{
@@ -381,24 +418,25 @@
           if(value.granularity!=='paragraph'||!value.sourceSHA256||value.sentenceAlignmentRevision||value.phraseAlignmentRevision||value.pages.some(page=>page.paragraphs.some(row=>row.sentences!==undefined)))throw new PDFError('response');
           return {value,complete:false};
         }catch(error){
-          // Older local services expose only the complete, validated sidecar.
-          if(!['bridge','response'].includes(error?.code))throw error;
+          // Only an explicit missing route identifies an older local service.
+          // A current service error must never trigger a large sidecar fetch.
+          if(error?.code!=='layout_missing')throw error;
           return {value:await alignment(id,sourcePages),complete:true};
         }
       },
-      async selectionAlignment(id,value,query,sourcePages,setCancel=()=>{}){
-        if(!validID(id)||!validSourcePages(sourcePages)||typeof setCancel!=='function')throw new PDFError('response');
-        const {selected,json}=selectionQuery(query,sourcePages),control={aborted:false,abortRequest:null},suffix='/'+id+'/selection-alignment';
+      async selectionAlignment(id,value,query,sourcePages,setCancel=()=>{},options={}){
+        if(!validID(id)||!validSourcePages(sourcePages)||typeof setCancel!=='function'||!options||typeof options!=='object'||Array.isArray(options)||options.retry!==undefined&&typeof options.retry!=='boolean')throw new PDFError('response');
+        const {selected,json}=selectionQuery(query,sourcePages),control={aborted:false,abortRequest:null},suffix='/'+id+'/selection-alignment',retryHeaders=options.retry===true?{'X-AskGPT-Selection-Retry':'1'}:{};
         setCancel(()=>{control.aborted=true;try{control.abortRequest?.();}catch(_){}});
         const connection=await readConnection(dependencies);if(control.aborted)throw new PDFError('stopped');
         let response;
-        try{response=await request('POST',suffix,connection,json,{'Content-Type':'application/json'},control,false,4*1024*1024,true);}
+        try{response=await request('POST',suffix,connection,json,{'Content-Type':'application/json',...retryHeaders},control,false,4*1024*1024,true);}
         catch(error){
           if(error?.code!=='selection_source_required'||control.aborted)throw error;
           const data=validPDF(value);if(control.aborted)throw new PDFError('stopped');
           const header=json.replace(/[\u007f-\uffff]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0'));
           if(header.length>8192)throw new PDFError('response');
-          response=await request('POST',suffix,connection,data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength),{'Content-Type':'application/pdf','X-AskGPT-Selection':header},control,false,4*1024*1024);
+          response=await request('POST',suffix,connection,data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength),{'Content-Type':'application/pdf','X-AskGPT-Selection':header,...retryHeaders},control,false,4*1024*1024);
         }
         if(control.aborted)throw new PDFError('stopped');
         const result=validateSelectionLinks(response,id,selected.page);if(!Object.prototype.hasOwnProperty.call(result,'link'))throw new PDFError('response');return result;
@@ -408,36 +446,78 @@
         const connection=await readConnection(dependencies),result=validateSelectionLinks(await request('GET','/'+id+'/selection-alignment?page='+page,connection,null,{},null,false,4*1024*1024),id,page);
         if(!Object.prototype.hasOwnProperty.call(result,'links'))throw new PDFError('response');return result;
       },
+      async registerAlignmentWork(id,value,sourcePages,options={}){
+        if(!validID(id)||!validSourcePages(sourcePages)||!options||typeof options!=='object'||Array.isArray(options))throw new PDFError('response');
+        const headers={'Content-Type':'application/pdf','X-AskGPT-Full-Translation':'1'};
+        if(Object.keys(options).length){if(Object.keys(options).length!==4||!['sourceLanguage','targetLanguage','targetSHA256','targetBytes'].every(key=>Object.hasOwn(options,key))||!['en','zh-Hans'].includes(options.sourceLanguage)||!['en','zh-Hans'].includes(options.targetLanguage)||options.sourceLanguage===options.targetLanguage||typeof options.targetSHA256!=='string'||!/^[a-f0-9]{64}$/.test(options.targetSHA256)||!Number.isInteger(options.targetBytes)||options.targetBytes<5||options.targetBytes>MAX_OUTPUT_BYTES)throw new PDFError('response');Object.assign(headers,{'X-AskGPT-Source-Language':options.sourceLanguage,'X-AskGPT-Target-Language':options.targetLanguage,'X-AskGPT-Target-SHA256':options.targetSHA256,'X-AskGPT-Target-Bytes':String(options.targetBytes)});}
+        const data=validPDF(value),body=data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength),connection=await readConnection(dependencies);
+        return validateWorkState(await request('POST','/'+id+'/alignment-work',connection,body,headers),id,sourcePages);
+      },
+      async alignmentWork(id,sourcePages,setCancel=()=>{}){
+        if(!validID(id)||!validSourcePages(sourcePages)||typeof setCancel!=='function')throw new PDFError('response');
+        const control={aborted:false,abortRequest:null};setCancel(()=>{control.aborted=true;try{control.abortRequest?.();}catch(_){}});
+        try{const connection=await readConnection(dependencies);if(control.aborted)throw new PDFError('stopped');return validateWorkState(await request('GET','/'+id+'/alignment-work',connection,null,{},control),id,sourcePages);}
+        finally{setCancel(null);}
+      },
       async prioritizeAlignment(id,page,sourcePages,units=[]){
         if(!validID(id)||!validSourcePages(sourcePages)||!Number.isInteger(page)||!sourcePages.includes(page))throw new PDFError('response');
         const selected=priorityUnits(units),intent=acquireAlignmentIntent(id);
         try{return await prioritize(id,page,sourcePages,selected,()=>readConnection(dependencies));}finally{intent.release();}
+      },
+      async controlAlignment(id,action,sourcePages,scope){
+        if(!validID(id)||!validSourcePages(sourcePages)||!['pause','resume','cancel'].includes(action)||scope!==undefined&&(typeof scope!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(scope)))throw new PDFError('response');
+        const connection=await readConnection(dependencies);
+        return validateUpgradeState(await mutateAlignment(id,connection,JSON.stringify({action,...(scope===undefined?{}:{scope})}),{'Content-Type':'application/json'}),id,sourcePages);
       },
       async upgradeAlignment(id,value,pages,sourcePages,setCancel=()=>{},options={}){
         if(!validID(id)||!validSourcePages(sourcePages)||!validSourcePages(pages)||pages.some(page=>!sourcePages.includes(page))||!options||typeof options!=='object'||Array.isArray(options))throw new PDFError('response');
         const ahead=options.prefetchPages??[];
         if(!Array.isArray(ahead)||ahead.length>1||ahead.length&&!validSourcePages(ahead)||ahead.some(page=>!sourcePages.includes(page)))throw new PDFError('response');
         if(options.onPartial!==undefined&&typeof options.onPartial!=='function')throw new PDFError('response');
+        if(options.resultOnly!==undefined&&typeof options.resultOnly!=='boolean'||options.background!==undefined&&typeof options.background!=='boolean'||options.onProgress!==undefined&&typeof options.onProgress!=='function'||options.beforeAlignment!==undefined&&typeof options.beforeAlignment!=='function')throw new PDFError('response');
+        if(options.backgroundScope!==undefined&&(options.background!==true||typeof options.backgroundScope!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(options.backgroundScope)))throw new PDFError('response');
         const prepare=[...new Set([...pages,...ahead])];
         const units=priorityUnits(options.units===undefined?[]:options.units),hasUnits=options.units!==undefined;
         if(hasUnits&&prepare.length!==1)throw new PDFError('response');
         const data=validPDF(value),control={aborted:false,abortRequest:null,timer:null,rejectDelay:null},intent=acquireAlignmentIntent(id);
         try{
-        setCancel(()=>{control.aborted=true;if(control.requestMethod!=='POST')try{control.abortRequest?.();}catch(_){}if(control.timer!==null)clearTimer(control.timer);control.rejectDelay?.(new PDFError('stopped'));control.rejectDelay=null;});
+        setCancel(()=>{control.aborted=true;if(control.requestMethod!=='POST')try{control.abortRequest?.();}catch(_){}if(control.timer!==null)clearTimer(control.timer);control.rejectDelay?.(new PDFError('stopped'));control.rejectDelay=null;control.rejectGate?.(new PDFError('stopped'));});
         const connection=await readConnection(dependencies);if(control.aborted)throw new PDFError('stopped');
         const suffix='/'+id+'/alignment-upgrade';
         const validate=value=>validateUpgradeState(value,id,sourcePages);
+        const background=options.background===true;let deadline=Date.now()+2*60*1000,lastTick=Date.now(),lastVersion=null;
+        const progress=state=>{if(!state)return;const now=Date.now();if(background){if(state.paused)deadline+=now-lastTick;if(state.alignmentVersion&&state.alignmentVersion!==lastVersion)deadline=now+2*60*1000;}lastTick=now;lastVersion=state.alignmentVersion;options.onProgress?.(state);};
+        const delay=async()=>{if(control.aborted)throw new PDFError('stopped');if(Date.now()>deadline)throw new PDFError('timeout');await new Promise((resolve,reject)=>{control.rejectDelay=reject;control.timer=setTimer(()=>{control.timer=null;control.rejectDelay=null;resolve();},500);});};
+        const beforeAlignment=()=>idleGate(options.beforeAlignment,control);
+        const submitMissing=async missing=>validate(await mutateAlignment(id,connection,data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength),{'Content-Type':'application/pdf','X-AskGPT-Pages':missing.map(page=>page+1).join(','),...(hasUnits?{'X-AskGPT-Units':JSON.stringify(units)}:{}),...(background?{'X-AskGPT-Background':'1'}:{}),...(background&&options.backgroundScope!==undefined?{'X-AskGPT-Background-Scope':options.backgroundScope}:{})},control));
         let deliveredVersion=null,deliveredAlignment=null;
         const refreshPartial=async state=>{
-          if(!options.onPartial||!['running','failed'].includes(state.state)||!state.alignmentVersion||state.alignmentVersion===deliveredVersion)return;
-          const alignment=validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},control,false,MAX_ALIGNMENT_BYTES),sourcePages);
+          if(options.resultOnly===true||!options.onPartial||!['running','failed'].includes(state.state)||!state.alignmentVersion||state.alignmentVersion===deliveredVersion)return;
+          await beforeAlignment();
+          const alignment=validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},control,false,MAX_ALIGNMENT_BYTES,false,beforeAlignment),sourcePages);
           if(control.aborted)throw new PDFError('stopped');
           await options.onPartial(alignment);
           if(control.aborted)throw new PDFError('stopped');
           deliveredVersion=state.alignmentVersion;deliveredAlignment=alignment;
         };
         let state=options.probe===true?validate(await request('GET',suffix,connection,null,{},control)):null;
-        if(state?.state==='running'&&intent.current())state=await prioritize(id,pages[0],sourcePages,units,connection,control);
+        if(!background&&state?.state==='running'&&intent.current())state=await prioritize(id,pages[0],sourcePages,units,connection,control);
+        progress(state);
+        if(background){
+          const ready=value=>pages.every(page=>value.completedPages.includes(page)||(value.preparedPages||[]).includes(page));
+          let owned=false;const sameOwner=value=>options.backgroundScope===undefined?value.background!==false&&value.scope===undefined:value.scope===options.backgroundScope;
+          while(!state||!ready(state)){
+            if(state?.state==='running'){await delay();state=validate(await request('GET',suffix,connection,null,{},control));progress(state);if(owned&&!sameOwner(state))owned=false;continue;}
+            if(owned)throw new PDFError(knownErrors.has(state.error)?state.error:'alignment_unavailable');
+            if(control.aborted||!intent.current())throw new PDFError('stopped');
+            const missing=prepare.filter(page=>!state?.completedPages.includes(page)&&!state?.preparedPages?.includes(page));state=await submitMissing(missing);progress(state);owned=sameOwner(state);
+            // Another foreground/scope task may have appeared between probe
+            // and POST. Wait for it, then re-probe instead of failing this page.
+            if(!owned&&state.state!=='running'&&!ready(state)){await delay();state=validate(await request('GET',suffix,connection,null,{},control));progress(state);}
+          }
+          if(options.resultOnly===true)return state;
+          await beforeAlignment();return validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},control,false,MAX_ALIGNMENT_BYTES,false,beforeAlignment),sourcePages);
+        }
         if(state)await refreshPartial(state);
         const scheduled=state?.state==='running'?[state.currentPage,...(state.pendingPages||[])]:[];
         const missing=state?prepare.filter(page=>!state.completedPages.includes(page)&&!scheduled.includes(page)):prepare;
@@ -445,19 +525,20 @@
         // A delayed probe must not upload an obsolete page/selection after a
         // newer focus has committed. Existing service work keeps running.
         if(missing.length&&!intent.current())throw new PDFError('stopped');
-        if(missing.length)state=validate(await mutateAlignment(id,connection,data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength),{'Content-Type':'application/pdf','X-AskGPT-Pages':missing.map(page=>page+1).join(','),...(hasUnits?{'X-AskGPT-Units':JSON.stringify(units)}:{})},control));
+        if(missing.length){state=await submitMissing(missing);progress(state);}
         await refreshPartial(state);
-        const deadline=Date.now()+2*60*1000;
         while(!pages.every(page=>state.completedPages.includes(page))&&state.state==='running'){
-          if(control.aborted)throw new PDFError('stopped');if(Date.now()>deadline)throw new PDFError('timeout');
-          await new Promise((resolve,reject)=>{control.rejectDelay=reject;control.timer=setTimer(()=>{control.timer=null;control.rejectDelay=null;resolve();},500);});
+          await delay();
           state=validate(await request('GET',suffix,connection,null,{},control));
+          progress(state);
           await refreshPartial(state);
         }
         if(control.aborted)throw new PDFError('stopped');
         if(!pages.every(page=>state.completedPages.includes(page)))throw new PDFError(knownErrors.has(state.error)?state.error:'alignment_unavailable');
+        if(options.resultOnly===true)return state;
         if(state.alignmentVersion&&state.alignmentVersion===deliveredVersion)return deliveredAlignment;
-        return validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},control,false,MAX_ALIGNMENT_BYTES),sourcePages);
+        await beforeAlignment();
+        return validateAlignment(await request('GET','/'+id+'/alignment.json',connection,null,{},control,false,MAX_ALIGNMENT_BYTES,false,beforeAlignment),sourcePages);
         }finally{intent.release();}
       },
       async cancel(id) {

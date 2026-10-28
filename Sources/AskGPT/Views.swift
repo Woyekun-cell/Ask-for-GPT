@@ -470,7 +470,7 @@ struct SettingsView: View {
                 }
                 Divider()
                 VStack(spacing: 11) {
-                    settingsField("Codex 路径", text: $store.settings.cliPath)
+                    settingsField("CLI 路径", text: $store.settings.cliPath)
                     settingsField("提问模型", text: $store.settings.model)
                     HStack(spacing: 12) {
                         settingsLabel("推理强度")
@@ -479,21 +479,6 @@ struct SettingsView: View {
                         }.labelsHidden().frame(width: 130)
                         Spacer(minLength: 0)
                     }
-                }
-                Divider()
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(spacing: 12) {
-                        settingsLabel("翻译配置文件")
-                        TextField("留空使用 Codex", text: $store.settings.translationConfigurationPath)
-                            .textFieldStyle(.roundedBorder)
-                        Button("选择…") { chooseTranslationConfiguration() }.buttonStyle(GlassButtonStyle())
-                    }
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("可选 DeepSeek API / Claude Code；保存后重启应用生效。实验性接入，尚未实测。")
-                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                        Link("配置说明", destination: URL(string: "https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/docs/TRANSLATION-BACKENDS.zh-CN.md")!)
-                            .font(.caption).fixedSize()
-                    }.padding(.leading, 96)
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 9) {
@@ -515,12 +500,12 @@ struct SettingsView: View {
                 }
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(spacing: 8) {
-                        Button("保存设置") { saveSettings() }
+                        Button("保存并连接") { saveSettings() }
                             .buttonStyle(GlassButtonStyle(prominent: true)).disabled(store.isSending || store.isTesting)
-                        Button("测试 Codex") { store.testConnection() }.buttonStyle(GlassButtonStyle())
+                        Button("测试连接") { store.testConnection() }.buttonStyle(GlassButtonStyle())
                             .disabled(store.isSending || store.isTesting || store.settings != store.appliedSettings)
                         Spacer(minLength: 0)
-                        Text(store.modelVerified ? "Codex 已验证" : "Codex 待验证").font(.caption).foregroundStyle(.secondary)
+                        Text(store.modelVerified ? "已验证" : "待验证").font(.caption).foregroundStyle(.secondary)
                     }
                     if store.settings != store.appliedSettings {
                         Text("保存后生效").font(.caption).foregroundStyle(.secondary)
@@ -540,7 +525,7 @@ struct SettingsView: View {
                 }
             }.padding(18).frame(maxWidth: .infinity, alignment: .leading).glassCard()
                 .padding(16)
-        }.frame(width: 544, height: 472).background { GlassBackdrop() }
+        }.frame(width: 544, height: 372).background { GlassBackdrop() }
         .onAppear {
             store.refreshPermission()
             keyCode = store.hotKey.keyCode
@@ -548,16 +533,6 @@ struct SettingsView: View {
             option = store.hotKey.modifiers & UInt32(optionKey) != 0
             command = store.hotKey.modifiers & UInt32(cmdKey) != 0
             shift = store.hotKey.modifiers & UInt32(shiftKey) != 0
-        }
-    }
-    private func chooseTranslationConfiguration() {
-        let panel = NSOpenPanel()
-        panel.title = "选择翻译配置 JSON 文件"
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            store.settings.translationConfigurationPath = url.path
         }
     }
     private func saveSettings() {

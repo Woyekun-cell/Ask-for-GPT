@@ -43,9 +43,6 @@ import AskGPTCore
         let preferences = UserDefaults(suiteName: "local.askgpt.reader")
         var settings = preferences?.data(forKey: "codexSettings")
             .flatMap { try? JSONDecoder().decode(CodexSettings.self, from: $0) } ?? CodexSettings()
-        if let path = ProcessInfo.processInfo.environment["ASKGPT_TRANSLATION_CONFIGURATION_PATH"] {
-            settings.translationConfigurationPath = path
-        }
         let batch = batchMode ? PDFBatchTranslator(settings: settings) : nil
         let alignment = alignmentMode ? PDFSentenceAlignmentTranslator(settings: settings) : nil
         let phrase = phraseMode ? PDFPhraseAlignmentTranslator(settings: settings) : nil

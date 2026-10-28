@@ -17,6 +17,7 @@ MAX_PHRASE_SCALARS=60_000
 MAX_PHRASE_MESSAGE=256*1024
 TARGET_PHRASE_BATCH_TOKENS=128
 TARGET_PHRASE_BATCH_UNITS=2
+BACKGROUND_PHRASE_BATCH_TOKENS=256
 MAX_GROUP_TOKENS=16
 MAX_GROUP_WORDS=4
 
@@ -157,7 +158,7 @@ def _lexical(token):
     return re.search(r"[A-Za-z]",token["text"]) is not None
 
 
-def validate_phrase_matches(value,units):
+def validate_phrase_matches(value,units,*,max_group_tokens=MAX_GROUP_TOKENS,max_group_words=MAX_GROUP_WORDS):
     validate_phrase_request(units)
     if not isinstance(value,dict) or set(value)!={x["id"] for x in units}:raise ProtocolFailure("alignment_invalid")
     for unit in units:
@@ -168,12 +169,12 @@ def validate_phrase_matches(value,units):
             if not isinstance(group,dict) or set(group)!={"sourceIDs","targetIDs"}:raise ProtocolFailure("alignment_invalid")
             for side in ("source","target"):
                 identities=group[side+"IDs"];order={row["id"]:i for i,row in enumerate(unit[side])}
-                if (not isinstance(identities,list) or not 1<=len(identities)<=MAX_GROUP_TOKENS
+                if (not isinstance(identities,list) or not 1<=len(identities)<=max_group_tokens
                     or any(not isinstance(x,str) or x not in order or x in used[side] for x in identities)
                     or len(set(identities))!=len(identities)):raise ProtocolFailure("alignment_invalid")
                 indices=[order[x] for x in identities]
                 if indices!=list(range(indices[0],indices[0]+len(indices))):raise ProtocolFailure("alignment_invalid")
-                if sum(_lexical(unit[side][i]) for i in indices)>MAX_GROUP_WORDS:raise ProtocolFailure("alignment_invalid")
+                if sum(_lexical(unit[side][i]) for i in indices)>max_group_words:raise ProtocolFailure("alignment_invalid")
                 used[side].update(identities)
     return value
 
@@ -188,8 +189,9 @@ def identity_groups(unit):
     return result
 
 
-def phrase_requests(prepared):
+def phrase_requests(prepared,*,background=False):
     result=[];current=[]
+    token_limit=BACKGROUND_PHRASE_BATCH_TOKENS if background else TARGET_PHRASE_BATCH_TOKENS
     for unit in prepared:
         if identity_groups(unit):continue
         request=request_unit(unit)
@@ -197,7 +199,7 @@ def phrase_requests(prepared):
         # sooner than a near-2048-token response. The hard protocol bound still
         # applies to an indivisible long sentence.
         if current and (len(current)>=TARGET_PHRASE_BATCH_UNITS or
-                sum(len(x[side]) for x in current+[request] for side in ("source","target"))>TARGET_PHRASE_BATCH_TOKENS):
+                sum(len(x[side]) for x in current+[request] for side in ("source","target"))>token_limit):
             result.append(current);current=[]
         try:validate_phrase_request(current+[request])
         except ProtocolFailure:

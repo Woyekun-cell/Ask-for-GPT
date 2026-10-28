@@ -11,6 +11,43 @@ function selectionReply(overrides={}){
 }
 const selectionQuery=()=>({page:2,paragraph:'p2_0',side:'source',rects:[[40,600,76,620]],text:'genome'});
 (async()=>{
+ await check('existing BabelDOC provenance stays compatible with modern layout transport',async()=>{const value={...alignment(),provenance:'babeldoc-ir',sourceSHA256:'a'.repeat(64)},f=fixture(value);assert.equal((await f.transport.layoutAlignment('mapping',[2])).value.provenance,'babeldoc-ir');assert.equal((await f.transport.pageAlignment('mapping',2,[2])).provenance,'babeldoc-ir');});
+ await check('candidate provenance survives both layout and page transport without granting paragraph proof',async()=>{
+  const value={...alignment(),provenance:'pdf-glyph-candidates',recoveryRevision:'pdf-glyph-candidates-v1',sourceSHA256:'a'.repeat(64),targetSHA256:'b'.repeat(64)};value.pages[0].paragraphs=[];value.pages[0].candidateTextUnavailable=true;
+  for(const endpoint of ['layoutAlignment','pageAlignment']){const f=fixture(value),result=endpoint==='layoutAlignment'?(await f.transport.layoutAlignment('mapping',[2])).value:await f.transport.pageAlignment('mapping',2,[2]);assert.equal(result.provenance,'pdf-glyph-candidates');assert.equal(result.recoveryRevision,'pdf-glyph-candidates-v1');assert.equal(result.targetSHA256,'b'.repeat(64));assert.equal(result.pages[0].candidateTextUnavailable,true);}
+  for(const edit of [v=>v.provenance='other',v=>delete v.recoveryRevision,v=>v.targetSHA256='invalid']){const changed=JSON.parse(JSON.stringify(value));edit(changed);assert.throws(()=>PDF.validateAlignment(changed,[2]),{code:'response'});}
+ });
+ await check('legacy whole-work registration transmits only a fully validated Chinese PDF binding',async()=>{
+  const state={id:'mapping',state:'idle',sourcePages:[2],completedPages:[],preparedPages:[],partialPages:[],mappedSentences:0,currentPage:null,pendingPages:[],durable:false,eligible:false,workState:'unregistered'},f=fixture(state),binding={sourceLanguage:'en',targetLanguage:'zh-Hans',targetSHA256:'b'.repeat(64),targetBytes:20};
+  await f.transport.registerAlignmentWork('mapping',new TextEncoder().encode('%PDF-1.7'),[2],binding);const headers=f.calls[0].options.headers;assert.equal(headers['X-AskGPT-Target-SHA256'],'b'.repeat(64));assert.equal(headers['X-AskGPT-Target-Bytes'],'20');assert.equal(headers['X-AskGPT-Source-Language'],'en');assert.equal(headers['X-AskGPT-Target-Language'],'zh-Hans');
+  for(const edit of [v=>delete v.targetBytes,v=>v.targetSHA256='invalid',v=>v.targetLanguage='en',v=>v.targetBytes=Infinity]){const next={...binding};edit(next);const count=f.calls.length;await assert.rejects(f.transport.registerAlignmentWork('mapping',new TextEncoder().encode('%PDF-1.7'),[2],next),{code:'response'});assert.equal(f.calls.length,count);}
+ });
+ await check('page metadata uses a bounded page endpoint with idle decode gates and validates physical ownership',async()=>{
+  const f=fixture(alignment());let gates=0;
+  const value=await f.transport.pageAlignment('mapping',2,[2],()=>{},{beforeAlignment:async()=>{gates++;}});
+  assert.equal(value.pages.length,1);assert(f.calls[0].url.endsWith('/mapping/alignment-page.json?page=2'));assert.equal(gates,2);
+  await assert.rejects(f.transport.pageAlignment('mapping',3,[2]),{code:'response'});assert.equal(f.calls.length,1);
+ });
+ await check('background resultOnly skips cached prepared partial pages without downloading or decoding IR',async()=>{
+  const state={id:'mapping',state:'complete',sourcePages:[2],completedPages:[],preparedPages:[2],partialPages:[2],mappedSentences:1,background:true},f=fixture(state);
+  const value=await f.transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2],()=>{},{background:true,resultOnly:true,probe:true,beforeAlignment:async()=>assert.fail('light result must not wait for IR idle')});
+  assert.deepEqual(value.preparedPages,[2]);assert.equal(f.calls.length,1);assert.equal(f.calls[0].method,'GET');
+ });
+ await check('native load timing diagnostics accept only bounded numeric measurements',()=>{
+  const record=PDF.diagnostic('nativeLoadTiming',{loadNumbers:{validateMilliseconds:1.6,projectionMilliseconds:4,mirrorMilliseconds:0,totalMilliseconds:6,pageCount:13,semanticPages:1,secret:'private'},message:'private'});
+  assert.equal(record.stage,'nativeLoadTiming');assert.equal(record.loadNumbers.validateMilliseconds,2);assert.equal(record.loadNumbers.secret,undefined);
+  const invalid=PDF.diagnostic('nativeLoadTiming',{loadNumbers:{validateMilliseconds:'42',totalMilliseconds:Infinity,pageCount:-1}});assert(!Object.values(invalid.loadNumbers).some(value=>value==='42'||value===Infinity));assert(!JSON.stringify(record).includes('private'));
+ });
+ await check('light foreground results never invoke partial IR callbacks and invalid prepared subsets are rejected',async()=>{
+  let submitted=false;const calls=[],state=()=>({id:'mapping',state:submitted?'complete':'idle',sourcePages:[2],completedPages:submitted?[2]:[],preparedPages:submitted?[2]:[],partialPages:[],mappedSentences:1,alignmentVersion:'a'.repeat(64)});
+  const transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url){calls.push({method,url});if(method==='POST')submitted=true;assert(!url.endsWith('/alignment.json'));return {status:200,responseText:JSON.stringify(state())};}}}},async()=>({token:'t'.repeat(64)}));
+  const value=await transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2],()=>{},{probe:true,resultOnly:true,onPartial:()=>assert.fail('resultOnly has no IR partial callback')});assert.equal(value.state,'complete');assert.equal(calls.length,2);
+  const f=fixture({...state(),preparedPages:[],partialPages:[2]});await assert.rejects(f.transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2],()=>{},{background:true,resultOnly:true,probe:true}),{code:'response'});
+ });
+ await check('layout fallback is restricted to an explicit legacy 404 and modern malformed or unavailable layouts never load full IR',async()=>{
+  for(const mode of ['404','thrown404','unavailable404','unknown404','503','malformed','connection']){const calls=[],transport=PDF.createTransport({Zotero:{HTTP:{async request(_method,url){calls.push(url);if(url.endsWith('/alignment.json'))return {status:200,responseText:JSON.stringify(alignment())};if(mode==='thrown404')throw {xmlhttp:{status:404,responseText:'{"error":"not_found"}'}};if(mode==='connection')throw Error('offline');return {status:['404','unavailable404','unknown404'].includes(mode)?404:mode==='503'?503:200,responseText:mode==='404'?'{"error":"not_found"}':mode==='unavailable404'?'{"error":"alignment_unavailable"}':mode==='malformed'?'bad json':'{}'};}}}},async()=>({token:'t'.repeat(64)}));if(['404','thrown404'].includes(mode)){const value=await transport.layoutAlignment('mapping',[2]);assert.equal(value.complete,true);assert.equal(calls.length,2);}else{await assert.rejects(transport.layoutAlignment('mapping',[2]));assert.equal(calls.length,1,mode+' must not fall back to the full sidecar');}}
+ });
+ await check('missing current job is classified separately from a disconnected helper or absent legacy route',async()=>{for(const thrown of [false,true]){const calls=[],transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url){calls.push({method,url});const value={status:404,responseText:'{"error":"job_not_found"}'};if(thrown)throw {xmlhttp:value};return value;}}}},async()=>({token:'t'.repeat(64)}));await assert.rejects(transport.layoutAlignment('mapping',[2]),{code:'job_missing'});assert.equal(calls.length,1);assert(calls[0].url.endsWith('/alignment-layout.json'));assert(!PDF.errorMessage({code:'job_missing'}).includes('无法连接'));}});
  await check('selection links validate bound immutable phrase evidence and strip private or unknown properties',()=>{
   const raw=selectionReply(),parsed=PDF.validateSelectionLinks(raw,'mapping',2,'a'.repeat(64));
   assert.equal(parsed.link.source.text,'genome');assert.equal(parsed.link.target.text,'基因组');assert.equal(parsed.link.paragraph,'p2_0');assert.equal(parsed.link.key,'selection_1');assert.equal(parsed.unsafe,undefined);assert.equal(parsed.link.unsafe,undefined);assert.equal(parsed.link.source.glyphs[0].unsafe,undefined);
@@ -31,6 +68,17 @@ const selectionQuery=()=>({page:2,paragraph:'p2_0',side:'source',rects:[[40,600,
  await check('selection fast path sends only authenticated bounded JSON without opening original PDF or complete alignment',async()=>{
   const calls=[],unreadable=new Proxy({}, {get(){assert.fail('cached fast path must not touch original PDF bytes');}}),transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});return {status:200,responseText:JSON.stringify(selectionReply({cached:true}))};}}}},async()=>({token:'t'.repeat(64)}));
   const result=await transport.selectionAlignment('mapping',unreadable,{...selectionQuery(),unsafe:'discard'},[2]);assert.equal(result.cached,true);assert.equal(calls.length,1);const call=calls[0];assert.equal(call.method,'POST');assert.equal(call.url,'http://127.0.0.1:43795/v1/pdf/jobs/mapping/selection-alignment');assert.deepEqual(JSON.parse(call.options.body),selectionQuery());assert.equal(call.options.headers['Content-Type'],'application/json');assert.equal(call.options.headers.Authorization,'Bearer '+'t'.repeat(64));assert.equal(call.options.followRedirects,false);assert.equal(call.options.logBodyLength,0);
+ });
+ await check('only explicit user retries send a retry header on JSON and required PDF handshakes',async()=>{
+  for(const retry of [undefined,false,true]){
+   const calls=[],input=new TextEncoder().encode('%PDF-1.7\nretry fixture'),transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});return calls.length===1?{status:409,responseText:JSON.stringify({error:'selection_source_required'})}:{status:200,responseText:JSON.stringify(selectionReply())};}}}},async()=>({token:'t'.repeat(64)}));
+   await transport.selectionAlignment('mapping',input,selectionQuery(),[2],undefined,retry===undefined?undefined:{retry});assert.equal(calls.length,2);
+   for(const call of calls){assert.equal(call.options.headers['X-AskGPT-Selection-Retry'],retry===true?'1':undefined);assert.equal(call.options.headers.Authorization,'Bearer '+'t'.repeat(64));}
+   assert.deepEqual(JSON.parse(calls[0].options.body),selectionQuery());assert.deepEqual(JSON.parse(calls[1].options.headers['X-AskGPT-Selection']),selectionQuery());
+  }
+ });
+ await check('malformed retry options never transmit a header or selection request',async()=>{
+  const f=fixture(selectionReply());for(const options of [null,[],true,{retry:'true'},{retry:1}])await assert.rejects(f.transport.selectionAlignment('mapping',null,selectionQuery(),[2],undefined,options),{code:'response'});assert.equal(f.calls.length,0);
  });
  await check('selection source handshake uploads original bytes once only after an explicit source-required conflict',async()=>{
   const calls=[],input=new TextEncoder().encode('%PDF-1.7\noriginal bytes'),transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});return calls.length===1?{status:409,responseText:JSON.stringify({error:'selection_source_required'})}:{status:200,responseText:JSON.stringify(selectionReply({cached:calls.length>2}))};}}}},async()=>({token:'t'.repeat(64)}));
@@ -58,6 +106,29 @@ const selectionQuery=()=>({page:2,paragraph:'p2_0',side:'source',rects:[[40,600,
  });
  await check('selection service busy, timeout and unavailable responses remain distinguishable without an original upload',async()=>{
   for(const [status,code] of [[409,'selection_busy'],[504,'selection_timeout'],[400,'selection_unavailable'],[400,'selection_invalid']]){const calls=[],transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){calls.push(options);throw {xmlhttp:{status,responseText:JSON.stringify({error:code})}};}}}},async()=>({token:'t'.repeat(64)}));await assert.rejects(transport.selectionAlignment('mapping',null,selectionQuery(),[2]),{code});assert.equal(calls.length,1);assert.equal(calls[0].headers['Content-Type'],'application/json');}
+ });
+ await check('selection JSON and source upload use a bounded 45-second HTTP deadline while other requests retain their limits',async()=>{
+  const calls=[],input=new TextEncoder().encode('%PDF-1.7\noriginal bytes');let sourceRequired=true;
+  const list=selectionReply();list.links=[list.link];delete list.link;delete list.key;delete list.cached;
+  const transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){
+   calls.push({method,url,options});
+   if(url.endsWith('/selection-alignment')){if(sourceRequired){sourceRequired=false;return {status:409,responseText:JSON.stringify({error:'selection_source_required'})};}return {status:200,responseText:JSON.stringify(selectionReply())};}
+   if(url.endsWith('/selection-alignment?page=2'))return {status:200,responseText:JSON.stringify(list)};
+   if(url.endsWith('/alignment.json'))return {status:200,responseText:JSON.stringify(alignment())};
+   if(url.endsWith('/mono.pdf'))return {status:200,response:input.buffer};
+   throw Error('Unexpected transport request '+url);
+  }}}},async()=>({token:'t'.repeat(64)}));
+  await transport.selectionAlignment('mapping',input,selectionQuery(),[2]);await transport.selectionAlignment('mapping',null,selectionQuery(),[2]);
+  await transport.selectionLinks('mapping',2,[2]);await transport.alignment('mapping',[2]);await transport.output('mapping','mono');
+  assert.deepEqual(calls.map(call=>call.options.timeout),[45000,45000,45000,20000,20000,60000]);
+  assert.deepEqual(calls.slice(0,3).map(call=>call.options.headers['Content-Type']),['application/json','application/pdf','application/json']);
+  assert.equal(calls.length,6);
+ });
+ await check('a selection server deadline remains selection_timeout with one 45-second request and no hidden retry',async()=>{
+  const calls=[],transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});throw {xmlhttp:{status:504,responseText:'{"error":"selection_timeout"}'}};}}}},async()=>({token:'t'.repeat(64)}));
+  await assert.rejects(transport.selectionAlignment('mapping',null,selectionQuery(),[2]),{code:'selection_timeout'});
+  assert.equal(calls.length,1);assert.equal(calls[0].options.timeout,45000);assert.equal(calls[0].method,'POST');
+  assert.equal(calls[0].options.headers['X-AskGPT-Selection-Retry'],undefined);
  });
  await check('a repeated source-required conflict cannot loop or upload the same PDF a second time',async()=>{
   const calls=[],transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){calls.push(options);return {status:409,responseText:JSON.stringify({error:'selection_source_required'})};}}}},async()=>({token:'t'.repeat(64)}));await assert.rejects(transport.selectionAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),selectionQuery(),[2]),{code:'response'});assert.deepEqual(calls.map(x=>x.headers['Content-Type']),['application/json','application/pdf']);
@@ -316,6 +387,49 @@ const selectionQuery=()=>({page:2,paragraph:'p2_0',side:'source',rects:[[40,600,
   for(const stage of ['hoverAttach','hoverAttached','hoverMove','hoverBlocked','hoverMiss','hoverHit','hoverLookup','hoverRendered','hoverError']){
     const value=PDF.diagnostic(stage,{name:'HoverDiagnostic',code:'compatibility',errorDetail:'hoverGeometry',message:secret,word:secret,query:secret,event:{target:secret},token:secret});
     assert.deepEqual(value,{stage,exception:'HoverDiagnostic',code:'compatibility',locations:[],errorDetail:'hoverGeometry'});assert(!JSON.stringify(value).includes(secret));
+  }
+ });
+ await check('background alignment reports small states waits for idle before IR and skips cached pages without upload',async()=>{
+  const calls=[],states=[];let idle,entered=false;const gate=new Promise(resolve=>{idle=resolve;}),state={id:'mapping',state:'complete',sourcePages:[2],completedPages:[2],mappedSentences:1,background:true,paused:false};
+  const transport=PDF.createTransport({setTimer:fn=>setTimeout(fn,0),clearTimer:clearTimeout,Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});return {status:200,responseText:JSON.stringify(url.endsWith('/alignment.json')?alignment():state)};}}}},async()=>({token:'t'.repeat(64)}));
+  const pending=transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2],()=>{},{background:true,probe:true,onProgress:value=>states.push(value),beforeAlignment:async()=>{entered=true;await gate;}});await new Promise(setImmediate);assert.equal(entered,true);assert.equal(calls.length,1);assert.equal(calls[0].method,'GET');assert.equal(states.at(-1).completedPages[0],2);idle();await pending;assert.equal(calls.length,2);assert(calls.every(c=>c.method==='GET'));
+ });
+ await check('background alignment listens to existing tasks without priority or upload then prepares its single missing page',async()=>{
+  const calls=[],states=[];let submitted=false,reads=0;const state=(running,completed,current)=>({id:'mapping',state:running?'running':'complete',sourcePages:[2,3],completedPages:completed,mappedSentences:completed.length,currentPage:current,pendingPages:[],background:submitted,paused:false});
+  const value=alignment();value.pages.push({...structuredClone(value.pages[0]),sourcePage:3,outputPage:1});
+  const transport=PDF.createTransport({setTimer:fn=>setTimeout(fn,0),clearTimer:clearTimeout,Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});if(url.endsWith('/alignment.json'))return {status:200,responseText:JSON.stringify(value)};if(method==='POST'){assert.equal(options.headers['Content-Type'],'application/pdf');assert.equal(options.headers['X-AskGPT-Background'],'1');submitted=true;return {status:202,responseText:JSON.stringify(state(true,[3],2))};}reads++;return {status:200,responseText:JSON.stringify(submitted?state(false,[2,3],null):reads===1?state(true,[],3):state(false,[3],null))};}}}},async()=>({token:'t'.repeat(64)}));
+  await transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2,3],()=>{},{background:true,probe:true,onProgress:value=>states.push(value)});assert.equal(calls.filter(c=>c.method==='POST').length,1);assert.equal(calls.filter(c=>c.url.endsWith('/alignment.json')).length,1,'progress must never fetch repeated whole sidecars');assert(states.some(s=>s.currentPage===3));assert(states.some(s=>s.completedPages.includes(2)));
+ });
+ await check('background controls are scoped JSON mutations and validate booleans without deleting the permanent PDF',async()=>{
+  const calls=[],state={id:'mapping',state:'running',sourcePages:[2],completedPages:[],mappedSentences:0,background:true,paused:true};
+  const transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});return {status:200,responseText:JSON.stringify(state)};}}}},async()=>({token:'t'.repeat(64)}));
+  for(const action of ['pause','resume','cancel'])await transport.controlAlignment('mapping',action,[2]);assert.deepEqual(calls.map(c=>JSON.parse(c.options.body)),[{action:'pause'},{action:'resume'},{action:'cancel'}]);assert(calls.every(c=>c.method==='POST'&&c.url.endsWith('/mapping/alignment-upgrade')));await assert.rejects(transport.controlAlignment('mapping','delete',[2]),{code:'response'});state.paused='true';await assert.rejects(transport.controlAlignment('mapping','pause',[2]),{code:'response'});assert(!calls.some(c=>c.method==='DELETE'));
+ });
+ await check('cancelling a background watcher held at idle prevents a late IR fetch and leaves server control explicit',async()=>{
+  let cancel,release,entered=false;const calls=[],gate=new Promise(resolve=>{release=resolve;}),state={id:'mapping',state:'complete',sourcePages:[2],completedPages:[2],mappedSentences:1};
+  const transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});return {status:200,responseText:JSON.stringify(state)};}}}},async()=>({token:'t'.repeat(64)}));
+  const pending=transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2],value=>{cancel=value;},{background:true,probe:true,beforeAlignment:async()=>{entered=true;await gate;}});await new Promise(setImmediate);assert(entered);cancel();release();await assert.rejects(pending,{code:'stopped'});assert.equal(calls.length,1);assert.equal(calls[0].method,'GET');
+ });
+ await check('background ownership scope binds uploads and controls while malformed or mismatched scope shapes are refused',async()=>{
+  const calls=[],scope='bg_100_generation_2',state={id:'mapping',state:'complete',sourcePages:[2],completedPages:[2],mappedSentences:1,background:true,paused:false,scope};let initial=true;
+  const transport=PDF.createTransport({Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});if(url.endsWith('/alignment.json'))return {status:200,responseText:JSON.stringify(alignment())};if(method==='GET'&&initial){initial=false;return {status:200,responseText:JSON.stringify({...state,state:'idle',completedPages:[]})};}return {status:200,responseText:JSON.stringify(state)};}}}},async()=>({token:'t'.repeat(64)}));
+  await transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2],()=>{},{background:true,backgroundScope:scope,probe:true});assert.equal(calls.find(c=>c.method==='POST').options.headers['X-AskGPT-Background-Scope'],scope);await transport.controlAlignment('mapping','cancel',[2],scope);assert.deepEqual(JSON.parse(calls.at(-1).options.body),{action:'cancel',scope});
+  const count=calls.length;for(const bad of ['', '../bad','x'.repeat(65),null,7]){await assert.rejects(transport.controlAlignment('mapping','pause',[2],bad),{code:'response'});await assert.rejects(transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2],()=>{},{background:true,backgroundScope:bad}),{code:'response'});}assert.equal(calls.length,count);state.scope='bad scope';await assert.rejects(transport.controlAlignment('mapping','resume',[2],scope),{code:'response'});
+ });
+ await check('IR response decode waits for renewed idle and cancellation releases the decode gate without reading text',async()=>{
+  for(const stop of [false,true]){
+   let active=false,releaseHTTP,releaseIdle,enteredHTTP,reads=0,cancel,finished=false,gates=0;const http=new Promise(resolve=>{releaseHTTP=resolve;}),idle=new Promise(resolve=>{releaseIdle=resolve;}),entered=new Promise(resolve=>{enteredHTTP=resolve;});
+   const state={id:'mapping',state:'complete',sourcePages:[2],completedPages:[2],mappedSentences:1};const transport=PDF.createTransport({Zotero:{HTTP:{async request(_method,url){if(!url.endsWith('/alignment.json'))return {status:200,responseText:JSON.stringify(state)};enteredHTTP();await http;return {status:200,get responseText(){reads++;assert.equal(active,false,'IR text must not be crossed/decoded while input resumed');return JSON.stringify(alignment());}};}}}},async()=>({token:'t'.repeat(64)}));
+   const pending=transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2],value=>{cancel=value;},{background:true,probe:true,beforeAlignment:async()=>{gates++;if(active)await idle;}}).then(value=>{finished=true;return value;});await entered;active=true;releaseHTTP();await new Promise(setImmediate);assert.equal(reads,0);assert.equal(finished,false);assert.equal(gates,2);
+   if(stop){cancel();await assert.rejects(pending,{code:'stopped'});assert.equal(reads,0);releaseIdle();}else{active=false;releaseIdle();await pending;assert.equal(reads,1);}
+  }
+ });
+ await check('a task appearing between background probe and upload is joined then missing work is resubmitted with its own scope',async()=>{
+  for(const foreignBackground of [false,true]){
+   const scope='current_scope',calls=[],data=alignment();data.pages.push({...structuredClone(data.pages[0]),sourcePage:3,outputPage:1});let posts=0,gets=0;
+   const state=(kind,completed,owner,background)=>({id:'mapping',state:kind,sourcePages:[2,3],completedPages:completed,mappedSentences:completed.length,currentPage:kind==='running'?3:null,pendingPages:[],scope:owner,background,...(kind==='failed'?{error:'alignment_cancelled'}:{})});
+   const transport=PDF.createTransport({setTimer:fn=>setTimeout(fn,0),clearTimer:clearTimeout,Zotero:{HTTP:{async request(method,url,options){calls.push({method,url,options});if(url.endsWith('/alignment.json'))return {status:200,responseText:JSON.stringify(data)};if(method==='POST'){posts++;assert.equal(options.headers['Content-Type'],'application/pdf');return {status:posts===1?202:200,responseText:JSON.stringify(posts===1?state('running',[],'foreign_scope',foreignBackground):state('complete',[2],scope,true))};}gets++;return {status:200,responseText:JSON.stringify(gets===1?state('idle',[],'old_scope',false):state('failed',[],'foreign_scope',foreignBackground))};}}}},async()=>({token:'t'.repeat(64)}));
+   await transport.upgradeAlignment('mapping',new TextEncoder().encode('%PDF-1.7'),[2],[2,3],()=>{},{background:true,backgroundScope:scope,probe:true});assert.equal(posts,2);assert(calls.filter(c=>c.method==='POST').every(c=>c.options.headers['X-AskGPT-Background-Scope']===scope));assert.equal(calls.filter(c=>c.url.endsWith('/alignment.json')).length,1);assert(!calls.some(c=>c.method==='DELETE'||c.options.headers['Content-Type']==='application/json'));
   }
  });
  process.stdout.write(JSON.stringify({status:'PASS',checks})+'\n');

@@ -48,7 +48,7 @@ public actor PDFBatchTranslator {
     public private(set) var lastValidationReason: PDFBatchValidationReason?
 
     public init(settings: CodexSettings) {
-        backend = TranslationBackendFactory.make(settings: PDFBatchConfiguration.settings(from: settings))
+        backend = CodexBackend(settings: PDFBatchConfiguration.settings(from: settings))
     }
     init(backend: any PassageRefinementBackend) { self.backend = backend }
 

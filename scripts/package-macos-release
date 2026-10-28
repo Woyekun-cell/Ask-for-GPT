@@ -121,8 +121,8 @@ def main():
     report = {"version": args.version, "architecture": "arm64", "notarized": False,
               "distribution": "prebuilt app and unchanged official Codex package; online PDF preparation and account login",
               "bundledCodex": {"version": "0.163.0", "archiveSHA256": codex_sha},
-              "experimentalTranslationBackends": {"providers": ["openai-compatible", "claude-code"],
-                  "status": "configuration adapters included; no connectivity or translation-quality testing"},
+              "translationBackend": {"provider": "codex",
+                  "status": "matches the verified macOS 1.1.55 binary; optional API and Claude adapters are not bundled"},
               "files": [{"name": path.name, "bytes": path.stat().st_size, "sha256": hashes[path.name]}
                         for path in (archive, dmg)], "signatureVerified": True}
     (output / "release-assets.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

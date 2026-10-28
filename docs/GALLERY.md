@@ -4,6 +4,16 @@
 
 Ask for GPT 提供 Windows 和 macOS 两个版本，把查词、翻译和提问放在当前阅读环境中。下面按使用流程查看 macOS版的阅读与写作界面，Windows版的安装与功能范围见[Windows 指南](INSTALL.Windows.zh-CN.md)。
 
+<a id="reader-demo-155"></a>
+
+## 1.1.55 真实操作视频 · English narration
+
+[播放 / 下载 MP4](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-1.1.55-Zotero-demo-en.mp4) · [English transcript](demo-source/reader-demo-1.1.55-en.txt)
+
+在 Zotero 的现有双语阅读页演示：棕褐/雪色同时应用到两栏，放大后用“适合宽度”恢复两栏，以及原文/译文/对照切换复用缓存。结束页数提示已收起，已有高亮仍可见。视频采用真实操作剪辑和本机 Samantha 英文合成旁白，不录入麦克风。
+
+画面裁去系统菜单栏、其他文献标签、文库与 Dock。演示论文为 Logsdon et al., [Long-read human genome sequencing and its applications](https://doi.org/10.1038/s41576-020-0236-x), Nature Reviews Genetics (2020)；论文与出版物标识权利归其权利人。中文为机器译文。此处仅演示软件阅读界面，不分发论文 PDF。当前已缓存文献第一页的显示验证，不代表整篇语义对应全部成功，也不代表 Windows 桌面验收。
+
 ## 在 Zotero 里双语读论文
 
 ![Zotero 双语阅读：英文原文与中文译文并排显示](images/zotero/live-bilingual.jpg)

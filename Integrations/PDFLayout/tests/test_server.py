@@ -535,4 +535,137 @@ class CompletedResultCacheTests(unittest.TestCase):
             self.assertNotIn(original.id, self.manager.jobs, change)
 
 
+class NumericSentenceSnapshotTests(unittest.TestCase):
+    """Historical sidecars are sanitized in memory, never rewritten or modeled."""
+    import test_sentence_alignment as fixtures
+    tearDown = fixtures.SentenceAlignmentTests.tearDown
+    manager = fixtures.SentenceAlignmentTests.manager
+    install = fixtures.SentenceAlignmentTests.install
+
+    def setUp(self):
+        import copy, hashlib, pymupdf
+        import sentence_alignment as sentence
+        from worker import compose_dual
+        self.fixtures.SentenceAlignmentTests.setUp(self)
+        self.source_text[0] = "Reference. 105-112 (2018). Safe fact binds."
+        self.target_text[0] = "Reference. 3. Binding happens."
+        for path, texts in ((self.source, self.source_text), (self.mono, self.target_text)):
+            with pymupdf.open() as document:
+                for text in texts:
+                    page = document.new_page(width=400, height=250)
+                    page.insert_text((20,45), text, fontsize=11)
+                document.save(path)
+        compose_dual(self.source,self.mono,[0,1],self.dual)
+        self.sha = hashlib.sha256(self.source.read_bytes()).hexdigest()
+        self.value['sourceSHA256'] = self.sha
+        with pymupdf.open(self.source) as source, pymupdf.open(self.mono) as target:
+            for index, page in enumerate(self.value['pages']):
+                paragraph = page['paragraphs'][0]
+                for name, pdf, text in (('source',source[index],self.source_text[index]),('target',target[index],self.target_text[index])):
+                    rect = list(pymupdf.Rect(pdf.get_text('blocks')[0][:4])*~pdf.transformation_matrix)
+                    paragraph[name] = {'text':text,'rects':[rect]}
+                    paragraph['dual'+name.capitalize()] = {'rects':[[r[0]+(400 if name=='target' else 0),r[1],r[2]+(400 if name=='target' else 0),r[3]] for r in [rect]]}
+            for index,page in enumerate(self.value['pages']):
+                prepared = sentence.prepare_page(page,source[index],target[index])
+                matches = {left['id']:[right['id']] for unit in prepared for left,right in zip(unit['source'],unit['target'])}
+                self.value['pages'][index] = sentence.upgrade_page(page,prepared,matches)
+        self.value.update(granularity='sentence',sentenceAlignmentRevision=sentence.SENTENCE_REVISION,sentencePages=[0,1])
+        self.original_value = copy.deepcopy(self.value)
+
+    def assert_safe(self, value, pages=(0,1)):
+        self.assertEqual([row['source']['text'] for row in value['pages'][0]['paragraphs'][0]['sentences']],
+                         ['Reference.','Safe fact binds.'])
+        self.assertEqual(value['pages'][0]['paragraphs'][0]['source'],self.original_value['pages'][0]['paragraphs'][0]['source'])
+        self.assertNotIn(0,value.get('sentencePages',[]))
+        self.assertIn(0,value.get('sentencePartialPages',[]))
+        server_module.validate_alignment(value,list(pages),2,self.sha)
+
+    def originals(self, job):
+        return {name:(job.directory/name).read_bytes() for name in ('mono.pdf','dual.pdf','alignment.json','cache.json')}
+
+    def test_cold_read_sanitizes_once_and_cached_copies_keep_safe_siblings_without_writing_originals(self):
+        import sentence_alignment as sentence
+        manager=self.manager();job=self.install(manager);before=self.originals(job)
+        manager._forget_alignment_snapshot(job.id)
+        first=manager.read_alignment(job);self.assert_safe(first)
+        first['pages'][0]['paragraphs'][0]['sentences'][0]['source']['text']='caller mutation'
+        with patch.object(sentence,'filter_unsafe_numeric_sentence_links',side_effect=AssertionError('hot memo rescanned')):
+            self.assert_safe(manager.read_alignment(job));self.assert_safe(manager.read_alignment(job))
+        self.assertEqual(self.originals(job),before);self.assertFalse(self.calls.exists())
+
+    def test_evicted_verified_raw_generation_is_sanitized_again_without_revalidating_structure(self):
+        import sentence_alignment as sentence
+        manager=self.manager();job=self.install(manager);before=self.originals(job)
+        manager._forget_alignment_snapshot(job.id);self.assert_safe(manager.read_alignment(job))
+        manager._forget_alignment_snapshot(job.id)
+        with patch.object(server_module,'validate_alignment',side_effect=AssertionError('unchanged verified generation was revalidated')):
+            value=manager.read_alignment(job)
+        self.assert_safe(value)
+        with patch.object(sentence,'filter_unsafe_numeric_sentence_links',side_effect=AssertionError('rebuilt memo rescanned')):
+            self.assert_safe(manager.read_alignment(job))
+        self.assertEqual(self.originals(job),before);self.assertFalse(self.calls.exists())
+
+    def test_restart_memo_and_restore_work_receive_sanitized_tree_without_raw_sidecar_mutation(self):
+        import copy
+        from sentence_service import SentenceUpgradeService
+        manager=self.manager();job=self.install(manager);before=self.originals(job);manager.shutdown()
+        seen=[];restore=SentenceUpgradeService.restore_work
+        def capture(service,parent,value):
+            seen.append(copy.deepcopy(value));return restore(service,parent,value)
+        with patch.object(SentenceUpgradeService,'restore_work',capture):restarted=self.manager()
+        self.assertEqual(len(seen),1);self.assert_safe(seen[0])
+        restored=restarted.get(job.id);self.assert_safe(restarted.read_alignment(restored))
+        self.assertEqual(self.originals(restored),before);self.assertFalse(self.calls.exists())
+
+    def test_only_registered_intent_requeues_the_filtered_page_and_preserves_other_page_checkpoint(self):
+        from layout_common import atomic_json
+        from sentence_service import SentenceUpgradeService, INDEX_REVISION, WORK_REVISION
+        manager=self.manager();job=self.install(manager)
+        atomic_json(job.directory/'alignment-index.json',{'revision':INDEX_REVISION,
+            'bindingSHA256':manager.sentence_upgrades._index_binding(job),'pages':{
+                str(index):{'inputSHA256':manager.sentence_upgrades._index_input(page),'partial':False,
+                    'unavailableParagraphs':0,'unavailableSentences':0,'refusedWordUnits':0}
+                for index,page in enumerate(self.value['pages'])}})
+        atomic_json(job.directory/'alignment-work.json',{'revision':WORK_REVISION,'kind':'explicit-whole',
+            'bindingSHA256':manager.sentence_upgrades._index_binding(job),'enabled':True,'failedPages':{},'error':None})
+        source=job.directory/'selection-source.pdf';source.write_bytes(self.source.read_bytes());source.chmod(0o600)
+        before=self.originals(job);manager.shutdown()
+        # Inspect the real recovered queue without dispatching any model turn.
+        with patch.object(SentenceUpgradeService,'resume_work'):
+            restarted=self.manager()
+        restored=restarted.get(job.id);status=restarted.sentence_upgrades.work_status(restored)
+        self.assertEqual(status['preparedPages'],[1]);self.assertEqual(status['pendingPages'],[0])
+        self.assertEqual(list(restarted.sentence_upgrades.work_pending),[job.id])
+        self.assertEqual(self.originals(restored),before);self.assertFalse(self.calls.exists())
+
+    def test_derived_page_store_cannot_reintroduce_an_unsafe_raw_whole_document_link_into_warm_memo(self):
+        import sentence_alignment as sentence
+        from layout_common import BABELDOC_VERSION
+        manager=self.manager();whole=self.install(manager);before=self.originals(whole)
+        manager._forget_alignment_snapshot(whole.id);self.assert_safe(manager.read_alignment(whole))
+        derived=manager.begin();derived.source_pages=[0];derived.page_count=2
+        derived.cache_info={'cacheKey':server_module._cache_key(self.sha,[0],2,'en','zh-Hans',manager.translation_revision),
+            'sourceSHA256':self.sha,'sourcePages':[0],'pageCount':2,'source':'en','target':'zh-Hans',
+            'revision':manager.translation_revision,'babeldoc':BABELDOC_VERSION}
+        self.assertTrue(manager._derive_completed_range(derived))
+        self.assert_safe(manager.read_alignment(derived),pages=(0,))
+        with patch.object(sentence,'filter_unsafe_numeric_sentence_links',side_effect=AssertionError('derived hot memo rescanned')):
+            self.assert_safe(manager.read_alignment(derived),pages=(0,))
+        self.assertEqual(self.originals(whole),before);self.assertFalse(self.calls.exists())
+
+    def test_publish_sanitizes_memo_but_keeps_the_verified_published_raw_and_digest_unchanged(self):
+        import hashlib
+        import sentence_alignment as sentence
+        manager=self.manager();job=self.install(manager);pdfs={name:(job.directory/name).read_bytes() for name in ('mono.pdf','dual.pdf')}
+        expected=json.dumps(self.value,ensure_ascii=False,separators=(',',':')).encode()
+        manager.publish_alignment(job,self.value)
+        self.assert_safe(manager.read_alignment(job))
+        path=server_module._alignment_path(job.directory,job.cache_info)
+        self.assertEqual(path.read_bytes(),expected)
+        self.assertEqual(job.cache_info['alignment'],{'sha256':hashlib.sha256(expected).hexdigest(),'bytes':len(expected)})
+        with patch.object(sentence,'filter_unsafe_numeric_sentence_links',side_effect=AssertionError('published hot memo rescanned')):
+            self.assert_safe(manager.read_alignment(job))
+        self.assertEqual({name:(job.directory/name).read_bytes() for name in pdfs},pdfs);self.assertFalse(self.calls.exists())
+
+
 if __name__ == "__main__": unittest.main()

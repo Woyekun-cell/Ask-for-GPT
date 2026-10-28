@@ -281,10 +281,15 @@ def validate_alignment(value, selected, page_count, source_sha):
     """Validate bounded JSON before serving it or deriving a smaller cache."""
     if (not isinstance(value, dict) or value.get("schema") != ALIGNMENT_SCHEMA
             or value.get("coordinateSpace") != "pdf" or value.get("granularity") not in {"paragraph","sentence"}
-            or value.get("provenance") != "babeldoc-ir" or value.get("sourcePages") != selected
+            or value.get("provenance") not in {"babeldoc-ir","pdf-glyph-candidates"} or value.get("sourcePages") != selected
             or value.get("pageCount") != page_count or value.get("sourceSHA256") != source_sha
             or not isinstance(value.get("pages"), list) or len(value["pages"]) != len(selected)):
         raise ValueError("invalid_alignment")
+    candidate=value.get("provenance")=="pdf-glyph-candidates"
+    if candidate and (value.get("recoveryRevision")!="pdf-glyph-candidates-v1"
+            or not isinstance(value.get("targetSHA256"),str)
+            or len(value["targetSHA256"])!=64 or any(char not in "0123456789abcdef" for char in value["targetSHA256"])):
+        raise ValueError("invalid_recovery_binding")
     if value["granularity"]=="sentence":
         sentence_pages=value.get("sentencePages")
         partial_pages=value.get("sentencePartialPages",[])
@@ -323,6 +328,12 @@ def validate_alignment(value, selected, page_count, source_sha):
                 raise ValueError("invalid_alignment_transform")
         paragraphs, seen = page.get("paragraphs"), set()
         if not isinstance(paragraphs, list): raise ValueError("invalid_alignment_paragraph")
+        if candidate:
+            unavailable=page.get("candidateTextUnavailable",False)
+            if (type(unavailable) is not bool or unavailable and (paragraphs or page["sourcePage"] in value.get("sentencePages",[]))
+                    or not unavailable and (len(paragraphs)!=1 or paragraphs[0].get("id")!=f'p{selected[local]}_0')):
+                raise ValueError("invalid_candidate_container")
+        elif "candidateTextUnavailable" in page:raise ValueError("invalid_candidate_container")
         count += len(paragraphs)
         if count > MAX_PARAGRAPHS: raise ValueError("alignment_too_large")
         for paragraph in paragraphs:

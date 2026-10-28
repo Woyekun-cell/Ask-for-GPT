@@ -1,0 +1,9 @@
+This is Ask for GPT, version one point one point fifty five, running inside the Zotero PDF reader.
+
+The English original and Chinese translation stay side by side. Change the reading background, and both panes follow the same theme. Here, sepia changes to snow.
+
+If one pane is enlarged, open the translation menu and choose Fit Width. The command now fits both the English and Chinese pages to their panes.
+
+Switch between the original, translated, and side by side views. The existing translated document is reused, so this demonstration does not request a new translation.
+
+When the page pass reaches its total, the finished correspondence indicator gets out of the way. Existing highlights remain visible. These changes keep the reading controls compact and the paper easy to compare.

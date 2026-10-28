@@ -256,6 +256,68 @@ def requests_for_page(prepared):
     return batches
 
 
+_NUMERIC_TOKEN = re.compile(r"[eE]\d+|[+\-\u2212]?(?:\d+(?:\.\d+)*|\.\d+)(?:[eE][+\-\u2212]?\d+)?")
+
+
+def _numeric_anchors(text, *, fragment=False):
+    # NFC preserves decimal/sign spelling and never folds superscripts into
+    # ordinary digits. e-prefixed article IDs remain complete identifiers.
+    text=unicodedata.normalize("NFC",text)
+    found=list(_NUMERIC_TOKEN.finditer(text))
+    if fragment:
+        remainder=_NUMERIC_TOKEN.sub("",text)
+        if (not found or any(not char.isspace() and unicodedata.category(char)[0] not in "PS" for char in remainder)):
+            return None
+        # A detached sign is not evidence for an unsigned number.
+        if any(char in remainder for char in "+-\u2212"):return ["".join(text.split())]
+    def identifier(char):return char=="_" or char.isascii() and char.isalnum()
+    result=[]
+    for match in found:
+        if not fragment and ((match.start() and identifier(text[match.start()-1]))
+                or (match.end()<len(text) and identifier(text[match.end()]))):continue
+        token=match.group()
+        result.append("e"+token[1:] if token[0] in "eE" else token)
+    return result
+
+
+def _numeric_link_compatible(source,target):
+    def compatible(left,right):
+        anchors=_numeric_anchors(left,fragment=True)
+        if anchors is None:return True
+        candidate=_numeric_anchors(right,fragment=True)
+        if candidate is None:candidate=_numeric_anchors(right)
+        return any(candidate[index:index+len(anchors)]==anchors for index in range(len(candidate)-len(anchors)+1))
+    if compatible(source,target):return True
+    # PDF text can split 159 into "1 59". This ambiguity cannot prove that an
+    # existing model edge is wrong; it never creates or redirects a link.
+    compact=lambda text:re.sub(r"(?<=\d)\s+(?=\d)","",text)
+    left,right=compact(source),compact(target)
+    return (left!=source or right!=target) and compatible(left,right)
+
+
+def filter_unsafe_numeric_sentence_links(value):
+    """Remove semantic rows when we cannot reconcile numeric anchors.
+
+    A merged saved row cannot be safely split back into original sentences.
+    Its phrases leave with it; immutable paragraph text and PDF geometry stay.
+    """
+    affected=set()
+    for page in value.get("pages",[]):
+        for paragraph in page["paragraphs"]:
+            rows=paragraph.get("sentences",[])
+            safe=[row for row in rows if row.get("method")!="semantic-model"
+                or _numeric_link_compatible(row["source"]["text"],row["target"]["text"])]
+            if len(safe)!=len(rows):
+                paragraph["sentences"]=safe;affected.add(page["sourcePage"])
+    if not affected:return False
+    value["sentencePages"]=[p for p in value.get("sentencePages",[]) if p not in affected]
+    value["sentencePartialPages"]=sorted(set(value.get("sentencePartialPages",[]))|affected)
+    if "phraseExtractedPages" in value:value["phraseExtractedPages"]=[p for p in value["phraseExtractedPages"] if p not in affected]
+    if isinstance(value.get("phraseCoverage"),dict):
+        value["phraseCoverage"]={key:row for key,row in value["phraseCoverage"].items() if key not in {str(p) for p in affected}}
+    return True
+
+
 def validate_matches(value,paragraphs):
     validate_request(paragraphs)
     expected={sentence["id"]:(paragraph, sentence) for paragraph in paragraphs for sentence in paragraph["source"]}
@@ -279,7 +341,13 @@ def validate_matches(value,paragraphs):
             if len(sources)>3 or len(targets)>3 or (len(sources)>1 and len(targets)>1):
                 raise ProtocolFailure("alignment_invalid")
             remaining-=sources
-    return value
+    result={identity:targets[:] for identity,targets in value.items()}
+    for identity,targets in result.items():
+        paragraph,source=expected[identity]
+        text={row["id"]:row["text"] for row in paragraph["target"]}
+        if targets and not _numeric_link_compatible(source["text"]," ".join(text[target] for target in targets)):
+            result[identity]=[]
+    return result
 
 
 def _input_digest(prepared):

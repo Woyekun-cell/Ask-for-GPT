@@ -305,7 +305,7 @@ class SentenceAlignmentTests(unittest.TestCase):
         manager=self.manager();job=self.install(manager);service=self.service(manager)
         route=f"/v1/pdf/jobs/{job.id}/alignment-upgrade";entered=threading.Event();release=threading.Event();events=[]
         real_s=NativeHelper.align;real_w=NativeHelper.align_phrases;original=phrase.phrase_requests
-        def split(units):return [request for unit in units for request in original([unit])]
+        def split(units,**options):return [request for unit in units for request in original([unit],**options)]
         def align(helper,request):events.append(("sentence",request[0]["id"]));return real_s(helper,request)
         def words(helper,request):
             events.append(("word",request[0]["id"]))
@@ -353,7 +353,7 @@ class SentenceAlignmentTests(unittest.TestCase):
         manager=self.manager();job=self.install(manager);service=self.service(manager)
         route=f"/v1/pdf/jobs/{job.id}/alignment-upgrade";entered=threading.Event();release=threading.Event();calls=[]
         real=NativeHelper.align_phrases;original_requests=phrase.phrase_requests
-        def split(units):return [b for u in units for b in original_requests([u])]
+        def split(units,**options):return [b for u in units for b in original_requests([u],**options)]
         def capture(helper,request):
             calls.append(request[0]["id"])
             if len(calls)==1:entered.set();release.wait(4)
@@ -373,7 +373,7 @@ class SentenceAlignmentTests(unittest.TestCase):
     def test_an_unfocused_prefetch_page_does_not_thrash_the_visible_page(self):
         manager=self.manager();job=self.install(manager);service=self.service(manager)
         route=f"/v1/pdf/jobs/{job.id}/alignment-upgrade";calls=[];real=NativeHelper.align_phrases;original=phrase.phrase_requests
-        def split(units):return [b for u in units for b in original([u])]
+        def split(units,**options):return [b for u in units for b in original([u],**options)]
         def capture(helper,request):calls.append(request[0]["id"]);return real(helper,request)
         with patch("sentence_service.phrase_requests",split),patch.object(NativeHelper,"align_phrases",capture):
             self.assertEqual(self.request(service,"POST",route,self.source.read_bytes(),pages="1,2")[0],202)
@@ -416,7 +416,7 @@ class SentenceAlignmentTests(unittest.TestCase):
         compose_dual(self.source,self.mono,[0,1],self.dual)
         manager=self.manager();job=self.install(manager);service=self.service(manager);route=f"/v1/pdf/jobs/{job.id}/alignment-upgrade"
         entered=threading.Event();release=threading.Event();calls=[];real=NativeHelper.align_phrases;original=phrase.phrase_requests
-        def split(units):return [b for u in units for b in original([u])]
+        def split(units,**options):return [b for u in units for b in original([u],**options)]
         def capture(helper,request):
             calls.append(request[0]["id"])
             if len(calls)==1:entered.set();release.wait(4)
@@ -790,7 +790,7 @@ class SentenceAlignmentTests(unittest.TestCase):
         service=self.service(manager);route=f"/v1/pdf/jobs/{job.id}/alignment-upgrade"
         pdfs={name:(job.directory/name).read_bytes() for name in ("mono.pdf","dual.pdf")}
         original_requests=phrase.phrase_requests;real=NativeHelper.align_phrases;calls=[]
-        def split(units):return [part for unit in units for part in original_requests([unit])]
+        def split(units,**options):return [part for unit in units for part in original_requests([unit],**options)]
         def later_timeout(helper,request):
             calls.append([unit["id"] for unit in request])
             if len(calls)==2:raise ProtocolFailure("alignment_timeout")
@@ -818,7 +818,7 @@ class SentenceAlignmentTests(unittest.TestCase):
         original_requests=phrase.phrase_requests
         from sentence_service import SentenceUpgradeService
         real=SentenceUpgradeService._align_phrase_request;calls=[]
-        def split(units):return [part for unit in units for part in original_requests([unit])]
+        def split(units,**options):return [part for unit in units for part in original_requests([unit],**options)]
         def consumed(service,helper,request,upgrade,budget):
             result=real(service,helper,request,upgrade,budget);calls.append(budget)
             budget.update(calls=4,deadline=time.monotonic()-1)

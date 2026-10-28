@@ -300,6 +300,43 @@ class PhraseAlignmentTests(unittest.TestCase):
         self.assertEqual(sizes,[70,70,150])
         self.assertEqual([u["id"] for batch in batches for u in batch],[u["id"] for u in rows])
 
+    def test_background_combines_two_medium_units_without_changing_any_input(self):
+        rows=[]
+        for index,words in enumerate((40,44)):
+            source,target="Gene "*words,"测"*48
+            rows.append(phrase.prepare_unit(f"p0_{index}_s0",
+                {"text":source,"glyphs":glyphs(source)},
+                {"text":target,"glyphs":glyphs(target,30)}))
+        default=phrase.phrase_requests(rows)
+        explicit=phrase.phrase_requests(rows,background=False)
+        background=phrase.phrase_requests(rows,background=True)
+        self.assertEqual([sum(len(u[side]) for u in batch for side in ("source","target")) for batch in default],[88,92])
+        self.assertEqual(explicit,default)
+        self.assertEqual([len(batch) for batch in background],[2])
+        self.assertEqual([u for batch in default for u in batch],background[0])
+        phrase.validate_phrase_request(background[0])
+
+    def test_background_keeps_two_unit_limit_and_never_splits_a_long_sentence(self):
+        rows=[]
+        for index,words in enumerate((1,1,1,140)):
+            source,target="Gene "*words,"测"*words
+            rows.append(phrase.prepare_unit(f"p0_{index}_s0",
+                {"text":source,"glyphs":glyphs(source)},
+                {"text":target,"glyphs":glyphs(target,30)}))
+        batches=phrase.phrase_requests(rows,background=True)
+        self.assertEqual([len(batch) for batch in batches],[2,1,1])
+        self.assertEqual([u["id"] for batch in batches for u in batch],[u["id"] for u in rows])
+        self.assertEqual(sum(len(batches[-1][0][side]) for side in ("source","target")),280)
+        for batch in batches:phrase.validate_phrase_request(batch)
+
+    def test_background_does_not_relax_the_hard_single_unit_protocol_bound(self):
+        source,target="Gene "*1100,"测"*1000
+        row=phrase.prepare_unit("p0_0_s0",{"text":source,"glyphs":glyphs(source)},
+            {"text":target,"glyphs":glyphs(target,30)})
+        for background in (False,True):
+            with self.subTest(background=background), self.assertRaises(ProtocolFailure):
+                phrase.phrase_requests([row],background=background)
+
     def test_verified_empty_word_response_reuses_exact_glyphs_without_becoming_guessed_links(self):
         page,prepared,_=self.real_fixture();row=prepared[0]
         updated=phrase.upgrade_phrase_page(page,prepared,{row["id"]:[]},preserve_unprepared=True)

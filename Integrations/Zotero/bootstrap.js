@@ -17,6 +17,7 @@ async function startup(data, reason) {
   loadScript('content/inline-core.js');
   loadScript('content/pdf-layout.js');
   loadScript('content/pdf-local-version.js');
+  loadScript('content/pdf-translated-annotations.js');
   loadScript('content/pdf-pane-gestures.js');
   loadScript('content/pdf-reading-tools.js');
   loadScript('content/pdf-hover-gloss.js');

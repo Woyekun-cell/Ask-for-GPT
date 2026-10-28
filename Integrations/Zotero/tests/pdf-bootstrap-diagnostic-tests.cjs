@@ -12,7 +12,7 @@ async function fixture(){
 }
 (async()=>{
   const f=await fixture(),secret='PRIVATE_PDF_TEXT_TOKEN_URL';
-  assert.equal(f.loads.length,23);assert(f.loads.every(call=>call.ignoreCache===true));
+  assert.equal(f.loads.length,24);assert(f.loads.every(call=>call.ignoreCache===true));
   assert.equal(new Set(f.loads.map(call=>call.target)).size,1);assert(f.loads.every(call=>call.url.startsWith('file:///fixture/content/')));
   assert(f.loads.findIndex(call=>call.url.endsWith('/pdf-layout.js'))<f.loads.findIndex(call=>call.url.endsWith('/inline.js')));
   process.stdout.write('PASS every owned startup module bypasses stale compiled script caches in order\n');
