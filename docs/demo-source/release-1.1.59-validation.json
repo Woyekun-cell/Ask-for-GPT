@@ -1,0 +1,349 @@
+{
+  "version": "1.1.59",
+  "pluginVersion": "0.3.93",
+  "scope": "Prepared from signed installed Mac inputs; shared sources retain existing platform adapters. No release/push performed by preparation.",
+  "productValidation": {
+    "MacPython": {
+      "testsRun": 498,
+      "failures": 0
+    },
+    "MacZoteroNamedPASS": 1128,
+    "MacRootAndStageSwift": {
+      "tests": 537,
+      "followupPDFLayoutTests": 9,
+      "followupLifecycleTests": 8,
+      "failures": 0
+    },
+    "browserTests": 39,
+    "installTests": 8
+  },
+  "sharedSourceValidation": {
+    "Python": {
+      "testsRun": 516,
+      "skipped": 4,
+      "failures": 0,
+      "errors": 0
+    },
+    "Swift": {
+      "tests": 538,
+      "failures": 0
+    },
+    "Zotero": {
+      "runner": "scripts/zotero-inline-test",
+      "namedPASS": 1140,
+      "status": "PASS"
+    },
+    "WindowsDesktopAcceptance": "NOT_RUN"
+  },
+  "sourceBinding": {
+    "SwiftSourceTreesMatchMacInputs": true,
+    "MacSourceArchiveSHA256": "74c20202eee03c770b1ad045a85c2ca7adf753466a89cf13517c7effa3ee35d4",
+    "MacSourceManifest": {
+      "status": "PASS",
+      "files": 352,
+      "bytes": 56576519,
+      "manifest": "docs/release-manifest.json",
+      "credentialsFound": false
+    },
+    "bundledPDFResourceFiles": 23,
+    "bundledZoteroMembers": 31,
+    "bundledZoteroSHA256": "9cd3e02636f179218e99b541796c1bd3e4c9321b5ebd156c2f25084ac7cc192c",
+    "sharedVsMacDifferences": [
+      {
+        "path": "Integrations/PDFLayout/batch_checkpoint.py",
+        "sharedSHA256": "6378d3d8322ddf020225d6394995e13c075001460449bf7ee029ed57436253c9",
+        "macSHA256": "27cb50adca68fc8488e9caacf42c300d73937d4cc010f12554a171f1f09a873b"
+      },
+      {
+        "path": "Integrations/PDFLayout/batch_permits.py",
+        "sharedSHA256": "5c6ee8195cbd9bfb1606abf2568701056416959062042d1d47f2cc3aa2915ac5",
+        "macSHA256": "d8bea96ed81905b5c32400e545bcdf8ffc4fa16765cfa44ccce05330c44fa4bb"
+      },
+      {
+        "path": "Integrations/PDFLayout/layout_common.py",
+        "sharedSHA256": "890b2660415c4eb1772af079e3d350fd0709262e92f170ef435b6d59e5eed70c",
+        "macSHA256": "5555e6fdce625454441ec4f29cd12f8a761e175cbc1aaa27a16f82c6666b0bf6"
+      },
+      {
+        "path": "Integrations/PDFLayout/legacy_alignment.py",
+        "sharedSHA256": "4af1db2e5f3c0f26496e9cff190c4232d3c7dd72ab29ef3e5deb3d5cd2a6172b",
+        "macSHA256": "5544d49d9b02f45ab129f117eda31794d53034438785dbed4fabd1ef455aa7e9"
+      },
+      {
+        "path": "Integrations/PDFLayout/platform_ops.py",
+        "sharedSHA256": "45cf412276a2acab85d17823c649d971302e28304fd0d3f494aacd662e9baf76",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/PDFLayout/prepare-assets.py",
+        "sharedSHA256": "6c2fabfa75556abae448ac71cbaae4cee848c55c815adef491e158efed3f30bb",
+        "macSHA256": "754442f7bcf516ff097a98cba35ac79ce84581bd9fb808dedfda31be0336f53b"
+      },
+      {
+        "path": "Integrations/PDFLayout/requirements.windows.lock",
+        "sharedSHA256": "20de0fe9e80d49233d284d40e2a83d414f4e51eea56db6ef55ace1823db23d1e",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/PDFLayout/selection_service.py",
+        "sharedSHA256": "75cebad9a4e3c8ec7a0864005ddbbb895f3f6be7bb42bc02defc729bf74f5f93",
+        "macSHA256": "f6bf2005766193ef689748d2b86344084a18837034803edc6c9f6f87b8c49c94"
+      },
+      {
+        "path": "Integrations/PDFLayout/server.py",
+        "sharedSHA256": "0ccc234ff99e4944d02f39730aacc82ebff92800d85c899cbd8304aef71a41e6",
+        "macSHA256": "510c8f34adda2daadfdf3590055b256bf2e6f023984d6f259e8dfcd585e3ff24"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/helper_fixture.py",
+        "sharedSHA256": "4a2c051541c71810fe2dcf067b817e34522d10069d07c40d790acb6952ae5603",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_alignment_page_index.py",
+        "sharedSHA256": "609da163ebc5b1c3345aaaecac7b5709d19840169be611adbef172259b5a7157",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_alignment_snapshot_cache.py",
+        "sharedSHA256": "2cb61d400446500baccfa1a9faec5c730ab34ff21c56d47e6b076ff169254e1d",
+        "macSHA256": "ba58b12bbc24f8958ca92623256410069ee2bc4937d1a6102e6e62b1a0822bce"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_batch_permits.py",
+        "sharedSHA256": "429cb630cb2a5bb6737cd8cb3d1ce0667a6ba678a0c06650605a611931481942",
+        "macSHA256": "563a9c2c31505812a57ad256349f34b38247784170041319718482e310fc7494"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_completed_cache.py",
+        "sharedSHA256": "5df0560a669a7fc49b5252a3b3d10062a3b69ec1aa772acb92fb08129007ca24",
+        "macSHA256": "5d1a5b3923d60e49fed608448c814e1a28854428bf56d18c4a0a86e741e5679d"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_contract.py",
+        "sharedSHA256": "118ee62412e6c5bd529776b6b584ae9818bfab38957712751e133cebca68e676",
+        "macSHA256": "484d30337e55f7470d6f9ec4d12cbe64e2ecbdc5eab9f3617f08242e5172f42d"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_figure_regions.py",
+        "sharedSHA256": "be0215de74f89e8a0f10144bf2485fe92c1439893433194a88d69022a762a25a",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_gpt_batch.py",
+        "sharedSHA256": "734d22e9ba0fb47c79744aa496e0551ee30149f8529a27a7509f4b76bb033f3d",
+        "macSHA256": "1f89b1ea263339b9fcaf654634f7a5c4790cde92826cd2e7c3cd39a0c683d0bd"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_phrase_alignment.py",
+        "sharedSHA256": "42e79a41e5aef525ca9560c59c97ef49fb1d07602e85e2a25bfaa4931984fd8d",
+        "macSHA256": "2f6f30a9e2b8523480861d98697131872a189f01c2e38813f4f2bc7078e2a064"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_phrase_helper.py",
+        "sharedSHA256": "02a062b0b727e8e20d8ac3493c215d7417119298cce6909008e5f7f48471b3a5",
+        "macSHA256": "dae112b4749568df324c1132f07568f0958f263b327a6cf256d289894ca8a1c1"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_platform_ops.py",
+        "sharedSHA256": "dd039c4f9b9368bd05dfb457d1205a1a8f2556d672a537e9e8395f0fcfa4442c",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_portable_cached_pdf.py",
+        "sharedSHA256": "367ca031e2ab8803f67c8886fc54a364e05df695542e6e2ea3c36c182df487ee",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_portable_selection_source.py",
+        "sharedSHA256": "6fed5ee502ccf2fc0bd83d0ce761452506cbba3444fe7a10a54e4c1a3313eb1d",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_prepare_pdf.ps1",
+        "sharedSHA256": "e6392ac8438f4d00201a6fee53a68f5768b496eb053c1d53a288f8df030bfc19",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_sentence_alignment.py",
+        "sharedSHA256": "ac341a3b29bfca5a9411efa083f84c6eb2cc32a9e6cb61770ef6a3aeafe561e7",
+        "macSHA256": "3bd3810abafcafac483180c21be4084727b0e8f8fd7c88ce9171be2ad18ff70c"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_server.py",
+        "sharedSHA256": "0d7a8da6478bf3b158f1e27e1ea1a92161c1eba82c7dc32557aeef33c0f43257",
+        "macSHA256": "bade8eec72d2ad236295559d685aefcf9fa5b2b7b33023042c9a9493999c310a"
+      },
+      {
+        "path": "Integrations/PDFLayout/tests/test_worker.py",
+        "sharedSHA256": "c370b6ef7b9e69880ec239b838df93ca0b19d4501c908341231b56cff092c9fa",
+        "macSHA256": "2717a101c89dc4e5ae75929dd8c4002f5d5d02641d03aabf77d2f2e4ffb5f577"
+      },
+      {
+        "path": "Integrations/PDFLayout/worker.py",
+        "sharedSHA256": "62cc53a5e569f0ce7aaeb19188adeec1bc232b2fdea145a7812f7ac4a78e963d",
+        "macSHA256": "f716e676bc6d64d16f8c261d7b33f39c41e4299f0510a01b5f619031e0ea5998"
+      },
+      {
+        "path": "Integrations/Zotero/bootstrap.js",
+        "sharedSHA256": "518210231efd1f88eb21f712ad592b33b6c59db1d4b5dd76df087b89c773236d",
+        "macSHA256": "1f2f7a47f89e3862f7ec261fd8148e968a9a3e69d94da649a5ab6bf8ce8bb1c0"
+      },
+      {
+        "path": "Integrations/Zotero/content/connection-security.js",
+        "sharedSHA256": "71876cd00e140659f74cc2a162217c41d2a242eb40468d03c3a30e610fa6bcbb",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/Zotero/content/inline.js",
+        "sharedSHA256": "b003f7de76171ebf7573f03d729b5ce611a3cb65b4e13ddc42ca860f7f040916",
+        "macSHA256": "d60eac098509c2635b5928309e8d7bd82202840fd31a75f38729a75f40506a3a"
+      },
+      {
+        "path": "Integrations/Zotero/tests/connection-security-tests.cjs",
+        "sharedSHA256": "896169bf09807546e89a9319c97a531026cfcb7234ad4b9249da988e0ef5b701",
+        "macSHA256": null
+      },
+      {
+        "path": "Integrations/Zotero/tests/pdf-bootstrap-diagnostic-tests.cjs",
+        "sharedSHA256": "02ec1fdfce46540b2ecee982b6e5f330d9ce7ae7c5ac97ec8157439ee490027d",
+        "macSHA256": "33bf93da7854d02ec3f3f63ab342d40d934c6a34ba4f4ddc8b9ff477cc839f3e"
+      },
+      {
+        "path": "Resources/Distribution/LICENSE-SQLitePCLRaw-Apache-2.0.txt",
+        "sharedSHA256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "macSHA256": null
+      },
+      {
+        "path": "Resources/Distribution/LICENSE-dotnet-runtime.txt",
+        "sharedSHA256": "cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310",
+        "macSHA256": null
+      },
+      {
+        "path": "Resources/Distribution/NOTICE-dotnet-runtime.txt",
+        "sharedSHA256": "66f1d4e44973185519bb4aa8a9718eb22fc7af2cc532e3ae9cfc4c127ee7fc54",
+        "macSHA256": null
+      },
+      {
+        "path": "Resources/Distribution/examples/claude-code.example.json",
+        "sharedSHA256": "d05a47ddf6aa50fab6b217207017f624822e527271bfb109b14f8cc0a7641781",
+        "macSHA256": null
+      },
+      {
+        "path": "Resources/Distribution/examples/deepseek.example.json",
+        "sharedSHA256": "3e615045bf8fd959a837489f97da72f0c4f8ea4cdd0e6009b03f0190341b28ef",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/package-pdf-layout",
+        "sharedSHA256": "8118f183f37ab96d715059b811ec53e23f49a43ae0556e03604de65112c6c462",
+        "macSHA256": "508ff8fddb48c250ff79a7405218466b7e87b40cd95351e1f9c9faab0c105cb2"
+      },
+      {
+        "path": "scripts/prepare-github-release",
+        "sharedSHA256": "09e23d4227cf8c5bf34814dced330ff1469f142016b46cfd22709ec7b0d06d95",
+        "macSHA256": "27f3ee69132fece7ae2c72e6bf1f327294c5918d784412d72661348f5daf173e"
+      },
+      {
+        "path": "scripts/windows/browser-test-deps/package-lock.json",
+        "sharedSHA256": "107523f51aa5f0fe67d0fdd0d5245fb9b0eb5b3ee794b0502be5077f1fcda2e7",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/browser-test-deps/package.json",
+        "sharedSHA256": "7ba66433000faf6cd63d9526e0c993e987e24797f29dff822cef5834c1f26893",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/build.ps1",
+        "sharedSHA256": "fb5876a5faaebdffb53ed87134826e4cf72abc02437135598a434806432c37f3",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/installer.nsi",
+        "sharedSHA256": "ac4ea965548a6fb66d7f19df3a9782bc8e5ee854c6584a669423be396eca16d0",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/package.py",
+        "sharedSHA256": "8b09ab142a0863779602653cb47a8929943d078a20482cfda4d20263f90c2106",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/prepare-codex.ps1",
+        "sharedSHA256": "c51c6cd65d0f05da56f330ca20e98db8d86530e1b2903b16e104cfd4f718a2b0",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/prepare-pdf.ps1",
+        "sharedSHA256": "638f073d8cfbaa4c6399486ba1291e00d6935ade373d97e598da04ee698c227d",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/test-integrations.ps1",
+        "sharedSHA256": "3d4fa9affdaebe1f437b5f26343677ff03edc795cdeffbb78a1e4d9e7718f1e8",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/tests/test_package.py",
+        "sharedSHA256": "846bd0c387df8f426c0794014d21efb25b846627e34aeef164f1f555a12f5076",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/tests/test_prepare_codex_archive.ps1",
+        "sharedSHA256": "b4c2e3598fdd62cb221a0b23d61acac9ad3ff9d89cc6b9c4860e88f49b9c9e05",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/toolchain.json",
+        "sharedSHA256": "6215309c9efe417801a23b80b4254a026ab7c9d953addcabedd700f654975989",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/windows/zip-package.py",
+        "sharedSHA256": "643b88c5cce8d0f951c28a983d9e44b1bd7dbe947d0c0a8c40ef70606994dd30",
+        "macSHA256": null
+      },
+      {
+        "path": "scripts/zotero-inline-test",
+        "sharedSHA256": "b30d2a4c27f119aeabff8961db9a7396cee00dd683d2c3f07c00f34e6ab63d5c",
+        "macSHA256": "4ba37bc939737b6b2a0e5b1094fca0cb0a8a9e406664bd11e55c92839c4ab4c6"
+      }
+    ],
+    "translationBackend": "Codex only; historical API/Claude adapter changes were excluded"
+  },
+  "observedTitleMappingSeconds": {
+    "firstLookupRange": [
+      8,
+      17
+    ],
+    "cacheHitRange": [
+      0.2,
+      1.5
+    ],
+    "scope": "Title correspondence requests; not whole-document translation throughput"
+  },
+  "offlineSidecarReplay": {
+    "inputBytes": 22678676,
+    "inputSHA256": "3be6c31175fbdc5675540f11e849424dee8feffb860a554f6853e8efa4f7da80",
+    "pageCount": 29,
+    "runsPerVersion": 3,
+    "directPublishMedianCPUSeconds": {
+      "before": 3.627,
+      "after": 2.008
+    },
+    "sentenceStyleMedianCPUSeconds": {
+      "before": 4.125,
+      "after": 2.698
+    },
+    "medianOfPerRunMaximumLockHoldSeconds": {
+      "before": 4.188,
+      "after": 0.001487
+    },
+    "scope": "Isolated local CPU replay of fixed raw sidecar; not GPT or whole-document speed. Private local paths and paper cache are excluded."
+  },
+  "notarized": false,
+  "freshMacAcceptance": "NOT_RUN",
+  "WordWPS": "Unchanged in this release",
+  "existingVideoAndGallery": "Kept as previously published material, not new captures"
+}

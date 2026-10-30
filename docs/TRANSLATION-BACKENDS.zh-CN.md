@@ -1,6 +1,6 @@
 # 选择自己的翻译服务
 
-> 版本范围：macOS 1.1.55 安装包使用 Codex，未包含本文的 API / Claude 可选适配。本文保留历史版本及 Windows 预览版配置参考；不要将这些选项视为 1.1.55 macOS 界面功能。
+> 版本范围：macOS 1.1.59 安装包使用 Codex，未包含本文的 API / Claude 可选适配。本文保留历史版本及 Windows 预览版配置参考；不要将这些选项视为 1.1.59 macOS 界面功能。
 
 [返回首页](../README.md) · [macOS 安装指南](INSTALL.macOS.zh-CN.md) · [Zotero 阅读指南](ZOTERO.zh-CN.md)
 
@@ -33,7 +33,7 @@ Zotero 的原文/译文/对照、标注和联动阅读操作保持相同。配�
 
 使用纯文本编辑器保存 UTF-8 JSON。将 `YOUR_NAME`、`YOUR_MODEL_ID`和示例路径改成自己的值；JSON 不支持注释，也不要在最后一个字段后留逗号。配置文件与密钥放在自己的用户目录，方便更新应用时继续使用。
 
-源码中的示例位于 [DeepSeek 示例](../Resources/Distribution/examples/deepseek.example.json)和 [Claude Code 示例](../Resources/Distribution/examples/claude-code.example.json)。DMG / ZIP 下载包在本指南旁边的 `examples/`中附带同样文件。
+源码中的示例位于 [DeepSeek 示例](../Resources/Distribution/examples/deepseek.example.json)和 [Claude Code 示例](../Resources/Distribution/examples/claude-code.example.json)。本次 Codex-only Mac 下载包不附这些历史示例；可从上面的共享源码链接获取。
 
 ## 2. 使用 DeepSeek 或兼容的 API
 

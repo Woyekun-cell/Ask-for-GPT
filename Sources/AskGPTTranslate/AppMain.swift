@@ -124,7 +124,8 @@ import AskGPTCore
                 } else if alignmentMode {
                     code = error is PDFSentenceAlignmentError ? "alignment_invalid" : "gpt_unavailable"
                 } else if batchMode {
-                    code = error is PDFBatchTranslationError ? "batch_invalid" : "gpt_unavailable"
+                    if case CodexBackendError.timeout = error { code = "translation_timeout" }
+                    else { code = error is PDFBatchTranslationError ? "batch_invalid" : "gpt_unavailable" }
                 } else { switch error as? NativeTranslationError {
                 case .languagePackMissing: code = "language_pack_missing"
                 case .unsupportedLanguagePair: code = "unsupported_language"

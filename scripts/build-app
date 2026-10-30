@@ -51,6 +51,8 @@ info={
  'CFBundleExecutable':'AskGPT',
  'CFBundleIconFile':'AppIcon.icns',
  'CFBundlePackageType':'APPL',
+ 'CFBundleURLTypes':[{'CFBundleURLName':'local.askgpt.reader.connection',
+                      'CFBundleURLSchemes':['askgpt'],'CFBundleTypeRole':'Viewer'}],
  'CFBundleShortVersionString':os.environ.get('ASKGPT_BUILD_NUMBER') or automatic_version,
  'CFBundleVersion':os.environ.get('ASKGPT_BUILD_NUMBER') or automatic_version,
  'LSMinimumSystemVersion':'13.0',

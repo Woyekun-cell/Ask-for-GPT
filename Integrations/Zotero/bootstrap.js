@@ -16,6 +16,7 @@ async function startup(data, reason) {
   const loadScript=path=>Services.scriptloader.loadSubScriptWithOptions(data.rootURI+path,{target:scope,ignoreCache:true});
   loadScript('content/inline-core.js');
   loadScript('content/pdf-layout.js');
+  loadScript('content/pdf-connection.js');
   loadScript('content/pdf-local-version.js');
   loadScript('content/pdf-translated-annotations.js');
   loadScript('content/pdf-pane-gestures.js');
@@ -52,9 +53,12 @@ async function startup(data, reason) {
     }).catch(() => {});
     return diagnosticWrite;
   };
-  scope.instance = scope.AskGPTInline.create({ Zotero, Services, Components, ChromeUtils, IOUtils, css, reportDiagnostic,
+  const dependencies = { Zotero, Services, Components, ChromeUtils, IOUtils, css, reportDiagnostic,
     pluginID: data.id, rootURI: data.rootURI, readText: path => Zotero.File.getContentsAsync(path, 'UTF-8', 4096),
-    setTimer: setTimeout, clearTimer: clearTimeout });
+    setTimer: setTimeout, clearTimer: clearTimeout };
+  scope.pdfConnection = scope.AskGPTPDFConnection.create(dependencies);
+  dependencies.ensurePDFReady = scope.pdfConnection.ensure;
+  scope.instance = scope.AskGPTInline.create(dependencies);
   askGPTInlineScope = scope;
   scope.instance.start();
 }
@@ -63,6 +67,7 @@ function onMainWindowLoad({ window }) { askGPTInlineScope?.instance?.attachMainW
 function onMainWindowUnload({ window }) { askGPTInlineScope?.instance?.detachMainWindow(window); }
 function shutdown(data, reason) {
   askGPTInlineGeneration++;
+  askGPTInlineScope?.pdfConnection?.dispose();
   askGPTInlineScope?.instance?.shutdown();
   askGPTInlineScope = null;
 }

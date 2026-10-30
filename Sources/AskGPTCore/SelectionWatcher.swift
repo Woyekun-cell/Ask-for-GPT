@@ -7,7 +7,7 @@ struct StableSelectionGate {
 
     mutating func observe(_ selection: CapturedSelection?) -> CapturedSelection? {
         guard let selection else {
-            pendingIdentity = nil
+            reset()
             return nil
         }
         let identity = selection.excerpt.identity
@@ -23,6 +23,8 @@ struct StableSelectionGate {
         lastEmittedIdentity = identity
         return selection
     }
+
+    mutating func beginGesture() { pendingIdentity = nil }
 
     mutating func reset() {
         pendingIdentity = nil
@@ -75,7 +77,7 @@ public final class SelectionWatcher {
             await Task.yield()
             guard let self, self.monitor != nil, !Task.isCancelled else { return }
             // An interrupted gesture cannot supply one of the next gesture's two stable samples.
-            _ = self.gate.observe(nil)
+            self.gate.beginGesture()
             _ = self.gate.observe(self.capture.capture())
             for _ in 0..<2 {
                 do { try await Task.sleep(nanoseconds: 500_000_000) }

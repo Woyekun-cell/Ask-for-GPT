@@ -215,17 +215,20 @@ import os
         status = "正在回答…"
         sendTask = Task { [weak self] in
             guard let self else { return }
+            var requestThread: String?
             do {
                 guard !Task.isCancelled else { return }
                 await chatCancellation.settle()
                 guard generation == conversationGeneration, ticket == ledger.activeTicket, !Task.isCancelled else { return }
                 let currentThread: String
                 var input = text
-                if let existing = threadID { currentThread = existing }
+                if let existing = threadID { currentThread = existing; requestThread = existing }
                 else {
                     currentThread = try await engine.startSession(instructions: Self.readingInstructions)
+                    requestThread = currentThread
                     guard generation == conversationGeneration, ticket == ledger.activeTicket, !Task.isCancelled else {
-                        await engine.interrupt(threadID: currentThread); return
+                        await Task { await engine.releaseSession(threadID: currentThread) }.value
+                        return
                     }
                     threadID = currentThread
                     input = Self.firstInput(origin: origin, history: previous, question: text)
@@ -252,6 +255,13 @@ import os
                 modelVerified = settings == appliedSettings
                 status = "回答完成"
             } catch {
+                // Cleanup belongs to this request's backend, even after settings
+                // or selection changes. An unknown thread/start needs retirement.
+                if let requestThread {
+                    await Task { await engine.releaseSession(threadID: requestThread) }.value
+                } else {
+                    await Task { await engine.shutdown() }.value
+                }
                 guard generation == conversationGeneration, ticket == ledger.activeTicket else { return }
                 ledger.cancel(ticket: ticket)
                 isSending = false
@@ -706,6 +716,7 @@ import os
         let previousBackend = backend
         backend = CodexBackend(settings: settings, capabilities: .webChat)
         connectionGeneration = UUID()
+        isTesting = false
         let generation = connectionGeneration
         threadID = nil
         modelVerified = false
@@ -734,17 +745,26 @@ import os
         status = "正在测试所选模型…"
         Task { [weak self] in
             guard let self else { return }
+            var session: String?
             do {
                 await chatCancellation.settle()
-                let session = try await engine.startSession(instructions: "仅回复用户要求的公开测试内容，不使用工具。")
-                let result = try await engine.send(threadID: session, text: "请只回复：连接成功。", onDelta: { _ in })
+                guard generation == connectionGeneration, !shuttingDown else { return }
+                let created = try await engine.startSession(instructions: "仅回复用户要求的公开测试内容，不使用工具。")
+                session = created
+                let result = try await engine.send(threadID: created, text: "请只回复：连接成功。", onDelta: { _ in })
+                await Task { await engine.releaseSession(threadID: created) }.value
                 guard generation == connectionGeneration else { return }
                 isTesting = false
                 modelVerified = settings == appliedSettings
                 status = String(format: "模型验证通过 · %.1f 秒", result.totalSeconds)
-                await engine.releaseSession(threadID: session)
             } catch {
+                if let session {
+                    await Task { await engine.releaseSession(threadID: session) }.value
+                } else {
+                    await Task { await engine.shutdown() }.value
+                }
                 guard generation == connectionGeneration else { return }
+                if session == nil { threadID = nil }
                 isTesting = false; modelVerified = false; errorMessage = error.localizedDescription; status = "模型验证未通过"
             }
         }

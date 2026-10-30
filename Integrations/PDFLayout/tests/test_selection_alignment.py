@@ -160,6 +160,54 @@ class SelectionAlignmentTests(unittest.TestCase):
         with patch.object(NativeHelper,'align_selection',autospec=True,side_effect=capture) as align:
             self.assertIsNone(service.align(job,query)['link']);self.assertEqual(align.call_count,1)
 
+    def test_oversized_parent_uses_proven_sentence_and_restores_exact_cached_links(self):
+        import io
+        import phrase_alignment
+        import selection_service
+        self.semantic_first_page();self.selection_helper()
+        manager=self.manager();job=self.install(manager);service=manager.selection_alignments
+        raw=self.source.read_bytes();service.install_source(job,io.BytesIO(raw),len(raw))
+        before=(raw,(job.directory/'mono.pdf').read_bytes(),manager.read_alignment(job))
+        # Eight tokens fit either proven sentence, but not the enclosing block.
+        with patch.object(phrase_alignment,'MAX_PHRASE_TOKENS',8):
+            for side,text,peer in [('source','blocks','Blocking'),('target','Binding','binds')]:
+                query=self.query(side=side,text=text)
+                def match(helper,unit,selected_side,start,end):
+                    self.assertLessEqual(len(unit['source'])+len(unit['target']),8)
+                    chosen=unit[selected_side][start:end+1]
+                    self.assertEqual([t['text'] for t in chosen],[text])
+                    other='target' if selected_side=='source' else 'source'
+                    return {selected_side+'IDs':[t['id'] for t in chosen],
+                        other+'IDs':[next(t['id'] for t in unit[other] if t['text']==peer)]}
+                with patch.object(NativeHelper,'align_selection',autospec=True,side_effect=match):
+                    value=service.align(job,query)
+                self.assertEqual(value['link'][side]['text'],text)
+                self.assertEqual(value['link']['target' if side=='source' else 'source']['text'],peer)
+                fresh=selection_service.SelectionAlignmentService(manager)
+                try:
+                    with patch.object(NativeHelper,'align_selection',side_effect=AssertionError('cached link called model')):
+                        self.assertEqual(fresh.align(job,query)['link'],value['link'])
+                        self.assertTrue(fresh.align(job,query)['cached'])
+                        self.assertIn(value['link'],fresh.links(job,0)['links'])
+                finally:fresh.shutdown()
+        self.assertEqual((self.source.read_bytes(),(job.directory/'mono.pdf').read_bytes(),manager.read_alignment(job)),before)
+
+    def test_oversized_parent_without_unique_verified_sentence_never_calls_model(self):
+        import io
+        import phrase_alignment
+        for mode in ('unverified','cross_sentence','overlap'):
+            self.semantic_first_page()
+            if mode=='unverified':self.value['pages'][0]['paragraphs'][0]['sentences']=[]
+            if mode=='overlap':
+                rows=self.value['pages'][0]['paragraphs'][0]['sentences']
+                rows[1]['target']=copy.deepcopy(rows[0]['target'])
+            manager=self.manager();job=self.install(manager);service=manager.selection_alignments
+            raw=self.source.read_bytes();service.install_source(job,io.BytesIO(raw),len(raw))
+            query=self.query(text='binds. Second' if mode=='cross_sentence' else 'binds')
+            with patch.object(phrase_alignment,'MAX_PHRASE_TOKENS',8),patch.object(NativeHelper,'align_selection',side_effect=AssertionError('unproven oversized owner called model')):
+                with self.assertRaises(ProtocolFailure):service.align(job,query)
+            self.assertFalse(list(job.directory.glob('selection-*.json')))
+
     def test_sentence_context_requires_unique_both_side_ownership_and_complete_parent_tokens(self):
         import io
         import selection_service as selection

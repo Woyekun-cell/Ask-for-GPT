@@ -315,9 +315,13 @@ public actor PDFLayoutService: PDFLayoutServing {
         catch is CancellationError { throw CancellationError() }
         catch { throw PDFLayoutServiceError.unavailable }
         try Task.checkCancellation()
-        guard let http = response as? HTTPURLResponse, acceptable.contains(http.statusCode) else {
-            throw PDFLayoutServiceError.unavailable
+        guard let http = response as? HTTPURLResponse else { throw PDFLayoutServiceError.unavailable }
+        if request.httpMethod == "POST", request.url?.path == "/v1/pdf/jobs", http.statusCode == 409,
+           data.count <= 64_000, let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           value["error"] as? String == "job_conflict" {
+            throw PDFLayoutServiceError.requestFailed("已有相同翻译正在进行，或同时处理数量已达上限，请稍后重试。")
         }
+        guard acceptable.contains(http.statusCode) else { throw PDFLayoutServiceError.unavailable }
         return data
     }
 

@@ -84,6 +84,32 @@ struct PDFLayoutServiceTests {
             "an unresponsive owned child survived the shutdown deadline")
     }
 
+    @Test func exactDuplicateConflictReportsBusyWithoutOwningOrCancellingAnotherJob() async throws {
+        let fixture = try PDFLayoutLifecycleFixture()
+        defer { fixture.cleanup() }
+        let service = fixture.service()
+        try await service.start(configurationURL: fixture.configuration)
+        do {
+            for (status, body, conflict) in [(409, "{\"error\":\"job_conflict\"}", true),
+                (400, "{\"error\":\"job_conflict\"}", false), (409, "{\"error\":\"private_detail\"}", false),
+                (409, String(repeating: "x", count: 64_001), false)] {
+                try body.write(to: fixture.directory.appendingPathComponent("post-error"), atomically: true, encoding: .utf8)
+                try String(status).write(to: fixture.directory.appendingPathComponent("post-status"), atomically: true, encoding: .utf8)
+                do {
+                    _ = try await service.createJob(data: Data("%PDF-fixture".utf8), pages: nil, source: "en", target: "zh-Hans")
+                    Issue.record("refused duplicate unexpectedly returned a job ID")
+                } catch let error as PDFLayoutServiceError {
+                    if conflict {
+                        guard case .requestFailed(let message) = error else { Issue.record("409 conflict became unavailable"); continue }
+                        #expect(message.contains("相同翻译") && message.contains("上限"))
+                    } else { #expect(error == .unavailable) }
+                }
+            }
+            #expect(!FileManager.default.fileExists(atPath: fixture.directory.appendingPathComponent("deleted").path))
+            await service.shutdown()
+        } catch { await service.shutdown(); throw error }
+    }
+
     @Test func jobMappingUsesOriginalZeroBasedPages() throws {
         let value = PDFLayoutJob(id: "private-job_3", state: .complete, sourcePages: [2], pageCount: 10)
         try value.validate()
@@ -225,6 +251,12 @@ p=argparse.ArgumentParser();p.add_argument('--config');p.add_argument('--transla
 c=json.loads(pathlib.Path(a.config).read_text());root=pathlib.Path(a.cache_root)
 class Handler(BaseHTTPRequestHandler):
  def log_message(self,*a):pass
+ def do_POST(self):
+  self.rfile.read(int(self.headers.get('Content-Length','0')))
+  data=(root/'post-error').read_bytes();status=int((root/'post-status').read_text())
+  self.send_response(status);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+ def do_DELETE(self):
+  (root/'deleted').write_text(self.path);self.send_response(204);self.end_headers()
  def do_GET(self):
   data=b'{"status":"ready","protocolVersion":1}';self.send_response(200);self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
 HTTPServer.allow_reuse_address=True

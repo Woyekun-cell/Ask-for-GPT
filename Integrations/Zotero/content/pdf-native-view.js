@@ -143,7 +143,7 @@
     return h.map(n=>n.toString(16).padStart(8,'0')).join('');
   }
   const signature=value=>sha256(JSON.stringify(value));
-  const mappingSignature=mapped=>signature({rects:mapped.rects,text:mapped.text,identity:!!mapped.identity});
+  const mappingSignature=mapped=>signature({rects:mapped.rects,text:mapped.identity?null:mapped.text,identity:!!mapped.identity});
   const glyphSignature=mapped=>signature((mapped.selectedGlyphs||[]).map(g=>[glyphKey(g),g.text]));
   function createMapper(alignment,mode,sourceView,targetView,selectionLinks=()=>[],options={}){
     const pages=alignment.pages,bySource=new Map(pages.map(page=>[page.sourcePage,page]));
@@ -156,7 +156,7 @@
       const physical=native===sourceView?index:pages[index]?.sourcePage,key=(native===sourceView?'source:':'target:')+physical,chars=native?._pdfPages?.[index]?.chars;
       if(!chars?.length){nativeSnapshots.delete(key);return chars;}if(!Array.isArray(chars)||chars.length>200000)return chars;
       const cached=nativeSnapshots.get(key);if(cached?.native===native&&cached.chars===chars&&cached.length===chars.length){nativeSnapshots.delete(key);nativeSnapshots.set(key,cached);return cached.values;}
-      const values=[];for(let i=0;i<chars.length;i++){const char=chars[i],r=nativeGlyphRect(char.rect);values.push({c:char.c,rect:r,index:i});}
+      const values=[];for(let i=0;i<chars.length;i++){const char=chars[i],r=nativeGlyphRect(char.rect);values.push({c:char.c,rect:r,inlineRect:nativeGlyphRect(char.inlineRect),index:i,spaceAfter:char.spaceAfter===true,lineBreakAfter:char.lineBreakAfter===true});}
       nativeSnapshots.delete(key);nativeSnapshots.set(key,{native,chars,length:chars.length,physical,values});while(nativeSnapshots.size>4)nativeSnapshots.delete(nativeSnapshots.keys().next().value);return values;
     }
     function invalidateNativePages(physicalPages){for(const [key,entry] of nativeSnapshots)if(!physicalPages||physicalPages.includes(entry.physical))nativeSnapshots.delete(key);}
@@ -269,7 +269,11 @@
       const reject=(detail='coverage',count=1)=>{throw sentenceFailure(detail,{outputPage:page.outputPage,sourcePage:page.sourcePage,selectionRects:position.rects.length,matchedSentences:matched.length,uncoveredRects:count});};
       if(!matched.length)reject('unmatched',position.rects.length);
       const identityRows=matched.filter(row=>row.method==='glyph-identity');
-      if(identityRows.length&&position.rects.every(r=>coveredByRects(r,identityRows.flatMap(row=>row[from].rects))))return {identity:true,rects:copy(position.rects),text:null};
+      if(identityRows.length&&position.rects.every(r=>coveredByRects(r,identityRows.flatMap(row=>row[from].rects)))){
+        const native=from==='source'?sourceView:typeof targetView==='function'?targetView():targetView,chars=nativeChars(native,from==='source'?page.sourcePage:page.outputPage),matrix=from==='target'&&mode==='dual'?invert(page.targetToDual):identity;
+        const glyphs=(chars||identityRows.flatMap(row=>row[from].glyphs||[])).map((g,index)=>({...g,index,text:g.c??g.text,rect:g.rect?transformRect(matrix,g.rect):null})).filter(g=>g.rect&&position.rects.some(r=>centerIn(g.rect,r)));
+        return {identity:true,rects:copy(position.rects),text:glyphs.length?nativeSelectionText(glyphs):null};
+      }
       const uncovered=position.rects.filter(r=>!coveredByRects(r,matched.flatMap(row=>row[from].rects))).length;if(uncovered&&!knownOnly)reject('coverage',uncovered);
       const pool=matched.flatMap(row=>(row[from].glyphs||[]).filter(meaningful)),selected=new Map(),units=matched.flatMap(row=>row.phrases||[]);
       if(!pool.length||!units.length)reject('no_phrases');
@@ -355,7 +359,7 @@
         if(!equalRects(mapped.rects,canonical)||!!mapped.identity!==part.identity)return null;
         const text=(mapped.selectedGlyphs||[]).map(g=>g.text).join('');
         if(compact){if(mappingSignature(mapped)!==part.mappingSHA256||glyphSignature(mapped)!==part.glyphSHA256)return null;}
-        else {const keys=(mapped.selectedGlyphs||[]).map(glyphKey);if(mapped.text!==part.sourceText||keys.length!==part.glyphKeys.length||keys.some((key,index)=>key!==part.glyphKeys[index])||text!==part.glyphText)return null;}
+        else {const keys=(mapped.selectedGlyphs||[]).map(glyphKey);if((mapped.identity?null:mapped.text)!==part.sourceText||keys.length!==part.glyphKeys.length||keys.some((key,index)=>key!==part.glyphKeys[index])||text!==part.glyphText)return null;}
         selectedText+=text;
         restored.push({pageIndex:page.outputPage,rects:part.rects.map(r=>mode==='dual'?transformRect(page.targetToDual,r):copy(r))});
       }
@@ -397,25 +401,45 @@
         return candidates(page.paragraphs,false);
       }catch(_){return [];}
     }
+    function nativeSelection(position,side){
+      if(!['source','target'].includes(side)||!Number.isInteger(position?.pageIndex)||position.nextPageRects!==undefined||!Array.isArray(position.rects)||!position.rects.length||position.rects.length>5000||!position.rects.every(rect))return null;
+      const page=side==='source'?bySource.get(position.pageIndex):pages[position.pageIndex];if(!page)return null;
+      const active=typeof targetView==='function'?targetView():targetView,native=side==='source'?sourceView:active,chars=nativeChars(native,side==='source'?page.sourcePage:page.outputPage);if(!chars?.length)return null;
+      const matrix=side==='target'&&mode==='dual'?invert(page.targetToDual):identity,rects=position.rects.map(r=>transformRect(matrix,r)),all=[];
+      for(const char of chars){
+        const r=nativeGlyphRect(char.rect);if(typeof char.c!=='string'||!r)continue;
+        const line=nativeGlyphRect(char.inlineRect),valid=line&&Math.abs(line[0]-r[0])<=.01&&Math.abs(line[2]-r[2])<=.01&&line[1]<=r[1]+.01&&line[3]>=r[3]-.01;
+        all.push({text:char.c,rect:transformRect(matrix,r),inlineRect:transformRect(matrix,valid?line:r),lineBox:!!valid,index:char.index,spaceAfter:char.spaceAfter,lineBreakAfter:char.lineBreakAfter});
+      }
+      const selected=all.filter(g=>rects.some(r=>centerIn(g.rect,r))),coverage=selected.map(g=>g.inlineRect);
+      // Native line boxes include mixed fonts, superscripts and letter spacing.
+      // Older snapshots require explicit word-space metadata for a gap.
+      for(let i=1;i<selected.length;i++){
+        const a=selected[i-1],b=selected[i],x=a.inlineRect,y=b.inlineRect,gap=[x[2],Math.max(x[1],y[1]),y[0],Math.min(x[3],y[3])];
+        if((a.spaceAfter||a.lineBox&&b.lineBox)&&!a.lineBreakAfter&&b.index===a.index+1&&Math.abs(x[1]-y[1])<=.01&&Math.abs(x[3]-y[3])<=.01&&rect(gap))coverage.push(gap);
+      }
+      if(!selected.some(meaningful)||rects.some(r=>!coveredByRects(r,coverage)))return null;
+      return {page,all,selected,rects};
+    }
+    function nativeSelectionText(glyphs,all=glyphs){
+      const keys=new Set(glyphs.map(g=>g.index)),first=glyphs[0]?.index,last=glyphs.at(-1)?.index;
+      return all.filter(g=>keys.has(g.index)||g.index>first&&g.index<last&&!meaningful(g)).map(g=>g.text+(g.lineBreakAfter?'\n':g.spaceAfter?' ':'')).join('').trim();
+    }
     function selectionRequest(annotation,side='source'){
       try{
-        annotation=copy(annotation);const position=annotation?.position;if(!['source','target'].includes(side)||!['highlight','underline'].includes(annotation?.type)||!Number.isInteger(position?.pageIndex)||position.nextPageRects!==undefined||!Array.isArray(position.rects)||!position.rects.length||position.rects.length>32||!position.rects.every(rect)||typeof annotation.text!=='string'||!glyphText(annotation.text)||[...annotation.text].length>2048)return null;
-        const page=side==='source'?bySource.get(position.pageIndex):pages[position.pageIndex];if(!page)return null;
-        const active=typeof targetView==='function'?targetView():targetView,native=side==='source'?sourceView:active,chars=nativeChars(native,side==='source'?page.sourcePage:page.outputPage);if(!chars?.length)return null;
-        const glyphs=[];for(let i=0;i<chars.length;i++){const char=chars[i],local=nativeGlyphRect(char.rect),r=side==='target'&&mode==='dual'&&local?transformRect(invert(page.targetToDual),local):local;if(typeof char.c==='string'&&r&&position.rects.some(s=>centerIn(r,s)))glyphs.push({text:char.c,rect:r});}
-        if(glyphText(glyphs.map(g=>g.text).join(''))!==glyphText(annotation.text)||position.rects.some(r=>!coveredByRects(r,glyphs.map(g=>g.rect))))return null;
+        annotation=copy(annotation);if(!['highlight','underline'].includes(annotation?.type)||typeof annotation.text!=='string'||!glyphText(annotation.text)||[...annotation.text].length>2048||annotation.position?.rects?.length>32)return null;
+        const evidence=nativeSelection(annotation.position,side);if(!evidence)return null;const {page,selected:glyphs}=evidence;
+        if(glyphText(glyphs.map(g=>g.text).join(''))!==glyphText(annotation.text))return null;
         const matches=page.paragraphs.filter(p=>paragraphOwnsGlyphs(p,side,glyphs));if(matches.length!==1||!/^[A-Za-z0-9_-]{1,64}$/.test(matches[0].id)||page.paragraphs.some(p=>p!==matches[0]&&glyphs.filter(meaningful).some(g=>p[side].rects.some(r=>centerIn(g.rect,r)))))return null;
-        return {page:page.sourcePage,paragraph:matches[0].id,side,rects:copy(position.rects),text:annotation.text};
+        return {page:page.sourcePage,paragraph:matches[0].id,side,rects:copy(evidence.rects),text:annotation.text};
       }catch(_){return null;}
     }
     function selectionParts(annotation,side){
       try{
         const position=annotation?.position;if(!['source','target'].includes(side)||!['highlight','underline'].includes(annotation?.type)||position?.nextPageRects!==undefined||!Array.isArray(position?.rects)||!position.rects.length||position.rects.length>32||!position.rects.every(rect)||typeof annotation.text!=='string')return null;
         const page=side==='source'?bySource.get(position.pageIndex):pages[position.pageIndex];if(!page||!page.paragraphs.some(p=>(p.sentences||[]).filter(row=>['semantic-model','glyph-identity'].includes(row.method)).length>=2))return null;
-        const active=typeof targetView==='function'?targetView():targetView,native=side==='source'?sourceView:active,chars=nativeChars(native,side==='source'?page.sourcePage:page.outputPage);if(!chars?.length)return null;
-        const mono=side==='target'&&mode==='dual'?position.rects.map(r=>transformRect(invert(page.targetToDual),r)):position.rects,all=[];
-        for(const char of chars){const local=nativeGlyphRect(char.rect),r=side==='target'&&mode==='dual'&&local?transformRect(invert(page.targetToDual),local):local;if(typeof char.c==='string'&&glyphText(char.c)&&r)all.push({text:char.c,rect:r});}
-        const selected=all.filter(g=>mono.some(r=>centerIn(g.rect,r)));if(!selected.length||glyphText(selected.map(g=>g.text).join(''))!==glyphText(annotation.text)||mono.some(r=>!coveredByRects(r,selected.map(g=>g.rect))))return null;
+        const evidence=nativeSelection(position,side);if(!evidence)return null;
+        const mono=evidence.rects,all=evidence.all.filter(meaningful),selected=evidence.selected.filter(meaningful);if(glyphText(selected.map(g=>g.text).join(''))!==glyphText(annotation.text))return null;
         const parents=page.paragraphs.filter(p=>paragraphOwnsGlyphs(p,side,selected));if(parents.length!==1||page.paragraphs.some(p=>p!==parents[0]&&selected.some(g=>p[side].rects.some(r=>centerIn(g.rect,r)))))return null;
         const parent=parents[0],rows=(parent.sentences||[]).filter(row=>['semantic-model','glyph-identity'].includes(row.method)&&selected.some(g=>row[side].rects.some(r=>centerIn(g.rect,r))));if(rows.length<2||rows.length>8)return null;
         const owner=new Map(),selectedKeys=new Set(selected.map(glyphKey));for(const row of rows){const actual=all.filter(g=>row[side].rects.some(r=>centerIn(g.rect,r)));if(glyphText(actual.map(g=>g.text).join(''))!==glyphText(row[side].text))return null;for(const g of actual){const key=glyphKey(g);if(!selectedKeys.has(key))continue;if(owner.has(key))return null;owner.set(key,row);}}
@@ -423,12 +447,25 @@
         const parts=[];for(const row of rows){const own=selected.filter(g=>owner.get(glyphKey(g))===row),keys=new Set(own.map(glyphKey)),rects=[];
           for(const r of mono){const picked=own.filter(g=>centerIn(g.rect,r));if(!picked.length)continue;const box=bounds(picked.map(g=>g.rect)),clipped=[Math.max(r[0],box[0]),Math.max(r[1],box[1]),Math.min(r[2],box[2]),Math.min(r[3],box[3])];if(!rect(clipped))return null;rects.push(clipped);}
           const actual=all.filter(g=>rects.some(r=>centerIn(g.rect,r)));if(actual.length!==keys.size||actual.some(g=>!keys.has(glyphKey(g))))return null;
-          const value=copy(annotation);value.text=own.map(g=>g.text).join('');value.position={...copy(position),rects:rects.map(r=>side==='target'&&mode==='dual'?transformRect(page.targetToDual,r):r)};parts.push({value,rank:selected.findIndex(g=>keys.has(glyphKey(g)))});
+          const value=copy(annotation);value.text=nativeSelectionText(own,evidence.all);value.position={...copy(position),rects:rects.map(r=>side==='target'&&mode==='dual'?transformRect(page.targetToDual,r):r)};parts.push({value,whole:glyphText(value.text)===glyphText(row[side].text),rank:selected.findIndex(g=>keys.has(glyphKey(g)))});
         }
+        if(parts.every(part=>part.whole))return null;
         return parts.sort((a,b)=>a.rank-b.rank).map(part=>part.value);
       }catch(_){return null;}
     }
+    function selectionPages(annotation,side){
+      try{
+        if(!annotation?.position?.nextPageRects||typeof annotation.text!=='string')return null;
+        const parts=[];for(const [offset,rects] of [annotation.position.rects,annotation.position.nextPageRects].entries()){
+          const value=copy(annotation);value.position={...value.position,pageIndex:value.position.pageIndex+offset,rects:copy(rects)};delete value.position.nextPageRects;
+          const evidence=nativeSelection(value.position,side);if(!evidence)return null;
+          value.text=nativeSelectionText(evidence.selected,evidence.all);parts.push(value);
+        }
+        return glyphText(parts.map(p=>p.text).join(''))===glyphText(annotation.text)?parts:null;
+      }catch(_){return null;}
+    }
     function selectionRequests(annotation,side='source'){
+      if(annotation?.position?.nextPageRects){const pages=selectionPages(annotation,side);if(!pages)return [];const queries=[];for(const page of pages){let mapped=null;try{mapped=selectionMapping(page,side);}catch(_){}if(mapped)continue;const pending=selectionRequests(page,side);if(!pending.length)return [];queries.push(...pending);}return queries.length<=8?queries:[];}
       const parts=selectionParts(annotation,side);if(parts){const queries=[];for(const part of parts){let mapped=null;try{mapped=selectionMapping(part,side,{fragments:false});}catch(_){}if(mapped)continue;const query=selectionRequest(part,side);if(!query){const fallback=selectionRequest(annotation,side);return fallback?[fallback]:[];}queries.push(query);}return queries;}
       const query=selectionRequest(annotation,side);return query?[query]:[];
     }
@@ -454,14 +491,21 @@
       result.position=position;result.id=canonicalID(result.id)+(side==='source'?ORIGINAL_SUFFIX:'');
       if(annotation.position.nextPageRects){const nextEvidence={};const next=projectPart({pageIndex:annotation.position.pageIndex+1,rects:annotation.position.nextPageRects},annotation.type,side,nextEvidence,selection?{}:null);if(selection&&next?.pageIndex!==position.pageIndex+1)return null;if(next?.pageIndex===position.pageIndex+1){position.nextPageRects=next.rects;if(selection)evidence.nextMapped=nextEvidence.mapped;}}
       if(side==='target'&&['highlight','underline'].includes(annotation.type)){
-        const page=bySource.get(annotation.position.pageIndex),mapped=evidence.mapped||exactText(page,annotation.position,'source',!selection,selection);evidence.expanded=Boolean(mapped.partial||evidence.nextMapped?.partial);evidence.whole=Boolean(mapped.whole||evidence.nextMapped?.whole);if(!mapped.identity)result.text=[mapped.text,evidence.nextMapped?.text].filter(Boolean).join('\n');
+        const page=bySource.get(annotation.position.pageIndex),mapped=evidence.mapped||exactText(page,annotation.position,'source',!selection,selection);evidence.expanded=Boolean(mapped.partial||evidence.nextMapped?.partial);evidence.whole=Boolean(mapped.whole||evidence.nextMapped?.whole);if(!mapped.identity||evidence.nextMapped&&!evidence.nextMapped.identity)result.text=[mapped.text,evidence.nextMapped?.text].filter(Boolean).join('\n');
       }
       return result;
     }
     function selectionMapping(annotation,side,options={}){
+      const pageParts=annotation.position?.nextPageRects?selectionPages(annotation,side):null;if(annotation.position?.nextPageRects&&!pageParts)throw mappingFailure();
       const evidence={},selection=annotation.position?.nextPageRects||options.whole===false?{}:{text:annotation.text};let result=null,error=null;
       try{result=side==='source'?projectAnnotation(annotation,'target',selection,evidence):toSourceAnnotation(annotation,selection,evidence);}catch(value){error=value;}
       if(result)return {annotation:result,expanded:Boolean(evidence.expanded),whole:Boolean(evidence.whole)};
+      if(pageParts&&options.whole!==false&&options.fragments!==false){
+        const mapped=pageParts.map(part=>selectionMapping(part,side,options));if(mapped.some(value=>!value))return null;
+        const first=mapped[0].annotation,next=mapped[1].annotation;if(first.position.nextPageRects||next.position.nextPageRects||next.position.pageIndex!==first.position.pageIndex+1)throw mappingFailure();
+        const result=copy(first);result.position.nextPageRects=copy(next.position.rects);delete result.position._askgptSelection;result.text=mapped.map(value=>value.annotation.text).join('\n');
+        return {annotation:result,expanded:mapped.some(value=>value.expanded),whole:mapped.some(value=>value.whole),composite:true};
+      }
       const parts=options.fragments===false?null:selectionParts(annotation,side);if(parts){
         const mapped=[];for(const part of parts){let value;try{value=selectionMapping(part,side,{...options,fragments:false});}catch(_){value=null;}if(!value){if(error)throw error;return null;}mapped.push(value);}
         const index=mapped[0].annotation.position.pageIndex;if(mapped.some(value=>value.annotation.position.pageIndex!==index||value.annotation.position.nextPageRects)){if(error)throw error;return null;}
@@ -1201,12 +1245,13 @@
       const candidate=side==='source'?source:view,index=annotation?.position?.pageIndex,output=side==='source'?displayedSourcePages.indexOf(index):index;
       if(!candidate||!Number.isInteger(index)||output<0)return;
       const physical=displayedSourcePages[output],pages=[physical];if(annotation.position?.nextPageRects&&displayedSourcePages[output+1]===physical+1)pages.push(physical+1);
+      if(pages.length===2&&pages.some(page=>!displayedAlignment.pages.find(p=>p.sourcePage===page)?.paragraphs.some(p=>p.sentences!==undefined)))return requestAlignment(output,{explicit:true,...options,pages,hydrationOnly:true});
       const queries=mapper.selectionRequests(copy(annotation),side);
       if(queries.length)return requestAlignment(output,{explicit:true,...options,pages,units:mapper.selectionUnits(copy(annotation),side),...(queries.length===1&&glyphText(queries[0].text)===glyphText(annotation.text)?{selection:queries[0]}:{selections:queries})});
-      if(pages.length===2&&pages.some(page=>!displayedAlignment.pages.find(p=>p.sourcePage===page)?.paragraphs.some(p=>p.sentences!==undefined)))return requestAlignment(output,{explicit:true,...options,pages,hydrationOnly:true});
-      if(candidate._pdfPages?.[index]?.chars?.length||typeof candidate._ensureBasicPageData!=='function'){setAnnotationStatus('unavailable');return;}
-      const token=epoch,key=side+':'+index,selection=copy(annotation),binding=JSON.stringify(selection);setAnnotationStatus('preparing');
-      let request=glyphRequests.get(key);if(!request){request=Promise.resolve(callReader(candidate,'_ensureBasicPageData',index));glyphRequests.set(key,request);request.finally(()=>{if(glyphRequests.get(key)===request)glyphRequests.delete(key);}).catch(()=>{});}
+      const missing=[index,...(annotation.position?.nextPageRects?[index+1]:[])].filter(page=>!candidate._pdfPages?.[page]?.chars?.length);
+      if(!missing.length||typeof candidate._ensureBasicPageData!=='function'){setAnnotationStatus('unavailable');return;}
+      const token=epoch,key=side+':'+missing.join(','),selection=copy(annotation),binding=JSON.stringify(selection);setAnnotationStatus('preparing');
+      let request=glyphRequests.get(key);if(!request){request=Promise.all(missing.map(page=>Promise.resolve(callReader(candidate,'_ensureBasicPageData',page))));glyphRequests.set(key,request);request.finally(()=>{if(glyphRequests.get(key)===request)glyphRequests.delete(key);}).catch(()=>{});}
       void request.then(()=>{
         const popup=side==='source'?rawSourceSelectionPopup:rawSelectionPopup;
         if(!current(token)||!visible||selectionLane!==side||JSON.stringify(popup?.annotation)!==binding)return;

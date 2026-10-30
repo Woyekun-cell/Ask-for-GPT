@@ -136,13 +136,15 @@ def adopt(manager,identity,binding,stream,length):
     parent=Job(identity,directory,state='complete',source_pages=info['sourcePages'][:],page_count=info['pageCount'],
         cache_info=info,output_signatures=signatures,reused_legacy=True)
     manager.selection_alignments.install_source(parent,stream,length)
+    # Selection cache reads acquire selection -> manager. Resolve this proof
+    # before the manager commit lock to avoid the inverse lock order.
+    source=manager.selection_alignments.source_path(parent)
     with manager.lock:
         existing=manager.jobs.get(identity)
         if existing is not None:
             validate_binding(existing.cache_info,binding);return existing
         _,latest,latest_signatures=read_record(manager,identity,binding)
         if latest!=info or latest_signatures!=signatures:raise ProtocolFailure('alignment_invalid')
-        source=manager.selection_alignments.source_path(parent)
         value=candidate_alignment(source,directory/'mono.pdf',directory/'dual.pdf',info,signatures)
         manager.jobs[identity]=parent;manager.completed[info['cacheKey']]=identity
         try:manager.publish_alignment(parent,value)

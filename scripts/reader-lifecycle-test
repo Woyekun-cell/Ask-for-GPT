@@ -1,0 +1,41 @@
+#!/usr/bin/env python3
+"""Run ReaderStore lifecycle regressions with a synthetic local CLI and no windows.
+
+Build AskGPTCore with scripts/test first, or pass --build-path for an isolated
+Swift scratch directory. The fixture never logs in or calls a real model.
+"""
+import argparse
+import pathlib
+import platform
+import subprocess
+import tempfile
+
+
+def main():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--build-path', type=pathlib.Path, default=root / '.build/sdk26')
+    args = parser.parse_args()
+    architecture = 'arm64' if platform.machine() == 'arm64' else 'x86_64'
+    debug = args.build_path.resolve() / f'{architecture}-apple-macosx/debug'
+    objects = [debug / 'AskGPTCore.build' / f'{source.name}.o'
+               for source in sorted((root / 'Sources/AskGPTCore').glob('*.swift'))]
+    if not (debug / 'Modules/AskGPTCore.swiftmodule').is_file() or not all(p.is_file() for p in objects):
+        raise RuntimeError('Build the current AskGPTCore before running reader lifecycle tests.')
+    sdk = pathlib.Path('/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk')
+    if not sdk.is_dir():
+        sdk = pathlib.Path(subprocess.check_output(['xcrun', '--sdk', 'macosx', '--show-sdk-path'], text=True).strip())
+    with tempfile.TemporaryDirectory(prefix='askgpt-reader-lifecycle-') as temporary:
+        directory = pathlib.Path(temporary)
+        binary = directory / 'reader-lifecycle'
+        subprocess.run(['/usr/bin/swiftc', '-parse-as-library', '-swift-version', '5',
+                        '-module-name', 'AskGPTReaderLifecycle', '-sdk', str(sdk),
+                        '-module-cache-path', str(debug / 'ModuleCache'),
+                        '-I', str(debug / 'Modules'), str(root / 'Sources/AskGPT/ReaderStore.swift'),
+                        str(root / 'scripts/tests/reader-lifecycle.swift'), *map(str, objects),
+                        '-o', str(binary)], check=True, timeout=180)
+        return subprocess.run([str(binary), str(directory)], timeout=70).returncode
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

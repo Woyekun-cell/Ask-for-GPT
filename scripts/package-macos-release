@@ -34,7 +34,7 @@ def copy_guide(name, target):
             return "](翻译后端配置.md" + fragment + ")"
         if local.endswith("INSTALL.macOS.zh-CN.md"):
             return "](安装与配置.md" + fragment + ")"
-        if "/examples/" in local:
+        if "/examples/" in local and (ROOT / "Resources/Distribution/examples").is_dir():
             return "](examples/" + local.rsplit("/", 1)[1] + fragment + ")"
         relative = posixpath.normpath("docs/" + local)
         return "](https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/" + relative + fragment + ")"
@@ -79,7 +79,9 @@ def main():
         target.chmod(0o755)
     copy_guide("INSTALL.macOS.zh-CN.md", folder / "安装与配置.md")
     copy_guide("TRANSLATION-BACKENDS.zh-CN.md", folder / "翻译后端配置.md")
-    shutil.copytree(ROOT / "Resources/Distribution/examples", folder / "examples")
+    examples = ROOT / "Resources/Distribution/examples"
+    if examples.is_dir():
+        shutil.copytree(examples, folder / "examples")
     (folder / "images").mkdir()
     for name in ("translation.png", "settings.png"):
         shutil.copy2(ROOT / "docs/images" / name, folder / "images" / name)
@@ -122,7 +124,7 @@ def main():
               "distribution": "prebuilt app and unchanged official Codex package; online PDF preparation and account login",
               "bundledCodex": {"version": "0.163.0", "archiveSHA256": codex_sha},
               "translationBackend": {"provider": "codex",
-                  "status": "matches the verified macOS 1.1.55 binary; optional API and Claude adapters are not bundled"},
+                  "status": "matches the verified macOS 1.1.59 binary; optional API and Claude adapters are not bundled"},
               "files": [{"name": path.name, "bytes": path.stat().st_size, "sha256": hashes[path.name]}
                         for path in (archive, dmg)], "signatureVerified": True}
     (output / "release-assets.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

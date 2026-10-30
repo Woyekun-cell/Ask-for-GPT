@@ -26,6 +26,8 @@ from gpt_batch import (ERROR_DETAILS, MAX_MESSAGE_BYTES, load_single_page_layout
 from alignment import AlignmentCollector, capture_typesetting
 from page_parallel import MAX_PAGE_WORKERS, NativeHelperPool, parallel_page_translation
 from batch_permits import PERMIT_SUBDIRECTORY
+from batch_checkpoint import BatchCheckpoint
+from preparation import compact_graphic_history
 
 if os.environ.get("ASKGPT_PDF_OFFLINE") == "1":
     # multiprocessing's PDF-saving children import this module as __mp_main__.
@@ -634,9 +636,13 @@ def translate_job(job_dir: Path, cache_root: Path, helper_path: Path):
     engine_input = working_dir / "source-unrotated.pdf"
     prepare_engine_input(input_file, engine_input, selected)
     page_workers=min(MAX_PAGE_WORKERS,len(selected))
-    with NativeHelperPool(lambda:NativeHelper(helper_path,source,target),page_workers,
+    # A page may use the existing two 120-second validated attempts. The old
+    # 100-second pipe deadline killed the native helper before it could finish.
+    with NativeHelperPool(lambda:NativeHelper(helper_path,source,target,batch_timeout=250),page_workers,
             global_permit_directory=cache_root/PERMIT_SUBDIRECTORY) as helpers:
-        translator = make_batch_translator(helpers.translate_batch, source, target, progress)
+        checkpoint = BatchCheckpoint(cache_root, request.get("batchCacheKey"), source, target)
+        translate_batch = (lambda rows, context=None: checkpoint.translate(helpers.translate_batch, rows, context)) if checkpoint.directory else helpers.translate_batch
+        translator = make_batch_translator(translate_batch, source, target, progress)
         translator.source_page_indices = tuple(selected)
         translator.source_context_by_physical = collect_source_context(input_file, selected)
         translator.abort_page_batches=helpers.close
@@ -659,7 +665,7 @@ def translate_job(job_dir: Path, cache_root: Path, helper_path: Path):
             skip_scanned_detection=False, ocr_workaround=False,
             auto_enable_ocr_workaround=False)
         try:
-            with patched_page_translator(high_level), parallel_page_translation(high_level,page_workers), capture_typesetting(high_level, alignment):
+            with compact_graphic_history(), patched_page_translator(high_level), parallel_page_translation(high_level,page_workers), capture_typesetting(high_level, alignment):
                 result = high_level.translate(configuration)
         except ProtocolFailure as error:
             raise _with_physical_page(error, selected)

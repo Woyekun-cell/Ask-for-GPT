@@ -63,6 +63,31 @@ function transportFixture(request) {
   assert.equal(typeof adapter.mountPDFView,'function');
   assert.equal(adapter.mountReflow,undefined,'pure text PDF reflow must be removed');
  });
+ await check('PDF submission waits for the authenticated service before sending document bytes',async()=>{
+  const gate=deferred(),entered=deferred(),f=transportFixture(async()=>json(job()));let probes=0;
+  f.deps.ensurePDFReady=async(connection,current)=>{probes++;assert.equal(connection.token,'t'.repeat(64));assert.equal(current(),true);entered.resolve();await gate.promise;};
+  const pending=adapter.createPDFTransport(f.deps).start(bytes(),{pages:'2',source:'en',target:'zh-Hans'});
+  await Promise.race([entered.promise,new Promise(resolve=>setImmediate(resolve))]);
+  assert.equal(probes,1);assert.equal(f.requests.length,0,'cold-start recovery cannot upload before ready');
+  gate.resolve();assert.equal((await pending).state,'complete');assert.equal(f.requests.length,1);
+ });
+ await check('cancelling service recovery prevents a PDF submission after it becomes ready',async()=>{
+  const gate=deferred(),entered=deferred(),f=transportFixture(async()=>json(job()));let cancel,current;
+  f.deps.ensurePDFReady=async(_connection,isCurrent)=>{current=isCurrent;entered.resolve();await gate.promise;};
+  const pending=adapter.createPDFTransport(f.deps).start(bytes(),{pages:'2',source:'en',target:'zh-Hans'},value=>{cancel=value;});
+  const stopped=assert.rejects(pending,{code:'stopped'});await entered.promise;const retired=cancel();assert.equal(current(),false);gate.resolve();await retired;await stopped;assert.equal(f.requests.length,0);
+ });
+ await check('cached PDF opening has a cancellable connection gate without creating a translation job',async()=>{
+  const gate=deferred(),entered=deferred(),f=transportFixture(async()=>assert.fail('connection gate cannot submit a job'));let cancel,current;
+  f.deps.ensurePDFReady=async(_connection,isCurrent)=>{current=isCurrent;entered.resolve();await gate.promise;};
+  const t=adapter.createPDFTransport(f.deps);assert.equal(typeof t.connect,'function');const pending=t.connect(value=>{cancel=value;});
+  const stopped=assert.rejects(pending,{code:'stopped'});await entered.promise;cancel();assert.equal(current(),false);gate.resolve();await stopped;assert.equal(f.requests.length,0);
+ });
+ await check('unsafe configuration cannot launch recovery and an accepted POST is never replayed after disconnection',async()=>{
+  const f=transportFixture(async()=>{throw {xmlhttp:{status:0}};});let probes=0;f.deps.ensurePDFReady=async()=>{probes++;};
+  f.file.permissions=0o644;const t=adapter.createPDFTransport(f.deps);await assert.rejects(t.start(bytes(),{pages:'2',source:'en',target:'zh-Hans'}),{code:'permissions'});assert.equal(probes,0);
+  f.file.permissions=0o600;await assert.rejects(t.start(bytes(),{pages:'2',source:'en',target:'zh-Hans'}),{code:'bridge'});assert.equal(probes,1);assert.equal(f.requests.length,1);
+ });
  await check('current-page request uploads exact open PDF bytes with local auth and explicit direction',async()=>{
   const source=bytes(); const f=transportFixture(async(method,url)=>url.endsWith('/mono.pdf')?{status:200,response:source.buffer}:json(job()));
   const t=adapter.createPDFTransport(f.deps); const result=await t.start(source,{pages:'2',source:'en',target:'zh-Hans'},()=>{});
@@ -164,7 +189,7 @@ function transportFixture(request) {
   assert.equal(layer.frame.parentNode,null);assert.equal(f.viewer.style.getPropertyValue('visibility'),'visible');assert.equal(f.renders.length,0);assert(f.destroyed.includes('output'));f.restore();
  });
  async function settle(predicate){for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,2));}assert.fail('PDF fixture did not settle');}
- function controllerFixture(request,{preferences=null,controllerAdapter=adapter,scheduler=null,readText=null,alignmentWork=false}={}){
+ function controllerFixture(request,{preferences=null,controllerAdapter=adapter,scheduler=null,readText=null,alignmentWork=false,ensurePDFReady=null}={}){
   // Historical controller fixtures predate the layout route. Make their
   // old-service behavior an explicit 404 rather than malformed modern JSON.
   const transport=transportFixture(async(method,url,options)=>{if(url.endsWith('/alignment-work')&&!alignmentWork)return json({error:'not_found'},404);if(!url.endsWith('/alignment-layout.json'))return request(method,url,options);let response;try{response=await request(method,url,options);}catch(error){if(!String(error.message).startsWith('Unexpected'))throw error;return {status:404,responseText:'{"error":"not_found"}'};}let value;try{value=JSON.parse(response.responseText);}catch(_){}return value?.id&&value?.state&&!value.schema?{status:404,responseText:'{"error":"not_found"}'}:response;}),layout=layoutFixture(),main=new DOM.Window(),events=new Map(),readerEvents=new Map(),reads=[],diagnostics=[];
@@ -177,6 +202,7 @@ function transportFixture(request) {
   if(preferences)deps.Zotero.Prefs=preferences;
   if(scheduler){deps.setTimer=scheduler.set;deps.clearTimer=scheduler.clear;}
   if(readText)deps.readText=readText;
+  if(ensurePDFReady)deps.ensurePDFReady=ensurePDFReady;
   const plugin=controllerAdapter.create(deps);return {...layout,transport,plugin,reader,events,readerEvents,reads,pdf,alerts,diagnostics,tabEvent:(event,ids=[reader.tabID])=>observer?.notify(event,'tab',ids),get unregister(){return unregister;}};
  }
  function retainedInputFixture(request,options={}){
@@ -199,6 +225,16 @@ function transportFixture(request) {
   return {...controllerFixture(request,{...fixtureOptions,controllerAdapter:sandbox.module.exports}),opened};
  }
  const storedVersion=()=>({job:job('complete',[0,1,2]),output:bytes(),item:{id:42}});
+ await check('an explicit translated-mode retry recovers a session whose connection failed before it had a job',async()=>{
+  let probes=0;const f=controllerFixture(async(_method,url)=>url.endsWith('.pdf')?{status:200,response:bytes().buffer}:json(job()),{ensurePDFReady:async()=>{if(++probes===1)throw adapterPDFError('bridge');}});
+  function adapterPDFError(code){return new (require('../content/pdf-layout.js').PDFError)(code);}
+  try{f.plugin.start();await f.plugin.toggle(f.reader);await settle(()=>!f.plugin.state(f.reader).busy);assert.equal(f.transport.requests.length,0);assert.equal(probes,1);await f.plugin.setMode(f.reader,'dual');await settle(()=>!f.plugin.state(f.reader).busy);assert.equal(f.transport.requests.filter(r=>r.method==='POST').length,1);assert(probes>=2);assert(!f.win.document.body.allNodes().some(node=>node.className==='askgpt-pdf-error'));}finally{f.plugin.shutdown();f.restore();}
+ });
+ await check('opening a saved version waits for service recovery and closing it fences the pending load',async()=>{
+  const gate=deferred(),entered=deferred();let loads=0,current;
+  const f=localVersionFixture(async()=>assert.fail('cached opening cannot submit a translation'),async()=>{loads++;return storedVersion();},undefined,null,{ensurePDFReady:async(_connection,isCurrent)=>{current=isCurrent;entered.resolve();await gate.promise;}});
+  try{f.plugin.start();await f.plugin.toggle(f.reader);await entered.promise;assert.equal(loads,0);assert.equal(f.plugin.state(f.reader).busy,true);f.plugin.restore(f.reader);assert.equal(current(),false);gate.resolve();await new Promise(setImmediate);assert.equal(loads,0);assert.equal(f.plugin.state(f.reader).open,false);assert.equal(f.transport.requests.length,0);}finally{gate.resolve();f.plugin.shutdown();f.restore();}
+ });
  await check('saved Chinese version loads in the existing side by side session without a new tab or translation job',async()=>{
   const f=localVersionFixture(async()=>{throw Error('local PDF must not use transport');},async()=>storedVersion());
   f.output.numPages=3;f.plugin.start();await f.plugin.toggle(f.reader);await settle(()=>!f.plugin.state(f.reader).busy);
@@ -207,14 +243,14 @@ function transportFixture(request) {
   f.plugin.shutdown();f.restore();
  });
  await check('local native split keeps toolbar mounted and reuses version bytes across mode changes without PDF downloads',async()=>{
-  const native=require('../content/pdf-native-view.js'),original={canMount:native.canMount,mount:native.mount},shows=[],frames=[];
+  const native=require('../content/pdf-native-view.js'),original={canMount:native.canMount,mount:native.mount},shows=[],frames=[];let probes=0;
   const layout={...precisionAlignment(),sourceSHA256:'a'.repeat(64)};layout.pages=[0,1,2].map(i=>({...layout.pages[0],sourcePage:i,outputPage:i,paragraphs:[]}));
-  const f=localVersionFixture(async(method,url)=>{assert.equal(method,'GET');assert(!url.endsWith('.pdf'));if(url.endsWith('/alignment-layout.json'))return json(layout);return json({jobID:job().id,page:1,sourceSHA256:layout.sourceSHA256,targetSHA256:'b'.repeat(64),links:[]});},async()=>storedVersion());
+  const f=localVersionFixture(async(method,url)=>{assert.equal(method,'GET');assert(!url.endsWith('.pdf'));if(url.endsWith('/alignment-layout.json'))return json(layout);return json({jobID:job().id,page:1,sourceSHA256:layout.sourceSHA256,targetSHA256:'b'.repeat(64),links:[]});},async()=>storedVersion(),undefined,null,{ensurePDFReady:async()=>{probes++;}});
   const toolbar=toolbarFixture(f),controls=toolbar.doc.createElementNS('http://www.w3.org/1999/xhtml','span');let disposals=0;
   const layer={visible:false,currentSourcePage:1,prepareOutput(){},setProgress(){},setAnnotationStatus(){},attachToolbar(host){host.appendChild(controls);return true;},async showOutput(data,pages,mode,mapping){shows.push({data,pages,mode,mapping});this.visible=true;},showOriginal(){this.visible=false;},restoreOriginal(){this.visible=false;},dispose(){disposals++;controls.remove();}};
   native.canMount=()=>true;native.mount=async()=>layer;f.reader._iframeWindow.requestAnimationFrame=fn=>{frames.push(fn);return frames.length;};f.reader._iframeWindow.cancelAnimationFrame=()=>{};
   try{f.plugin.start();await f.plugin.toggle(f.reader);await settle(()=>!f.plugin.state(f.reader).busy);assert.equal(shows[0].mode,'dual');assert.deepEqual([...shows[0].data],[...bytes()]);assert.equal(controls.parentNode,toolbar.host.children[0]);assert.equal(disposals,0);assert.equal(f.opened.length,0);assert.equal(frames.length,1);
-   await f.plugin.setMode(f.reader,'original');assert.equal(controls.parentNode,toolbar.host.children[0]);await f.plugin.setMode(f.reader,'dual');assert.equal(shows[1].data,shows[0].data);assert.equal(f.transport.requests.filter(r=>r.method==='POST'||r.url.endsWith('.pdf')).length,0);
+   await f.plugin.setMode(f.reader,'original');assert.equal(controls.parentNode,toolbar.host.children[0]);await f.plugin.setMode(f.reader,'dual');assert.equal(shows[1].data,shows[0].data);assert.equal(probes,2,'explicit cached-mode opening rechecks the helper after an update');assert.equal(f.transport.requests.filter(r=>r.method==='POST'||r.url.endsWith('.pdf')).length,0);
   }finally{native.canMount=original.canMount;native.mount=original.mount;f.plugin.shutdown();f.restore();}
  });
  await check('passive legacy local Chinese PDF opens native dual with no missing-job request or model and keeps its own annotations',async()=>{
@@ -1371,20 +1407,35 @@ function transportFixture(request) {
  });
  async function fragmentSelectionFixture(options={}){
   const native=require('../content/pdf-native-view.js'),original={canMount:native.canMount,mount:native.mount},mapping={...precisionAlignment(),sourceSHA256:'a'.repeat(64)},precise=precisionAlignment(true),queries=[],statuses=[],updates=[],seen=new Set();let actions,active=0,maxActive=0,exact=options.exact;
+  if(options.crossPage){const base=mapping.pages[0];mapping.pages=[0,1,2].map(i=>{const page=structuredClone(base);page.sourcePage=i;page.outputPage=i;page.paragraphs[0].id='p'+i+'_0';return page;});}
   const binding={jobID:job().id,page:1,sourceSHA256:mapping.sourceSHA256,targetSHA256:'b'.repeat(64),revision:'pdf-selection-semantic-v1'},query=text=>({page:1,paragraph:'p1_0',side:'target',rects:[[10,30,80,40]],text}),keys=new Map();
-  const reply=(selected,positive=true)=>{if(!keys.has(selected.text))keys.set(selected.text,(keys.size+1).toString(16).repeat(64));const key=keys.get(selected.text),link={...structuredClone(precise.pages[0].paragraphs[0].sentences[0].phrases[0]),id:'sel_'+key,key,paragraph:selected.paragraph};return {...binding,key,link:positive?link:null,cached:false};};
+  const reply=(selected,positive=true)=>{if(!keys.has(selected.text))keys.set(selected.text,(keys.size+1).toString(16).repeat(64));const key=keys.get(selected.text),link={...structuredClone(precise.pages[0].paragraphs[0].sentences[0].phrases[0]),id:'sel_'+key,key,paragraph:selected.paragraph};return {...binding,page:selected.page,key,link:positive?link:null,cached:false};};
   const f=controllerFixture(async(method,url,request)=>{
    if(url.endsWith('/selection-alignment?page=1'))return json({...binding,links:[]});
    if(url.endsWith('/selection-alignment')){const selected=JSON.parse(request.body),index=queries.length;queries.push({query:selected,request});active++;maxActive=Math.max(maxActive,active);try{return options.handle?await options.handle(selected,index,reply):json(reply(selected));}finally{active--;}}
    if(url.endsWith('/alignment-upgrade'))assert.fail('fragment selection groups must never start whole-page alignment');
-   return url.endsWith('/alignment.json')?json(mapping):url.endsWith('.pdf')?{status:200,response:bytes().buffer}:json(job());
+   return url.endsWith('/alignment.json')?json(mapping):url.endsWith('.pdf')?{status:200,response:bytes().buffer}:json(job('complete',options.crossPage?[0,1,2]:[1]));
   });
   const layer={visible:false,currentSourcePage:1,prepareOutput(){},setProgress(){},setAnnotationStatus(value){statuses.push(value);},updateAlignment(){},updateSelectionLinks(value){updates.push(value);if(value.link)seen.add(value.link.key);if(options.clearStatusOnUpdate&&value.link)statuses.push(null);},hasExactSelection:()=>typeof exact==='function'?exact(seen):exact===undefined?seen.size>=2:exact,async showOutput(){this.visible=true;},showOriginal(){this.visible=false;},restoreOriginal(){this.visible=false;},dispose(){this.visible=false;}};
   native.canMount=()=>true;native.mount=async(_context,_css,value)=>{actions=value;return layer;};
-  try{f.plugin.start();await f.plugin.toggle(f.reader);await settle(()=>!f.plugin.state(f.reader).busy);await new Promise(setImmediate);}
+  try{f.plugin.start();await f.plugin.toggle(f.reader,options.crossPage?{whole:true}:{});await settle(()=>!f.plugin.state(f.reader).busy);await new Promise(setImmediate);}
   catch(error){native.canMount=original.canMount;native.mount=original.mount;f.plugin.shutdown();f.restore();throw error;}
   return {...f,actions,layer,queries,statuses,updates,seen,query,reply,maxActive:()=>maxActive,setExact:value=>{exact=value;},done(){native.canMount=original.canMount;native.mount=original.mount;try{f.plugin.shutdown();}finally{f.restore();}}};
  }
+
+ await check('cross-page fragment groups preserve physical pages and retry only the missing fragment',async()=>{
+  let positive=false;const f=await fragmentSelectionFixture({crossPage:true,handle:async(q,_i,reply)=>json(reply(q,q.page===1||positive))});try{
+   const selections=[f.query('片一'),{...f.query('片二'),page:2}];assert.equal(f.actions.align(1,{explicit:true,pages:[1,2],selections}),'started');await settle(()=>f.statuses.at(-1)==='unavailable');assert.deepEqual(f.queries.map(q=>q.query.page),[1,2]);
+   positive=true;f.actions.align(1,{explicit:true,pages:[1,2],selections,retry:true});await settle(()=>f.statuses.at(-1)===null);assert.deepEqual(f.queries.map(q=>q.query.page),[1,2,2]);assert.equal(f.queries[2].request.headers['X-AskGPT-Selection-Retry'],'1');
+   f.actions.selectionChanged();f.setExact(true);assert.equal(f.actions.align(1,{explicit:true,pages:[1,2],selections:[selections[1]]}),'ready');
+  }finally{f.done();}
+ });
+ await check('cross-page fragments retain generation ownership after selection clear or replacement',async()=>{
+  for(const change of ['clear','original','page']){const late=deferred(),f=await fragmentSelectionFixture({crossPage:true,handle:async(q,_i,reply)=>{await late.promise;return json(reply(q));}});try{
+   assert.equal(f.actions.align(1,{explicit:true,pages:[1,2],selections:[f.query('片一'),{...f.query('片二'),page:2}]}),'started');await settle(()=>f.queries.length===1);
+   if(change==='clear')f.actions.selectionChanged();if(change==='original')await f.plugin.setMode(f.reader,'original');if(change==='page'){f.layer.currentSourcePage=2;f.actions.page(2);}const before=f.statuses.length;late.resolve();await new Promise(setImmediate);await new Promise(setImmediate);assert.equal(f.queries.length,1);assert.equal(f.statuses.length,before);
+  }finally{late.resolve();f.done();}}
+ });
  await check('selection fragments run serially, deduplicate the active group and reuse positive cache immediately',async()=>{
   const first=deferred(),second=deferred(),f=await fragmentSelectionFixture({clearStatusOnUpdate:true,handle:async(q,index,reply)=>{await (index===0?first:second).promise;return json(reply(q));}});try{
    const selections=[f.query('片一'),f.query('片二')];assert.equal(f.actions.align(1,{explicit:true,selections}),'started');await settle(()=>f.queries.length===1);assert.equal(f.actions.align(1,{explicit:true,selections}),'pending');assert.equal(f.statuses.at(-1),'preparing');first.resolve();await settle(()=>f.queries.length===2);assert.equal(f.statuses.at(-1),'preparing');assert.equal(f.maxActive(),1);second.resolve();await settle(()=>f.statuses.at(-1)===null);assert.deepEqual(f.queries.map(q=>q.query),selections);f.actions.selectionChanged();assert.equal(f.actions.align(1,{explicit:true,selections}),'ready');assert.equal(f.queries.length,2);assert.equal(f.transport.requests.filter(r=>r.url.endsWith('/alignment-upgrade')).length,0);

@@ -76,6 +76,13 @@ import AskGPTCore
         if CommandLine.arguments.contains("--settings") { panels.showSettings() }
     }
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard urls.contains(where: { $0.absoluteString == "askgpt://connect" }) else { return }
+        // A targeted background launch retries the existing local services;
+        // it carries no document text and does not open a translation panel.
+        inlinePages?.start()
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         // Re-activating an already visible reader must not capture a different
         // selection or discard its current translation.

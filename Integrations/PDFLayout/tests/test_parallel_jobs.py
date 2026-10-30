@@ -101,20 +101,21 @@ class ParallelJobTests(unittest.TestCase):
         self.release(second)
         self.assertEqual(second.state, "complete")
 
-    def test_same_content_requests_own_independent_jobs_and_cancellation(self):
+    def test_same_content_inflight_refusal_cannot_cancel_the_original_job(self):
         _, first = self.submit(self.pdf_a, pages="1")
         self.started(first)
-        _, second = self.submit(self.pdf_a, pages="1-1")
-        self.started(second)
-        self.assertNotEqual(second.id, first.id)
-        self.assertNotEqual(second.process.pid, first.process.pid)
-        self.assertEqual(len(self.manager.jobs), 2)
-        self.manager.cancel(first)
-        self.assertEqual(first.state, "cancelled")
-        self.assertEqual(second.state, "running")
-        self.assertIsNone(second.process.poll())
-        self.release(second)
-        self.assertEqual(second.state, "complete")
+        placeholder=self.manager.begin()
+        (placeholder.directory/'input.pdf').write_bytes(self.pdf_a)
+        (placeholder.directory/'input.pdf').chmod(0o600)
+        with self.assertRaisesRegex(server.ProtocolFailure,'job_conflict'):
+            self.manager.submit(placeholder,'1-1','en','zh-Hans')
+        self.manager.abandon(placeholder)
+        self.assertIsNone(placeholder.process)
+        self.assertEqual(placeholder.state,'failed')
+        self.assertEqual(first.state,'running')
+        self.assertIsNone(first.process.poll())
+        self.release(first)
+        self.assertEqual(first.state,'complete')
 
     def test_direction_is_part_of_running_task_identity_and_cancelled_task_can_restart(self):
         _, first = self.submit(self.pdf_a)
@@ -146,30 +147,22 @@ class ParallelJobTests(unittest.TestCase):
         self.release(first)
         self.release(second)
 
-    def test_simultaneous_same_content_submissions_remain_independently_cancellable(self):
+    def test_simultaneous_duplicate_submission_starts_one_worker_and_rejects_other(self):
         placeholders = [self.manager.begin(), self.manager.begin()]
         for job in placeholders:
             (job.directory / "input.pdf").write_bytes(self.pdf_a)
             (job.directory / "input.pdf").chmod(0o600)
-        barrier = threading.Barrier(2)
-        results, failures = [], []
+        barrier=threading.Barrier(2);results=[];failures=[]
         def submit(job):
-            try:
-                barrier.wait(timeout=2)
-                results.append(self.manager.submit(job, "all", "en", "zh-Hans"))
-            except Exception as error: failures.append(error)
-        threads = [threading.Thread(target=submit, args=(job,)) for job in placeholders]
-        for thread in threads: thread.start()
-        for thread in threads: thread.join(4)
-        self.assertFalse(failures)
-        self.assertEqual(len(results), 2)
-        self.assertNotEqual(results[0]["id"], results[1]["id"])
-        first, second = [self.manager.get(result["id"]) for result in results]
-        self.started(first)
-        self.started(second)
-        self.manager.cancel(first)
-        self.assertIsNone(second.process.poll())
-        self.release(second)
+            try:barrier.wait(timeout=2);results.append(self.manager.submit(job,"all","en","zh-Hans"))
+            except Exception as error:failures.append(error)
+        threads=[threading.Thread(target=submit,args=(job,)) for job in placeholders]
+        for thread in threads:thread.start()
+        for thread in threads:thread.join(4)
+        self.assertEqual(len(results),1);self.assertEqual([str(error) for error in failures],['job_conflict'])
+        first=self.manager.get(results[0]['id']);self.started(first)
+        self.assertEqual(sum(job.process is not None for job in placeholders),1)
+        self.assertIsNone(first.process.poll());self.release(first)
 
     def test_two_worker_limit_preserves_original_tasks_and_completed_cache_still_reuses(self):
         _, first = self.submit(self.pdf_a)
@@ -193,6 +186,23 @@ class ParallelJobTests(unittest.TestCase):
         self.started(third)
         self.release(third)
         self.release(second)
+
+    def test_http_duplicate_refusal_has_no_shared_id_and_preserves_existing_worker(self):
+        _,first=self.submit(self.pdf_a);self.started(first)
+        service=server.create_server(self.manager,'a'*64,port=0)
+        thread=threading.Thread(target=service.serve_forever,daemon=True);thread.start()
+        connection=http.client.HTTPConnection('127.0.0.1',service.server_address[1],timeout=3)
+        try:
+            connection.request('POST','/v1/pdf/jobs',self.pdf_a,{'Authorization':'Bearer '+'a'*64,
+                'Content-Type':'application/pdf','X-AskGPT-Source':'en','X-AskGPT-Target':'zh-Hans'})
+            reply=connection.getresponse();self.assertEqual(reply.status,409)
+            self.assertEqual(json.loads(reply.read()),{'error':'job_conflict'})
+            self.assertEqual(first.state,'running');self.assertIsNone(first.process.poll())
+            self.assertEqual(self.manager.active,{first.id})
+            self.assertEqual((first.directory/'input.pdf').read_bytes(),self.pdf_a)
+            self.release(first)
+        finally:
+            connection.close();service.shutdown();service.server_close();thread.join(2)
 
     def test_a_partial_upload_does_not_block_a_second_http_submission(self):
         service = server.create_server(self.manager, "a" * 64, port=0)

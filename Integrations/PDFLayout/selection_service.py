@@ -69,6 +69,10 @@ def _selection_word_count(tokens):
 
 def validate_selection_request(unit, side, start, end):
     validate_phrase_request([unit])
+    _validate_selection_range(unit, side, start, end)
+
+
+def _validate_selection_range(unit, side, start, end):
     if (side not in ("source", "target") or type(start) is not int or type(end) is not int
             or not 0 <= start <= end < len(unit[side]) or end-start+1 > MAX_SELECTION_TOKENS
             or _selection_word_count(unit[side][start:end+1]) > MAX_SELECTION_WORDS):
@@ -91,6 +95,28 @@ def validate_selection_match(unit, side, start, end, match, *, language=None):
             "\u3400" <= c <= "\u9fff" for token in unit[side][start:end+1] for c in token["text"])
         if (not set(selected) <= set(claimed) or not chinese and selected != claimed): raise ValueError()
     except (ProtocolFailure, ValueError, KeyError, TypeError):
+        raise ProtocolFailure("selection_invalid") from None
+    return deepcopy(match)
+
+
+def _validate_owner_match(unit, side, start, end, match, *, language):
+    """Validate cached/global IDs without applying model context size limits."""
+    _validate_selection_range(unit, side, start, end)
+    if match is None: return None
+    try:
+        if not isinstance(match,dict) or set(match)!={"sourceIDs","targetIDs"}: raise ValueError()
+        for name in ("source","target"):
+            ids=match[name+"IDs"];order={token["id"]:i for i,token in enumerate(unit[name])}
+            if (not isinstance(ids,list) or not 1<=len(ids)<=MAX_SELECTION_TOKENS
+                    or any(not isinstance(i,str) or i not in order for i in ids)
+                    or len(set(ids))!=len(ids)): raise ValueError()
+            positions=[order[i] for i in ids]
+            if positions!=list(range(positions[0],positions[0]+len(positions))): raise ValueError()
+            if _selection_word_count(unit[name][i] for i in positions)>MAX_SELECTION_WORDS: raise ValueError()
+        selected=[token["id"] for token in unit[side][start:end+1]]
+        claimed=match[side+"IDs"]
+        if not set(selected)<=set(claimed) or language!="zh-Hans" and selected!=claimed: raise ValueError()
+    except (ValueError,KeyError,TypeError):
         raise ProtocolFailure("selection_invalid") from None
     return deepcopy(match)
 
@@ -313,7 +339,6 @@ class SelectionAlignmentService:
             sides = {side:_owner_side(rows[side], paragraph[side]) for side in ("source", "target")}
             unit = prepare_unit(paragraph["id"], sides["source"], sides["target"])
             if unit is None: raise ProtocolFailure("selection_unavailable")
-            validate_phrase_request([request_unit(unit)])
             prepared = {"unit":unit, "rows":rows, "page":page, "alignmentVersion":generation,
                 "ownerSHA256":_input_digest(unit)}
         unit = prepared["unit"]; side = query["side"]
@@ -338,7 +363,7 @@ class SelectionAlignmentService:
             if required-selected:
                 failure=ProtocolFailure("selection_invalid");failure.error_detail="partial_latin_token"
                 raise failure
-        validate_selection_request(request_unit(unit), side, start, end)
+        _validate_selection_range(unit, side, start, end)
         key = _input_digest([binding, EXTRACTION_REVISION, query["page"], query["paragraph"],
             prepared["ownerSHA256"], side, start, end])
         if self._page_binding(job) != context: raise ProtocolFailure("selection_invalid")
@@ -352,19 +377,66 @@ class SelectionAlignmentService:
         return binding, prepared, start, end, key
 
     def _record(self, job, path, binding, prepared, query, start, end, key):
+        # Cache reads and publication share one alignment generation boundary.
+        # Keep selection -> manager lock order used by conflict validation.
+        with self.lock, self.manager.lock:
+            generation=self._page_binding(job)
+            if prepared["alignmentVersion"]!=job.cache_info["alignment"]["sha256"]:
+                current,latest,a,b,current_key=self._prepare(job,query)
+                if current!=binding or current_key!=key or (a,b)!=(start,end):
+                    raise ProtocolFailure("selection_invalid")
+                prepared=latest
+            value=self._read_record(job,path,binding,prepared,query,start,end,key)
+            if self._page_binding(job)!=generation: raise ProtocolFailure("selection_invalid")
+            return value
+
+    def _read_record(self, job, path, binding, prepared, query, start, end, key):
         from server import _private_file
         try:
             _, raw = _private_file(path, MAX_RECORD_BYTES)
             value = json.loads(raw)
             required = {"schema", "binding", "page", "query", "ownerSHA256", "key", "match", "link"}
-            if (not isinstance(value,dict) or set(value) != required or value["schema"] != 1
-                    or value["binding"] != binding or value["page"] != query["page"]
-                    or value["key"] != key or value["ownerSHA256"] != prepared["ownerSHA256"]): raise ValueError()
-            language = job.cache_info[query["side"]]
-            match = validate_selection_match(request_unit(prepared["unit"]), query["side"], start, end, value["match"], language=language)
-            link = self._materialize(prepared, match, key)
+            if (not isinstance(value,dict) or set(value) != required or type(value["schema"]) is not int
+                    or value["schema"] not in (1,2) or value["binding"] != binding or value["page"] != query["page"]
+                    or not isinstance(value["ownerSHA256"],str) or not re.fullmatch(r"[0-9a-f]{64}",value["ownerSHA256"])
+                    or not isinstance(value["key"],str) or not re.fullmatch(r"[0-9a-f]{64}",value["key"])
+                    or path.name != "selection-"+value["key"]+".json"): raise ValueError()
+            # Historical partial-word records were never valid full-token queries.
+            # Keep their existing read compatibility; restore already skips them.
+            if value["ownerSHA256"] == prepared["ownerSHA256"]:
+                if value["key"] != key: raise ValueError()
+            else:
+                # Schema 1 once keyed an oversized parent's sentence-sized copy.
+                # Verify its global match/geometry and derivable local range before
+                # expiring it. A random key mismatch remains a corrupt record.
+                if value["schema"] != 1 or validate_query(value["query"]) != query: raise ValueError()
+                possible=(_input_digest([binding,EXTRACTION_REVISION,query["page"],query["paragraph"],
+                    value["ownerSHA256"],query["side"],offset,offset+end-start]) for offset in range(start+1))
+                if value["key"] not in possible: raise ValueError()
+            match = _validate_owner_match(prepared["unit"],query["side"],start,end,value["match"],
+                language=job.cache_info[query["side"]])
+            link = self._materialize(prepared, match, value["key"])
             self._validate_link_ownership(prepared,link)
             if value["link"] != link: raise ValueError()
+            if value["ownerSHA256"] != prepared["ownerSHA256"]: return None
+            # A contradicted record must not revive when a later sidecar omits
+            # phrases. Bind the durable tombstone to these exact saved bytes;
+            # a subsequently validated replacement has a different digest.
+            expired=path.with_name("expired-"+path.name)
+            digest=hashlib.sha256(raw).hexdigest()
+            try:
+                _, marker_raw=_private_file(expired,4096)
+                marker=json.loads(marker_raw)
+                if (not isinstance(marker,dict) or set(marker)!={"schema","recordSHA256"}
+                        or type(marker["schema"]) is not int or marker["schema"]!=1
+                        or not isinstance(marker["recordSHA256"],str)
+                        or not re.fullmatch(r"[0-9a-f]{64}",marker["recordSHA256"])): raise ValueError()
+                if marker["recordSHA256"]==digest: return None
+            except FileNotFoundError: pass
+            try: self._check_phrase_conflicts(prepared,link)
+            except ProtocolFailure:
+                atomic_json(expired,{"schema":1,"recordSHA256":digest})
+                return None
             return value
         except FileNotFoundError: return None
         except (OSError, ValueError, TypeError, KeyError, ProtocolFailure):
@@ -406,9 +478,8 @@ class SelectionAlignmentService:
         return (incoming==other or all(incoming[side]<other[side] for side in incoming)
             or all(other[side]<incoming[side] for side in incoming))
 
-    def _check_conflicts(self, job, binding, prepared, link):
+    def _check_phrase_conflicts(self, prepared, link):
         if link is None: return
-        from server import _private_file
         incoming = {side:set(_glyph_key(g) for g in link[side]["glyphs"]) for side in ("source","target")}
         pools={side:Counter(_glyph_key(g) for g in prepared["unit"][side+"Glyphs"] if g.get("rect") is not None)
             for side in ("source","target")}
@@ -426,13 +497,21 @@ class SelectionAlignmentService:
                         other[side]=set(claimed)
                     if proven and any(incoming[side]&other[side] for side in incoming) and not self._compatible_groups(incoming,other):
                         raise ProtocolFailure("selection_invalid")
+
+    def _check_conflicts(self, job, binding, prepared, link):
+        if link is None: return
+        from server import _private_file
+        self._check_phrase_conflicts(prepared,link)
+        incoming={side:set(_glyph_key(g) for g in link[side]["glyphs"]) for side in ("source","target")}
         for path in job.directory.glob("selection-*.json"):
             try:
                 _, raw = _private_file(path,MAX_RECORD_BYTES); saved=json.loads(raw)
-                if saved.get("binding")!=binding or saved.get("ownerSHA256")!=prepared["ownerSHA256"] or saved.get("link") is None: continue
+                if not isinstance(saved,dict): raise ValueError()
+                if saved.get("binding")!=binding or saved.get("page")!=prepared["page"]["sourcePage"] or saved.get("link") is None: continue
                 query=validate_query(saved["query"])
                 _, current, start, end, key=self._prepare(job,query)
                 record=self._record(job,path,binding,current,query,start,end,key)
+                if record is None: continue
                 other={side:set(_glyph_key(g) for g in record["link"][side]["glyphs"]) for side in ("source","target")}
                 if any(incoming[side]&other[side] for side in incoming) and not self._compatible_groups(incoming,other):
                     raise ProtocolFailure("selection_invalid")
@@ -470,7 +549,11 @@ class SelectionAlignmentService:
             if pending.error: raise ProtocolFailure(pending.error)
             phases["deduplicatedWaitSeconds"] = round(time.monotonic()-phase_began,6)
             phases["sharedPending"] = True
-            return self._response(binding,query["page"],key,pending.result["link"],True,began,phases)
+            current,latest,a,b,current_key=self._prepare(job,query)
+            if current!=binding or current_key!=key: raise ProtocolFailure("selection_invalid")
+            shared=self._record(job,path,current,latest,query,a,b,current_key)
+            if shared is None: raise ProtocolFailure("selection_invalid")
+            return self._response(binding,query["page"],key,shared["link"],True,began,phases)
         helper = None; acquired = False; foreground = None
         try:
             phase_began = time.monotonic()
@@ -499,6 +582,7 @@ class SelectionAlignmentService:
             phases["helperSetupSeconds"] = round(time.monotonic()-phase_began,6)
             phase_began = time.monotonic()
             model_unit,model_start,model_end=_model_request(prepared,query,start,end)
+            validate_selection_request(model_unit,query["side"],model_start,model_end)
             foreground=self.manager.sentence_upgrades.foreground();foreground.__enter__()
             match = helper.align_selection(model_unit, query["side"], model_start, model_end)
             phases["helperExchangeSeconds"] = round(time.monotonic()-phase_began,6)
@@ -506,20 +590,33 @@ class SelectionAlignmentService:
             phase_began = time.monotonic()
             current,current_prepared,current_start,current_end,current_key=self._prepare(job,query)
             if (current!=binding or current_key!=key or (current_start,current_end)!=(start,end)
-                    or current_prepared["ownerSHA256"]!=prepared["ownerSHA256"]):
+                    or current_prepared["ownerSHA256"]!=prepared["ownerSHA256"]
+                    or _model_request(current_prepared,query,current_start,current_end)!=(model_unit,model_start,model_end)):
                 raise ProtocolFailure("selection_invalid")
             prepared=current_prepared
             language = job.cache_info[query["side"]]
-            match = validate_selection_match(request_unit(prepared["unit"]), query["side"], start, end, match, language=language)
+            match = validate_selection_match(model_unit,query["side"],model_start,model_end,match,language=language)
+            match = _validate_owner_match(prepared["unit"],query["side"],start,end,match,language=language)
             link = self._materialize(prepared, match, key)
             self._validate_link_ownership(prepared,link)
-            record = {"schema":1, "binding":binding, "page":query["page"], "query":query,
+            record = {"schema":2, "binding":binding, "page":query["page"], "query":query,
                 "ownerSHA256":prepared["ownerSHA256"], "key":key, "match":match, "link":link}
             if len(json.dumps(record,ensure_ascii=False).encode()) > MAX_RECORD_BYTES: raise ProtocolFailure("selection_invalid")
-            with self.lock:
+            with self.lock, self.manager.lock:
                 if self.closed or self.manager.stopping: raise ProtocolFailure("service_stopping")
-                self._check_conflicts(job,binding,prepared,link)
+                current,latest,latest_start,latest_end,latest_key=self._prepare(job,query)
+                if (current!=binding or latest_key!=key or (latest_start,latest_end)!=(start,end)
+                        or _model_request(latest,query,latest_start,latest_end)!=(model_unit,model_start,model_end)):
+                    raise ProtocolFailure("selection_invalid")
+                generation=self._page_binding(job)
+                self._validate_link_ownership(latest,link)
+                self._check_conflicts(job,binding,latest,link)
+                if self._page_binding(job)!=generation: raise ProtocolFailure("selection_invalid")
                 atomic_json(path, record)
+                # This exact query has just been independently revalidated.
+                # Its bytes may equal the retired record; revoke only its own
+                # marker after the successful atomic commit, under both locks.
+                path.with_name("expired-"+path.name).unlink(missing_ok=True)
             phases["validationAndSaveSeconds"] = round(time.monotonic()-phase_began,6)
             pending.result = self._response(binding, query["page"], key, link, False, began, phases)
             return deepcopy(pending.result)
@@ -606,6 +703,7 @@ class SelectionAlignmentService:
     def links(self, job, page):
         if type(page) is not int or page not in job.source_pages: raise ProtocolFailure("selection_invalid")
         binding = self._bindings(job); links = []; seen = set(); total=0
+        generation=self._page_binding(job)
         paths = sorted(job.directory.glob("selection-*.json"))
         if len(paths) > 2048: raise ProtocolFailure("selection_invalid")
         for path in paths:
@@ -613,12 +711,13 @@ class SelectionAlignmentService:
             from server import _private_file
             try:
                 _, raw = _private_file(path, MAX_RECORD_BYTES); saved = json.loads(raw)
+                if not isinstance(saved,dict): raise ValueError()
                 if saved.get("binding") != binding: continue
                 if saved.get("page") != page: continue
                 query = validate_query(saved["query"])
                 current, prepared, start, end, key = self._prepare(job, query)
-                if path.name != "selection-"+key+".json": raise ValueError()
                 record = self._record(job,path,current,prepared,query,start,end,key)
+                if record is None: continue
                 link=record["link"]
                 if link is not None:
                     identity=_input_digest([link["source"],link["target"]])
@@ -631,6 +730,7 @@ class SelectionAlignmentService:
                 raise
             except (OSError, ValueError, TypeError, KeyError): raise ProtocolFailure("selection_invalid") from None
             if len(links) > MAX_RESTORED_LINKS: raise ProtocolFailure("selection_invalid")
+        if self._page_binding(job)!=generation: raise ProtocolFailure("selection_invalid")
         self._prewarm(job)
         return {**binding, "page":page, "links":links}
 

@@ -137,6 +137,29 @@ struct SelectionTests {
         #expect(gate.observe(moved) == nil)
     }
 
+    @Test func clearedSelectionAllowsSameTextAfterTwoNewSamples() {
+        var gate = StableSelectionGate()
+        let excerpt = selection("same word")
+        #expect(gate.observe(excerpt) == nil)
+        #expect(gate.observe(excerpt) != nil)
+        #expect(gate.observe(nil) == nil)
+        #expect(gate.observe(excerpt) == nil)
+        #expect(gate.observe(excerpt)?.excerpt.text == "same word")
+        #expect(gate.observe(excerpt) == nil)
+    }
+
+    @Test func newGestureBreaksPendingStabilityWithoutReemittingAnUnchangedSelection() {
+        var gate = StableSelectionGate()
+        let excerpt = selection("same word")
+        #expect(gate.observe(excerpt) == nil)
+        gate.beginGesture()
+        #expect(gate.observe(excerpt) == nil)
+        #expect(gate.observe(excerpt) != nil)
+        gate.beginGesture()
+        #expect(gate.observe(excerpt) == nil)
+        #expect(gate.observe(excerpt) == nil)
+    }
+
     @Test func testDifferentSourcesStartNewStabilityAndResetAllowsSameSelectionAgain() {
         var gate = StableSelectionGate()
         let browser = selection("same paragraph", source: "com.google.Chrome")

@@ -113,11 +113,20 @@ class ServiceContractTests(unittest.TestCase):
         self.assertEqual(self.request("OPTIONS", "/v1/other", headers=allowed)[0], 404)
 
     def test_job_page_mapping_and_two_worker_limit(self):
+        import pymupdf
+        # Keep both real fixture workers active while checking the third paper.
+        self.worker.write_text(self.worker.read_text().replace("time.sleep(.3)","time.sleep(3)"))
         status, job = self.submit("3")
         self.assertEqual(status, 202)
         self.assertEqual(job["sourcePages"], [2])
         self.assertEqual(job["pageCount"], 3)
+        with pymupdf.open(stream=self.pdf,filetype="pdf") as document:
+            document[0].insert_text((20,45),"Second independent paper")
+            self.pdf=document.tobytes()
         self.assertEqual(self.submit()[0], 202)
+        with pymupdf.open(stream=self.pdf,filetype="pdf") as document:
+            document[0].insert_text((20,65),"Third independent paper")
+            self.pdf=document.tobytes()
         self.assertEqual(self.submit("1")[0], 409)
         self.assertNotIn(self.folder.name, json.dumps(job))
         self.assertEqual((self.manager.jobs_root / job["id"]).stat().st_mode & 0o777, 0o700)

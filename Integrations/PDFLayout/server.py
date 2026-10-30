@@ -550,31 +550,89 @@ class JobManager:
             result["pages"].append(row)
         return result
 
-    def publish_alignment(self,job,value):
-        """One atomic metadata pointer commits a generation; PDF bytes stay put."""
+    def _alignment_publication_binding(self,job):
+        # Legacy PDF adoption has no sidecar yet. Bind that first publication
+        # to the complete output/cache identity, including the absence of one.
+        if "alignment" in job.cache_info and "alignment" in job.output_signatures:
+            generation=self._alignment_snapshot_binding(job)
+        elif "alignment" not in job.cache_info and "alignment" not in job.output_signatures:
+            generation=(None,None,tuple(job.source_pages),job.page_count,job.cache_info["sourceSHA256"],None,None)
+        else:raise ProtocolFailure("alignment_unavailable")
+        return (*generation,job.id,str(job.directory),job.state,
+            json.dumps(job.cache_info,sort_keys=True,separators=(",",":")),
+            tuple((name,tuple(signature)) for name,signature in sorted(job.output_signatures.items())))
+
+    def _alignment_update_snapshot(self,job):
+        """Capture immutable bytes/proof; decode and transform outside the lock."""
         with self.lock:
-            if self._cached_job(job.cache_info["cacheKey"]) is not job: raise ProtocolFailure("alignment_unavailable")
-            raw=json.dumps(value,ensure_ascii=False,separators=(",",":")).encode()
-            if len(raw)>MAX_ALIGNMENT_BYTES: raise ProtocolFailure("alignment_invalid")
-            snapshot=validate_alignment(json.loads(raw),job.source_pages,job.page_count,job.cache_info["sourceSHA256"])
-            digest=hashlib.sha256(raw).hexdigest();name="alignment-"+digest+".json"
-            path=job.directory/name
-            atomic_json(path,snapshot)
-            signature,saved=_private_file(path,MAX_ALIGNMENT_BYTES)
-            if saved!=raw:raise ProtocolFailure("alignment_unavailable")
-            metadata={**job.cache_info,"alignmentFile":name,
-                "alignment":{"sha256":hashlib.sha256(saved).hexdigest(),"bytes":signature[2]}}
-            previous=job.cache_info.get("alignmentFile")
-            atomic_json(job.directory/"cache.json",metadata)
-            job.cache_info=metadata;job.output_signatures["alignment"]=signature
+            if self.stopping:raise ProtocolFailure("alignment_cancelled")
+            if self._cached_job(job.cache_info["cacheKey"]) is not job:raise ProtocolFailure("alignment_unavailable")
+            binding=self._alignment_snapshot_binding(job)
+            if _output_signature(Path(binding[0]),MAX_ALIGNMENT_BYTES)!=binding[1]:raise ProtocolFailure("alignment_unavailable")
+            cached=self._alignment_snapshots.get(job.id)
+            if cached is not None and cached[0]==binding:return self._alignment_publication_binding(job),cached[1],True
+            signature,raw=_private_file(Path(binding[0]),MAX_ALIGNMENT_BYTES)
+            if (signature!=binding[1] or len(raw)!=binding[6] or hashlib.sha256(raw).hexdigest()!=binding[5]):
+                raise ProtocolFailure("alignment_unavailable")
+            return self._alignment_publication_binding(job),raw,job._validated_alignment_binding==binding
+
+    def update_alignment(self,job,transform,*,cancelled=None):
+        # Only a generation conflict retries: each transform rebases its page
+        # changes onto the newest full snapshot, never overwriting other pages.
+        while True:
+            if cancelled is not None and cancelled.is_set():raise ProtocolFailure("alignment_cancelled")
+            binding,raw,trusted=self._alignment_update_snapshot(job)
+            value=json.loads(raw)
+            if not trusted:value=validate_alignment(value,list(binding[2]),binding[3],binding[4])
             from sentence_alignment import filter_unsafe_numeric_sentence_links
-            if filter_unsafe_numeric_sentence_links(snapshot):
-                saved=json.dumps(snapshot,ensure_ascii=False,separators=(",",":")).encode()
-            self._remember_alignment_snapshot(job,saved)
-            if previous and previous!=name:
-                old=_alignment_path(job.directory,{"alignmentFile":previous})
-                try: old.unlink(missing_ok=True)
-                except OSError: pass
+            filter_unsafe_numeric_sentence_links(value)
+            value=transform(value)
+            try:
+                self.publish_alignment(job,value,expected=binding,cancelled=cancelled)
+                return
+            except ProtocolFailure as error:
+                if str(error)!="alignment_conflict":raise
+
+    def publish_alignment(self,job,value,*,expected=None,cancelled=None):
+        """Validate/stage outside the manager lock; atomically commit one generation."""
+        with self.lock:
+            if self.stopping or cancelled is not None and cancelled.is_set():raise ProtocolFailure("alignment_cancelled")
+            if self._cached_job(job.cache_info["cacheKey"]) is not job:raise ProtocolFailure("alignment_unavailable")
+            if expected is None:expected=self._alignment_publication_binding(job)
+        raw=json.dumps(value,ensure_ascii=False,separators=(",",":")).encode()
+        if len(raw)>MAX_ALIGNMENT_BYTES:raise ProtocolFailure("alignment_invalid")
+        snapshot=validate_alignment(json.loads(raw),list(expected[2]),expected[3],expected[4])
+        digest=hashlib.sha256(raw).hexdigest();name="alignment-"+digest+".json"
+        stage=job.directory/(".alignment-publish-"+uuid.uuid4().hex+".json")
+        try:
+            descriptor=platform.secure_open(stage,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+            with os.fdopen(descriptor,"wb") as output:
+                output.write(raw);output.flush();os.fsync(output.fileno())
+            staged,saved=_private_file(stage,MAX_ALIGNMENT_BYTES)
+            if saved!=raw:raise ProtocolFailure("alignment_unavailable")
+            from sentence_alignment import filter_unsafe_numeric_sentence_links
+            if filter_unsafe_numeric_sentence_links(snapshot):saved=json.dumps(snapshot,ensure_ascii=False,separators=(",",":")).encode()
+            with self.lock:
+                if self.stopping or cancelled is not None and cancelled.is_set():raise ProtocolFailure("alignment_cancelled")
+                if self._cached_job(job.cache_info["cacheKey"]) is not job:raise ProtocolFailure("alignment_unavailable")
+                if self._alignment_publication_binding(job)!=expected:raise ProtocolFailure("alignment_conflict")
+                if _output_signature(stage,MAX_ALIGNMENT_BYTES)!=staged:raise ProtocolFailure("alignment_unavailable")
+                previous=job.cache_info.get("alignmentFile")
+                # Identical bytes already have a validated immutable file. Do
+                # not replace its inode before a possibly failing pointer write.
+                if previous!=name:
+                    path=job.directory/name;os.replace(stage,path)
+                    signature=_output_signature(path,MAX_ALIGNMENT_BYTES)
+                    metadata={**job.cache_info,"alignmentFile":name,
+                        "alignment":{"sha256":digest,"bytes":signature[2]}}
+                    atomic_json(job.directory/"cache.json",metadata)
+                    job.cache_info=metadata;job.output_signatures["alignment"]=signature
+                self._remember_alignment_snapshot(job,saved)
+                if previous and previous!=name:
+                    old=_alignment_path(job.directory,{"alignmentFile":previous})
+                    try:old.unlink(missing_ok=True)
+                    except OSError:pass
+        finally:stage.unlink(missing_ok=True)
 
     def _extract_cached_pages(self, whole, job, selected):
         """Copy PDF page objects through verified descriptors; never rasterize."""
@@ -808,11 +866,17 @@ class JobManager:
                         raise ProtocolFailure("already_translated")
                 # Each BabelDOC process loads its own model and helper. Keep
                 # two independent papers concurrent without unbounded models.
+                if any(other is not job and other.state=="running" and other.cache_info
+                        and all(other.cache_info.get(name)==job.cache_info[name]
+                            for name in ("sourceSHA256","pageCount","source","target","revision"))
+                        and other.process is not None for other in self.jobs.values()):
+                    raise ProtocolFailure("job_conflict")
                 if sum(other.process is not None and other.process.poll() is None
                         for other in self.jobs.values()) >= MAX_RUNNING_JOBS:
                     raise ProtocolFailure("job_conflict")
                 atomic_json(job.directory / "request.json", {"sourcePages": selected,
-                    "pageCount": page_count, "source": source, "target": target})
+                    "pageCount": page_count, "source": source, "target": target,
+                    "batchCacheKey": _cache_key(source_sha,list(range(page_count)),page_count,source,target,self.translation_revision)})
                 job.process = platform.spawn_owned([sys.executable, str(self.worker_script),
                     "--job-dir", str(job.directory), "--cache-root", str(self.cache_root),
                     "--translator", str(self.translator)], popen=subprocess.Popen, stdin=subprocess.PIPE,

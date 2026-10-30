@@ -7,10 +7,91 @@ This script never modifies Accessibility records or trust settings.
 """
 import argparse
 import atexit
+import json
 import os
 from pathlib import Path
+import re
+import stat
 import subprocess
 import tempfile
+import time
+from urllib import error, request
+
+
+class NoRedirect(request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def connection_token(path):
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        raise RuntimeError('App installed; connection file is unsafe. Open Ask for GPT to repair the connection.') from None
+    with os.fdopen(descriptor, 'rb') as source:
+        details = os.fstat(source.fileno())
+        if (not stat.S_ISREG(details.st_mode) or details.st_uid != os.getuid()
+                or details.st_mode & 0o077 or details.st_nlink != 1 or details.st_size > 8192):
+            raise RuntimeError('App installed; connection file is unsafe. Open Ask for GPT to repair the connection.')
+        try:
+            value = json.loads(source.read(8193))
+            if (not isinstance(value, dict) or type(value.get('version')) is not int or value['version'] != 1
+                    or value.get('endpoint') not in ('http://127.0.0.1:43792', 'http://127.0.0.1:43792/')
+                    or not isinstance(value.get('token'), str)
+                    or not re.fullmatch(r'[A-Za-z0-9_-]{32,256}', value['token'])):
+                raise ValueError()
+        except (ValueError, TypeError):
+            raise RuntimeError('App installed; connection file is invalid. Open Ask for GPT to repair the connection.') from None
+    return value['token']
+
+
+def start_installed_app(destination, connection=None, timeout=30):
+    """Keep the verified replacement installed even if service startup fails."""
+    try:
+        subprocess.run(['/usr/bin/open', '-g', str(destination), '--args', '--background'],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        raise RuntimeError('App installed; automatic startup failed. Open Ask for GPT, then retry Zotero translation.') from None
+    connection = connection or Path.home() / 'Library/Application Support/AskGPTReader/inline-connection.json'
+    opener = request.build_opener(request.ProxyHandler({}), NoRedirect())
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        token = connection_token(connection)
+        ready = bool(token)
+        for endpoint in ('http://127.0.0.1:43792/v1/inline/health', 'http://127.0.0.1:43795/v1/pdf/health'):
+            remaining = deadline - time.monotonic()
+            if not ready or remaining <= 0:
+                ready = False
+                break
+            health = request.Request(endpoint, headers={'Authorization': 'Bearer ' + token})
+            try:
+                with opener.open(health, timeout=min(1, remaining)) as response:
+                    raw = response.read(4097)
+                value = json.loads(raw) if len(raw) <= 4096 else None
+                if (not isinstance(value, dict) or type(value.get('protocolVersion')) is not int
+                        or value['protocolVersion'] != 1):
+                    raise ValueError()
+                if value.get('status') == 'runtime_missing':
+                    raise RuntimeError('App installed; PDF component is missing. Open Ask for GPT and repair the PDF component.')
+                if value.get('status') != 'ready':
+                    raise ValueError()
+            except error.HTTPError as failure:
+                failure.close()
+                if failure.code < 500:
+                    raise RuntimeError('App installed; service connection was rejected. Open Ask for GPT to repair the connection.') from None
+                ready = False
+                break
+            except (OSError, error.URLError):
+                ready = False
+                break
+            except (ValueError, TypeError):
+                raise RuntimeError('App installed; service connection returned an invalid response. Open Ask for GPT to repair the connection.') from None
+        if ready:
+            return
+        time.sleep(min(0.25, max(0, deadline - time.monotonic())))
+    raise RuntimeError('App installed; PDF service did not become ready. Open Ask for GPT, then retry Zotero translation.')
 
 
 def main():
@@ -63,6 +144,10 @@ def main():
             if had_previous:
                 os.replace(backup, destination)
             raise
+    try:
+        start_installed_app(destination)
+    except RuntimeError as failure:
+        raise SystemExit(str(failure)) from None
     print(str(destination))
 
 

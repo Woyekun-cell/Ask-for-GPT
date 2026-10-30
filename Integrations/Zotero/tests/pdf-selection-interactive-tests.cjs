@@ -1,13 +1,36 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict'),{createRequire}=require('node:module');
 const root=path.resolve(__dirname,'../../..'),test=path.join(__dirname,'pdf-native-view-tests.cjs'),req=createRequire(test),helpers={exports:{}};
-new Function('require','module','exports','__dirname',fs.readFileSync(test,'utf8').split('(async()=>{')[0]+'\nmodule.exports={fixture,translatedFixture,phraseAlignment,selectionAlignment,highlight,trackedGlyphPages};')(req,helpers,helpers.exports,path.dirname(test));
-const N=require(path.join(root,'Integrations/Zotero/content/pdf-native-view.js')),{fixture,translatedFixture,phraseAlignment,selectionAlignment,highlight,trackedGlyphPages}=helpers.exports,clone=v=>JSON.parse(JSON.stringify(v)),results=[];
+new Function('require','module','exports','__dirname',fs.readFileSync(test,'utf8').split('(async()=>{')[0]+'\nmodule.exports={fixture,translatedFixture,phraseAlignment,selectionAlignment,highlight,trackedGlyphPages,longSelectionAlignment};')(req,helpers,helpers.exports,path.dirname(test));
+const N=require(path.join(root,'Integrations/Zotero/content/pdf-native-view.js')),{fixture,translatedFixture,phraseAlignment,selectionAlignment,highlight,trackedGlyphPages,longSelectionAlignment}=helpers.exports,clone=v=>JSON.parse(JSON.stringify(v)),results=[];
 const chars=row=>row.glyphs.map(g=>({c:g.text,rect:clone(g.rect)}));
 function setup(data){const p=data.pages[0].paragraphs[0],s=p.sentences?.[0];return {source:{_pdfPages:{0:{chars:chars(s?.source||p.source)}}},target:{_pdfPages:{0:{chars:chars(s?.target||p.target)}}}};}
 function map(data,input,side='source',links=[]){const {source,target}=setup(data);return N.createMapper(data,'mono',source,target,()=>links).selectionMapping(input,side);}
 function attempt(f){try{return {ok:true,value:f()};}catch(e){return {ok:false,code:e.code||e.name,detail:e.mappingDetail||e.message};}}
 function check(name,callback){try{callback();results.push({name,pass:true});}catch(error){results.push({name,pass:false,error:error.stack});}}
+
+function identityMixed(){
+ const d=selectionAlignment([4,5]),p=d.pages[0].paragraphs[0],r=p.sentences[0];r.method='glyph-identity';r.target=clone(r.source);r.dualTarget={rects:r.target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])};r.phrases=[];p.target=clone(r.target);p.dualTarget=clone(r.dualTarget);return d;
+}
+function nativeViews(d){return Object.fromEntries(['source','target'].map(side=>[side,{_pdfPages:Object.fromEntries(d.pages.map(p=>[side==='source'?p.sourcePage:p.outputPage,{chars:chars(p.paragraphs[0][side])}]))}]));}
+check('legacy identity signature survives excerpt improvements and native cache eviction',()=>{
+ const d=identityMixed(),v=nativeViews(d),m=N.createMapper(d,'mono',v.source,v.target),input={type:'highlight',text:'genome\n基',position:{pageIndex:0,rects:[[94,690,130,710]],nextPageRects:[[60,690,70,710]]}},saved=m.toSourceAnnotation(input);
+ // Version 2 historically signs identity text as null; geometry and glyph checks remain bound.
+ saved.position._askgptSelection.parts[0].mappingSHA256=require('node:crypto').createHash('sha256').update(JSON.stringify({rects:input.position.rects,text:null,identity:true})).digest('hex');
+ assert(m.projectAnnotation(clone(saved)));assert(N.createMapper(d,'mono').projectAnnotation(clone(saved)));
+ const changed=clone(saved);changed.position._askgptSelection.parts[0].mappingSHA256='0'.repeat(64);assert.equal(m.projectAnnotation(changed),null);
+});
+check('identity signatures do not depend on native word-space availability',()=>{
+ const d=identityMixed(),p=d.pages[0].paragraphs[0],r=p.sentences[0];for(const side of ['source','target']){for(const g of r[side].glyphs)if(g.text===' ')g.rect=null;p[side]=clone(r[side]);}
+ const v=nativeViews(d);for(const side of ['source','target'])for(const page of Object.values(v[side]._pdfPages)){const out=[];for(const c of page.chars){if(c.c===' '){if(out.length)out.at(-1).spaceAfter=true;}else if(c.rect)out.push(c);}page.chars=out;}
+ const m=N.createMapper(d,'mono',v.source,v.target),saved=m.toSourceAnnotation({type:'highlight',text:'human genome\n基',position:{pageIndex:0,rects:[[61,690,130,710]],nextPageRects:[[60,690,70,710]]}});
+ assert(m.projectAnnotation(clone(saved)));assert(N.createMapper(d,'mono').projectAnnotation(clone(saved)));
+});
+check('proven cross-page annotations may exceed 32 rectangles while model requests stay bounded',()=>{
+ const {value:d,full}=longSelectionAlignment([4,5],600),v=nativeViews(d),m=N.createMapper(d,'mono',v.source,v.target),input={type:'highlight',text:d.pages.map(p=>p.paragraphs[0].target.text).join('\n'),position:{pageIndex:0,rects:clone(full),nextPageRects:clone(full)}};
+ assert(full.length>32);assert(m.selectionMapping(input,'target'));
+ assert.equal(m.selectionRequest({type:'highlight',text:d.pages[0].paragraphs[0].target.text,position:{pageIndex:0,rects:clone(full)}},'target'),null);
+});
 function multipleSentences(order=[0,1,2]){
  const d=phraseAlignment(),p=d.pages[0].paragraphs[0],sourceTexts=['A first sentence.','B second sentence.','C third sentence.'],targetTexts=['第一句。','第二句。','第三句。'],part=(text,y,width,line)=>{const glyphs=Array.from(text).map((text,i)=>({text,line,rect:[40+i*width,y,40+(i+1)*width,y+12]}));return {text,glyphs,rects:[[40,y,40+text.length*width,y+12]]};};
  p.sentences=sourceTexts.map((text,i)=>{const source=part(text,700-i*30,6,i),target=part(targetTexts[i],700-order.indexOf(i)*30,10,order.indexOf(i));return {id:'s'+i,method:'semantic-model',source,target,dualSource:{rects:clone(source.rects)},dualTarget:{rects:target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])},phrases:[]};});
@@ -26,6 +49,46 @@ function wrappedWord(text,wrap){
  for(const c of text){if(c===' '){sourceGlyphs.push({text:' ',rect:null,line:null});if(wrap){line++;x=40;}else x+=4;continue;}const y=700-line*30,r=[x,y,x+5,y+12];sourceGlyphs.push({text:c,line,rect:r});x+=5;const previous=sourceRects.at(-1);if(previous&&previous[1]===y)previous[2]=r[2];else sourceRects.push(clone(r));}
  const targetGlyphs=Array.from(targetText).map((text,i)=>({text,line:0,rect:[40+i*10,700,50+i*10,712]})),source={text,glyphs:sourceGlyphs,rects:sourceRects},target={text:targetText,glyphs:targetGlyphs,rects:[[40,700,70,712]]},link={id:'wrapped',method:'semantic-phrase-model',source,target,dualSource:{rects:clone(sourceRects)},dualTarget:{rects:[[640,700,670,712]]},sourceTokenCount:3,targetTokenCount:3};Object.assign(p,{source:clone(source),target:clone(target),dualSource:clone(link.dualSource),dualTarget:clone(link.dualTarget),sentences:[{id:'wrapped_sentence',method:'semantic-model',source:clone(source),target:clone(target),dualSource:clone(link.dualSource),dualTarget:clone(link.dualTarget),phrases:[clone(link)]}]});p.sentences[0].phrases[0].source.glyphs=p.sentences[0].phrases[0].source.glyphs.filter(g=>g.rect);return {d,p,link};
 }
+check('native word-space metadata permits a multiword request without synthetic space glyphs',()=>{
+ const d=phraseAlignment(),row=d.pages[0].paragraphs[0].sentences[0],{source,target}=setup(d),native=source._pdfPages[0].chars;
+ for(let i=0;i<native.length-1;i++)if(native[i+1].c===' ')native[i].spaceAfter=true;
+ source._pdfPages[0].chars=native.filter(g=>g.c!==' ');
+ const start=row.source.text.indexOf('human'),end=row.source.text.indexOf('genome')+'genome'.length,chosen=row.source.glyphs.slice(start,end).filter(g=>g.rect),rect=[Math.min(...chosen.map(g=>g.rect[0])),Math.min(...chosen.map(g=>g.rect[1])),Math.max(...chosen.map(g=>g.rect[2])),Math.max(...chosen.map(g=>g.rect[3]))],input={...highlight(0,[rect]),text:'human genome'};
+ const queries=N.createMapper(d,'mono',source,target).selectionRequests(input,'source');assert.equal(queries.length,1);assert.equal(queries[0].text,'human genome');assert.deepEqual(queries[0].rects,[rect]);
+ for(const mode of ['no_space_proof','line_break']){
+  const changed=clone(source);for(const g of changed._pdfPages[0].chars)if(g.spaceAfter){if(mode==='no_space_proof')g.spaceAfter=false;else g.lineBreakAfter=true;}
+  assert.deepEqual(N.createMapper(d,'mono',changed,target).selectionRequests(input,'source'),[],mode);
+ }
+});
+function pdfNativeChars(part){
+ const out=[];for(const g of part.glyphs){if(!g.rect)continue;if(g.text===' '){if(out.length)out.at(-1).spaceAfter=true;continue;}if(out.length&&out.at(-1).rect[1]!==g.rect[1])out.at(-1).lineBreakAfter=true;out.push({c:g.text,rect:clone(g.rect),inlineRect:clone(g.rect)});}return out;
+}
+check('native line bounds admit mixed font heights without broadening a selection',()=>{
+ const d=phraseAlignment(),row=d.pages[0].paragraphs[0].sentences[0],{source,target}=setup(d),native=pdfNativeChars(row.source);source._pdfPages[0].chars=native;
+ for(const c of native)c.inlineRect=[c.rect[0],688,c.rect[2],714];
+ const selected=row.source.glyphs.slice(row.source.text.indexOf('human'),row.source.text.indexOf('genome')+6),r=[selected[0].rect[0],688,selected.at(-1).rect[2],714],input={...highlight(0,[r]),text:'human genome'};
+ assert.equal(N.createMapper(d,'mono',source,target).selectionRequest(input,'source')?.text,'human genome');
+ const bad=clone(input);bad.position.rects[0][3]+=8;assert.equal(N.createMapper(d,'mono',source,target).selectionRequest(bad,'source'),null);
+});
+check('native spaces are shared by multi-sentence planning and complete-plus-partial composition',()=>{
+ const d=multipleSentences(),p=d.pages[0].paragraphs[0],second=p.sentences[1],input=sentenceSelection([p.sentences[0]],'source'),part=(side,n)=>({text:second[side].text.slice(0,n),glyphs:clone(second[side].glyphs.slice(0,n)),rects:[[40,670,40+n*(side==='source'?6:10),682]]});
+ input.text+='\nB second';input.position.rects.push([40,670,88,682]);
+ const source={_pdfPages:{0:{chars:pdfNativeChars(p.source)}}},target={_pdfPages:{0:{chars:pdfNativeChars(p.target)}}},link={id:'second_part',method:'semantic-phrase-model',source:part('source',8),target:part('target',2),dualSource:{rects:[[40,670,88,682]]},dualTarget:{rects:[[640,670,660,682]]},sourceTokenCount:2,targetTokenCount:2};
+ assert.deepEqual(N.createMapper(d,'mono',source,target).selectionRequests(input,'source').map(q=>q.text),['B second']);
+ const m=N.createMapper(d,'mono',source,target,()=>[link]),got=m.selectionMapping(input,'source');assert(got);assert.equal(got.annotation.text,'第一句。\n第二');assert.deepEqual(m.selectionRequests(input,'source'),[]);
+});
+for(const side of ['source','target'])check(`cross-page complete ${side} sentences reuse semantics and reject forged text`,()=>{
+ const d=selectionAlignment([4,5]);for(const p of d.pages)p.paragraphs[0].sentences[0].phrases=[];
+ const source={_pdfPages:Object.fromEntries(d.pages.map(p=>[p.sourcePage,{chars:pdfNativeChars(p.paragraphs[0].source)}]))},target={_pdfPages:Object.fromEntries(d.pages.map(p=>[p.outputPage,{chars:pdfNativeChars(p.paragraphs[0].target)}]))},rows=d.pages.map(p=>p.paragraphs[0].sentences[0]),input={...highlight(side==='source'?4:0,clone(rows[0][side].rects)),text:rows.map(r=>r[side].text).join('\n')};input.position.nextPageRects=clone(rows[1][side].rects);
+ const m=N.createMapper(d,'mono',source,target),got=m.selectionMapping(input,side);assert(got);assert.deepEqual(got.annotation.position.nextPageRects,rows[1][side==='source'?'target':'source'].rects);assert.equal(got.annotation.text,rows.map(r=>r[side==='source'?'target':'source'].text).join('\n'));assert.deepEqual(m.selectionRequests(input,side),[]);
+ const forged=clone(input);forged.text+=' foreign';const rejected=attempt(()=>m.selectionMapping(forged,side));assert(!rejected.ok||!rejected.value);assert.deepEqual(m.selectionRequests(forged,side),[]);
+});
+for(const identityIndex of [0,1])for(const side of ['source','target'])check(`cross-page ${side} preserves identity text on page ${identityIndex}`,()=>{
+ const d=selectionAlignment([4,5]),p=d.pages[identityIndex].paragraphs[0],row=p.sentences[0];row.method='glyph-identity';row.target=clone(row.source);row.dualTarget={rects:row.target.rects.map(r=>[r[0]+600,r[1],r[2]+600,r[3]])};row.phrases=[];p.target=clone(row.target);p.dualTarget=clone(row.dualTarget);
+ const views=Object.fromEntries(['source','target'].map(name=>[name,{_pdfPages:Object.fromEntries(d.pages.map(p=>[name==='source'?p.sourcePage:p.outputPage,{chars:pdfNativeChars(p.paragraphs[0][name])}]))}])),m=N.createMapper(d,'mono',views.source,views.target),texts=d.pages.map((_,i)=>side==='source'||i===identityIndex?'genome':'基因组'),rects=texts.map(t=>t==='genome'?[[94,690,130,710]]:[[60,690,90,710]]),input={...highlight(side==='source'?4:0,rects[0]),text:texts.join('\n')};input.position.nextPageRects=rects[1];
+ const got=m.selectionMapping(input,side);assert(got);assert.equal(got.annotation.text,side==='source'?d.pages.map((_,i)=>i===identityIndex?'genome':'基因组').join('\n'):'genome\ngenome');
+ if(side==='target')assert.equal(m.toSourceAnnotation(input).text,'genome\ngenome');
+});
 check('CJK lexical completion accepts a glyph-proven wrapped Latin word while preserving its hyphen and native text',()=>{
  const {d,p}=wrappedWord('understand- ing',true),m=N.createMapper(d,'mono',{_pdfPages:{0:{chars:chars(p.source).filter(c=>c.rect)}}},{_pdfPages:{0:{chars:chars(p.target)}}}),got=m.selectionMapping({...highlight(0,[[50,700,70,712]]),text:'解。'},'target');assert(got);assert.equal(got.expanded,true);assert.equal(got.annotation.text,'understand- ing');assert.deepEqual(got.annotation.position.rects,p.source.rects);const latin=attempt(()=>m.selectionMapping({...highlight(0,[[40,700,60,712]]),text:'unde'},'source'));assert(!latin.ok||!latin.value);
 });
@@ -122,6 +185,10 @@ const notice=f=>f.layer.statusBar.children.find(n=>n.className==='askgpt-native-
  });
  for(const side of ['source','target'])await checkAsync(`cold cross-page ${side} range requests only its two physical semantic pages before retrying local proof`,async()=>{
   const full=selectionAlignment([4,5]),cold=clone(full),calls=[];for(const p of cold.pages[1].paragraphs)delete p.sentences;for(const key of ['sentencePages','sentencePartialPages','phrasePages','phraseExtractedPages'])if(cold[key])cold[key]=cold[key].filter(p=>p!==5);const f=await fixture({},({source})=>{source._pdfPages=trackedGlyphPages(full,'source',{reads:0});},{align:(page,options)=>{calls.push({page,options});return 'pending';}});try{await f.show([4,5],'dual',cold);const target=f.layer.nativeView;target._pdfPages=trackedGlyphPages(full,'target',{reads:0});calls.length=0;const input=side==='source'?{...highlight(4,[[94,690,130,710]]),text:'genome\ngenome'}:{...highlight(0,[[60,690,90,710]]),text:'基因组\n基因组'};input.position.nextPageRects=side==='source'?[[94,690,130,710]]:[[60,690,90,710]];const popup={rect:[1,2,3,4],annotation:input};if(side==='source')f.source._onSetSelectionPopup(popup);else target._options.onSetSelectionPopup(popup);assert.equal(calls.length,1);assert.deepEqual(calls[0].options.pages,[4,5]);assert.equal(calls[0].options.hydrationOnly,true);assert.equal(calls[0].options.selection,undefined);assert.equal(calls[0].options.selections,undefined);assert.equal(f.layer.hasExactSelection(),false);f.layer.updateAlignment(full,{pages:[4,5]});assert.equal(f.layer.hasExactSelection(),true);assert.equal(calls.length,1);assert.equal(f.writes.length,0);}finally{f.close();}
+ });
+ await checkAsync('cross-page selection hydrates the missing second native page before requesting a model',async()=>{
+  const d=selectionAlignment([4,5]);for(const p of d.pages)p.paragraphs[0].sentences[0].phrases=[];const all=trackedGlyphPages(d,'source',{reads:0}),calls=[],loaded=[],f=await fixture({},({source})=>{source._pdfPages={4:all[4]};source._ensureBasicPageData=async page=>{loaded.push(page);source._pdfPages[page]=all[page];};},{align:(page,options)=>{calls.push({page,options});return 'pending';}});
+  try{await f.show([4,5],'dual',d);f.layer.nativeView._pdfPages=trackedGlyphPages(d,'target',{reads:0});calls.length=0;const rows=d.pages.map(p=>p.paragraphs[0].sentences[0]),input={...highlight(4,clone(rows[0].source.rects)),text:rows.map(r=>r.source.text).join('\n')};input.position.nextPageRects=clone(rows[1].source.rects);f.source._onSetSelectionPopup({rect:[1,2,3,4],annotation:input});await new Promise(setImmediate);await new Promise(setImmediate);assert.deepEqual(loaded,[5]);assert.equal(f.layer.hasExactSelection(),true);assert.equal(calls.length,0);assert.equal(f.writes.length,0);}finally{f.close();}
  });
  await checkAsync('complete multi-sentence correspondence keeps Chinese annotations visible and editable in their own attachment after reopening',async()=>{
   const d=multipleSentences(),p=d.pages[0].paragraphs[0],input=sentenceSelection(p.sentences.slice(0,2),'target'),f=await translatedFixture();try{f.source._pdfPages={0:{chars:chars(p.source)}};await f.show([0],'dual',d);const target=f.layer.nativeView;target._pdfPages={0:{chars:chars(p.target)}};target._options.onSetSelectionPopup({rect:[1,2,3,4],annotation:input});assert.equal(f.layer.hasExactSelection(),true);const pending=clone(f.reader._state.primaryViewSelectionPopup.annotation);assert(pending._askgptNativeSelection);const saved=f.reader._annotationManager.addAnnotation({...pending,color:'#5fb236'});assert(saved.id.endsWith('__askgptTranslated'));await new Promise(setImmediate);await new Promise(setImmediate);assert.equal(f.committed().length,1);assert.equal(target._annotations[0].text,input.text);assert.deepEqual(target._annotations[0].position,input.position);assert.equal(f.source._annotations.length,0);f.layer.showOriginal();await f.show([0],'dual',d);assert.equal(f.layer.nativeView._annotations[0].text,input.text);f.reader._annotationManager.updateAnnotations([{id:saved.id,color:'#2ea8e5'}]);await new Promise(setImmediate);await new Promise(setImmediate);assert.equal(f.committed()[0].color,'#2ea8e5');assert.equal(f.writes.length,0);}finally{f.close();}

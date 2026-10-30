@@ -782,9 +782,7 @@ class SentenceUpgradeService:
         return updated,None
 
     def _publish_sentences(self,upgrade,local,physical,updated,*,complete=False):
-        with self.manager.lock:
-            if upgrade.cancelled.is_set() or self.manager.stopping:raise ProtocolFailure("alignment_cancelled")
-            value=self.manager.read_alignment(upgrade.parent)
+        def transform(value):
             full=self._sentence_completed(value)
             partial=set(value.get("sentencePartialPages",[]))
             if complete:full.add(physical);partial.discard(physical)
@@ -794,7 +792,8 @@ class SentenceUpgradeService:
             value["sentencePages"]=sorted(full);value["sentencePartialPages"]=sorted(partial)
             if physical in value.get("phraseExtractedPages",[]):
                 value["phraseExtractedPages"]=[x for x in value["phraseExtractedPages"] if x!=physical]
-            self.manager.publish_alignment(upgrade.parent,value)
+            return value
+        self.manager.update_alignment(upgrade.parent,transform,cancelled=upgrade.cancelled)
 
     @staticmethod
     def _coverage_error(page,words):
@@ -827,9 +826,7 @@ class SentenceUpgradeService:
 
     def _publish_words(self,upgrade,local,physical,updated,words,*,complete=False):
         manager=self.manager
-        with manager.lock:
-            if upgrade.cancelled.is_set() or manager.stopping:raise ProtocolFailure("alignment_cancelled")
-            value=manager.read_alignment(upgrade.parent)
+        def transform(value):
             extracted=self._completed(value)
             if complete:extracted.add(physical)
             else:extracted.discard(physical)
@@ -841,7 +838,8 @@ class SentenceUpgradeService:
             value["phraseExtractionRevision"]=EXTRACTION_REVISION
             value["phraseExtractedPages"]=sorted(extracted)
             value["phraseCoverage"]={**value.get("phraseCoverage",{}),str(physical):phrase_page_coverage(updated,words)}
-            manager.publish_alignment(upgrade.parent,value)
+            return value
+        manager.update_alignment(upgrade.parent,transform,cancelled=upgrade.cancelled)
 
     def _model_turn(self,helper,method,request,upgrade,budget):
         while True:

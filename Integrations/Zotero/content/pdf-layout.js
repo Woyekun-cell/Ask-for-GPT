@@ -5,12 +5,12 @@
   const MAX_OUTPUT_BYTES = 450 * 1024 * 1024;
   const MAX_ALIGNMENT_BYTES = 32 * 1024 * 1024;
   const XHTML = 'http://www.w3.org/1999/xhtml';
-  const knownErrors = new Set(['connection', 'permissions', 'runtime_missing', 'already_translated', 'local_version_save', 'translation_failed', 'gpt_unavailable', 'batch_invalid', 'batch_limit', 'translation_timeout', 'formula_placeholder_mismatch', 'invalid_pdf', 'pdf', 'direction', 'response', 'stopped', 'timeout', 'compatibility', 'limit', 'bridge', 'job_missing', 'alignment_unavailable', 'alignment_timeout', 'alignment_invalid', 'selection_busy', 'selection_timeout', 'selection_invalid', 'selection_unavailable', 'annotation_sentence', 'annotation_mapping', 'rendered', 'recycled', 'layout']);
+  const knownErrors = new Set(['job_conflict', 'connection', 'permissions', 'runtime_missing', 'already_translated', 'local_version_save', 'translation_failed', 'gpt_unavailable', 'batch_invalid', 'batch_limit', 'translation_timeout', 'formula_placeholder_mismatch', 'invalid_pdf', 'pdf', 'direction', 'response', 'stopped', 'timeout', 'compatibility', 'limit', 'bridge', 'job_missing', 'alignment_unavailable', 'alignment_timeout', 'alignment_invalid', 'selection_busy', 'selection_timeout', 'selection_invalid', 'selection_unavailable', 'annotation_sentence', 'annotation_mapping', 'rendered', 'recycled', 'layout']);
   const validationDetails=new Set(['jsonObject','count','rowShape','id','empty','formula','content','notFunction','missingProperty','permission','other','nativeInitialize','nativePaint','hoverAttach','hoverInput','hoverDisabled','hoverSelection','hoverGeometry','hoverLookup','hoverRender','hoverEvent','resumeAttach','resumeSave','resumeRestore','resumeLoad','resumeCapture','figureBinding','figureRender','figureNativeAttach','figureInactive','figureInput','figureSelection','figureTool','figureTarget','figurePoint','figureGlyph','figureDrag','figurePrevented']);
   const nativeErrorProperties=new Set(['map','flatMap','some','apply','cloneInto','setSelectedAnnotationIDs','_onSelectAnnotations','setAnnotations','_onAddAnnotation','_onUpdateAnnotations','_onDeleteAnnotations','_getPageLabel','getAnnotations','then','slice','filter','find','every','other']);
   class PDFError extends Error { constructor(code) { super(code); this.code = code; } }
   function errorMessage(error) {
-    const messages = { connection: '请启动 Ask for GPT 并开启页面翻译连接', permissions: '页面翻译连接权限异常',
+    const messages = { job_conflict: '已有相同翻译正在进行，或同时处理数量已达上限，请稍后重试', connection: '请启动 Ask for GPT 并开启页面翻译连接', permissions: '页面翻译连接权限异常',
       job_missing: '这份中文版的对应数据不可用，已有 PDF 已保留', local_version_save: '译文版本未能保存或打开，请检查文献库的写入权限与磁盘空间；已有缓存已保留', already_translated: '当前 PDF 已是译文，可直接阅读，无需重复翻译', runtime_missing: '保版翻译组件尚未就绪', translation_failed: '保版翻译失败，请重试', invalid_pdf: '无法读取这份 PDF', pdf: '无法读取这份 PDF',
       gpt_unavailable: 'GPT 翻译连接不可用，请在 Ask for GPT 设置中测试连接', batch_invalid: '页面翻译校验失败，请重试', batch_limit: '当前页文字超出批量翻译上限', translation_timeout: 'GPT 翻译超时，请重试', formula_placeholder_mismatch:'公式标记校验失败，请重试',
       direction: '仅支持英语与中文互译', response: 'PDF 翻译结果无效，请重试', stopped: '', timeout: 'PDF 翻译连接超时，请重试',
@@ -269,6 +269,7 @@
         if(suffix.endsWith('/alignment-layout.json')&&response.status===404){let code;try{if(typeof responseText==='string'&&responseText.length<=65536){const parsed=JSON.parse(responseText);code=typeof parsed.error==='string'?parsed.error:parsed.error?.code;}}catch(_){}throw new PDFError(code==='not_found'?'layout_missing':code==='job_not_found'?'job_missing':knownErrors.has(code)?code:'response');}
         if(suffix.endsWith('/alignment-work')&&response.status===404)throw new PDFError('alignment_unavailable');
         if(selectionHandshake&&response.status===409){let code;if(typeof responseText!=='string'||responseText.length>65536)throw new PDFError('response');try{const parsed=JSON.parse(responseText);code=typeof parsed.error==='string'?parsed.error:parsed.error?.code;}catch(_){}throw new PDFError(['selection_source_required','selection_busy'].includes(code)?code:'response');}
+        if(method==='POST'&&suffix===''&&response.status===409){let code;try{if(typeof responseText==='string'&&responseText.length<=65536)code=JSON.parse(responseText).error;}catch(_){}throw new PDFError(code==='job_conflict'?'job_conflict':'response');}
         if (![200,202].includes(response.status) || typeof responseText !== 'string' || responseText.length > jsonLimit) throw new PDFError('response');
         try { return JSON.parse(responseText); } catch (_) { throw new PDFError('response'); }
       } catch (error) {
@@ -282,6 +283,7 @@
         if(suffix.endsWith('/alignment-work')&&xhr?.status===404)throw new PDFError('alignment_unavailable');
         if(xhr?.status===404&&code==='job_not_found')throw new PDFError('job_missing');
         if(selectionHandshake&&xhr?.status===409)throw new PDFError(['selection_source_required','selection_busy'].includes(code)&&typeof xhr.responseText==='string'&&xhr.responseText.length<=65536?code:'response');
+        if(code==='job_conflict')throw new PDFError(method==='POST'&&suffix===''&&xhr?.status===409&&typeof xhr.responseText==='string'&&xhr.responseText.length<=65536?'job_conflict':'response');
         if (knownErrors.has(code)) throw new PDFError(code);
         if (error?.name === 'TimeoutException') throw new PDFError('timeout');
         throw new PDFError('bridge');
@@ -359,6 +361,17 @@
       }finally{setCancel(null);}
     }
     return {
+      async connect(setCancel = () => {}) {
+        if (!dependencies.ensurePDFReady) return;
+        let aborted = false;
+        setCancel(() => { aborted = true; });
+        try {
+          const connection = await readConnection(dependencies);
+          if (aborted) throw new PDFError('stopped');
+          await dependencies.ensurePDFReady(connection, () => !aborted);
+          if (aborted) throw new PDFError('stopped');
+        } finally { setCancel(null); }
+      },
       async start(value, options, setCancel = () => {}, onProgress = () => {}) {
         const data = validPDF(value);
         if (!options || !((options.source === 'en' && options.target === 'zh-Hans') || (options.source === 'zh-Hans' && options.target === 'en'))) throw new PDFError('direction');
@@ -382,6 +395,7 @@
         });
         try{
           connection=await readConnection(dependencies);if(control.aborted)throw new PDFError('stopped');
+          await dependencies.ensurePDFReady?.(connection,()=>!control.aborted);if(control.aborted)throw new PDFError('stopped');
           const input=data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength);
           let response=await request('POST','',connection,input,{'Content-Type':'application/pdf',
             'X-AskGPT-Pages':options.pages,'X-AskGPT-Source':options.source,'X-AskGPT-Target':options.target},control);

@@ -338,18 +338,18 @@
         run.pending.set(key,pending);return quiet?pending:'started';
       }
       function selectionErrorStatus(code){return ({selection_busy:'busy',selection_timeout:'timeout',selection_invalid:'unavailable',selection_unavailable:'unavailable'})[code]||'failed';}
-      function selectionGroupQueries(page,values){
+      function selectionGroupQueries(page,values,pages=[page]){
         if(!Array.isArray(values)||!values.length||values.length>8)return null;
         try{return Array.from(values).map(query=>{
-          if(!query||query.page!==page||typeof query.paragraph!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(query.paragraph)||!['source','target'].includes(query.side)||query.side!==values[0].side||typeof query.text!=='string'||!query.text.trim()||Array.from(query.text).length>2048||Array.from(query.text).some(c=>{const n=c.codePointAt(0);return n>=0xd800&&n<=0xdfff;})||!Array.isArray(query.rects)||!query.rects.length||query.rects.length>32)throw 0;
+          if(!query||!pages.includes(query.page)||typeof query.paragraph!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(query.paragraph)||!['source','target'].includes(query.side)||query.side!==values[0].side||typeof query.text!=='string'||!query.text.trim()||Array.from(query.text).length>2048||Array.from(query.text).some(c=>{const n=c.codePointAt(0);return n>=0xd800&&n<=0xdfff;})||!Array.isArray(query.rects)||!query.rects.length||query.rects.length>32)throw 0;
           const rects=Array.from(query.rects).map(r=>{if(!Array.isArray(r)||r.length!==4||!Array.from(r).every(n=>Number.isFinite(n)&&Math.abs(n)<=1000000)||r[2]<=r[0]||r[3]<=r[1])throw 0;return r.slice();});
-          const selected={page,paragraph:query.paragraph,side:query.side,rects,text:query.text};let bytes=0;for(const c of JSON.stringify(selected)){const n=c.codePointAt(0);bytes+=n<=0x7f?1:n<=0x7ff?2:n<=0xffff?3:4;}if(bytes>8192)throw 0;return selected;
+          const selected={page:query.page,paragraph:query.paragraph,side:query.side,rects,text:query.text};let bytes=0;for(const c of JSON.stringify(selected)){const n=c.codePointAt(0);bytes+=n<=0x7f?1:n<=0x7ff?2:n<=0xffff?3:4;}if(bytes>8192)throw 0;return selected;
         });}catch(_){return null;}
       }
       function requestSelectionGroup(page,values,options={}){
         if(session.localGeometryOnly||!valid()||session.mode==='original'||session.layer?.visible!==true)return 'unavailable';
         session.background?.activity?.();
-        const queries=selectionGroupQueries(page,values),run=interactionState();
+        const queries=selectionGroupQueries(page,values,options.pages),run=interactionState();
         if(!queries){run.latest=null;run.group=null;session.layer?.setAnnotationStatus?.('unavailable');return 'unavailable';}
         const key='group:'+JSON.stringify(queries),existing=run.group;
         if(existing?.key===key&&existing.current()&&!existing.finished)return 'pending';
@@ -369,7 +369,7 @@
         group.promise=(async()=>{
           for(let index=first;index<queries.length;index++){
             if(!group.current())return 'stopped';
-            const checked=await requestSelection(page,queries[index],{suppressStatus:true,retry:options.retry===true});
+            const checked=await requestSelection(queries[index].page,queries[index],{suppressStatus:true,retry:options.retry===true});
             if(!group.current())return 'stopped';
             if(checked?.errorCode){report('nativeSelection',new PDF.PDFError(checked.errorCode));return finish(selectionErrorStatus(checked.errorCode));}
             if(!checked?.link)return finish('unavailable');
@@ -382,7 +382,7 @@
       function requestPrecision(page,options={}){
         if(session.localGeometryOnly||!session.native||!session.job||!session.data||!Number.isInteger(page)||!session.job.sourcePages.includes(page))return 'unavailable';
         if(options.pages!==undefined&&(!Array.isArray(options.pages)||!options.pages.length||options.pages.length>2||options.pages[0]!==page||new Set(options.pages).size!==options.pages.length||options.pages.some(p=>!Number.isInteger(p)||!session.job.sourcePages.includes(p))||options.pages.length===2&&options.pages[1]!==page+1))return 'unavailable';
-        const metadataPages=options.pages||[page],viewport=session.layer?.currentSourcePage,ownerPayload=options.hydrationOnly===true||Boolean(selectionGroupQueries(page,options.selections!==undefined?options.selections:options.selection?[options.selection]:[])),metadataOwner=options.explicit===true&&ownerPayload;
+        const metadataPages=options.pages||[page],viewport=session.layer?.currentSourcePage,ownerPayload=options.hydrationOnly===true||Boolean(selectionGroupQueries(page,options.selections!==undefined?options.selections:options.selection?[options.selection]:[],metadataPages)),metadataOwner=options.explicit===true&&ownerPayload;
         if(metadataOwner&&Math.abs(session.job.sourcePages.indexOf(page)-session.job.sourcePages.indexOf(viewport))>1)return 'unavailable';
         if(options.hydrationOnly===true){
           if(!session.layoutAlignment)return session.layer?.hasExactSelection?.()===true?'ready':'unavailable';
@@ -393,7 +393,7 @@
           // Layout-only first paint can accept a deliberate selection before
           // the cached glyph mapping arrives. Retain that one query rather
           // than silently replacing it with passive whole-page preparation.
-          const fragments=options.selections!==undefined?selectionGroupQueries(page,options.selections):null;
+          const fragments=options.selections!==undefined?selectionGroupQueries(page,options.selections,metadataPages):null;
           if(options.selections!==undefined&&!fragments){session.pendingSelection=null;session.layer?.setAnnotationStatus?.('unavailable');return 'unavailable';}
           if(options.explicit===true&&(fragments||options.selection?.page===page&&typeof options.selection.text==='string')){
             session.selectionPage=page;session.selectionViewport=viewport;session.pendingSelection={page,metadataOwner,pages:metadataPages.slice(),...(fragments?{queries:fragments}:{query:JSON.parse(JSON.stringify(options.selection))}),retry:options.retry===true,jobID:session.job.id,epoch:session.epoch,generation:session.selectionGeneration};
@@ -501,12 +501,12 @@
           if(!current())return;
           const values=pages.map(physical=>session.pageAlignments.get(physical));let value=values[0];
           if(values.length>1){const byPage=new Map(pages.map((physical,index)=>[physical,values[index].pages.find(p=>p.sourcePage===physical)]));value={...value,pages:layout.pages.map(p=>byPage.get(p.sourcePage)||p)};for(const key of ['sentencePages','sentencePartialPages','phrasePages','phraseExtractedPages'])if(values.some(item=>item[key]!==undefined))value[key]=[...new Set(values.flatMap(item=>item[key]||[]))];if(values.some(item=>item.phraseCoverage))value.phraseCoverage=Object.assign({},...values.map(item=>item.phraseCoverage||{}));for(const key of ['sentenceAlignmentRevision','phraseAlignmentRevision','phraseExtractionRevision']){const item=values.find(item=>item[key]!==undefined);if(item)value[key]=item[key];}if(values.some(item=>item.granularity==='sentence'))value.granularity='sentence';}
-          session.semanticBinding=null;session.alignment=value;session.semanticPages=new Set(pages);session.layer?.updateAlignment?.(value,{pages:pages.slice()});bindSemanticAlignment();run.finished=true;ensureBackground(context,session);report('alignmentReady');restoreSelectionLinks(page);
+          session.semanticBinding=null;session.alignment=value;session.semanticPages=new Set(pages);session.layer?.updateAlignment?.(value,{pages:pages.slice()});bindSemanticAlignment();run.finished=true;ensureBackground(context,session);report('alignmentReady');pages.forEach(restoreSelectionLinks);
           const pending=session.pendingSelection;session.pendingSelection=null;
           if(pending&&pending.jobID===run.jobID&&pending.epoch===session.epoch&&pending.generation===session.selectionGeneration&&pending.page===page){
             if(pending.hydrationOnly){session.layer.setAnnotationStatus?.(session.layer.hasExactSelection?.()===true?null:'unavailable');return;}
             if(session.layer.hasExactSelection?.()===true)session.layer.setAnnotationStatus?.(null);
-            else{const replanned=session.layer.retrySelection?.({retry:pending.retry===true});if(replanned!==true&&replanned!=='started'){if(pending.queries)requestSelectionGroup(page,pending.queries,{explicit:true,retry:pending.retry});else requestSelection(page,pending.query,{explicit:true,retry:pending.retry});}}return;
+            else{const replanned=session.layer.retrySelection?.({retry:pending.retry===true});if(replanned!==true&&replanned!=='started'){if(pending.queries)requestSelectionGroup(page,pending.queries,{explicit:true,pages:pending.pages,retry:pending.retry});else requestSelection(page,pending.query,{explicit:true,retry:pending.retry});}}return;
           }
           const status=requestPrecision(page);session.layer?.setAnnotationStatus?.(status==='ready'?null:['idle','unavailable'].includes(status)?'idle':['failed','retry_wait','retry_limited'].includes(status)?status:'preparing');
         })().catch(error=>{if(current()&&error?.code!=='stopped'){run.failed=true;run.finished=true;session.layer?.setAnnotationStatus?.('failed');report('alignment',error);}});};
@@ -593,6 +593,9 @@
           report('startBegin');clearSelection();session.busy=true;session.whole=whole;session.outputEpoch++;session.precision?.cancel?.();session.precision=null;session.interaction=null;session.translatedAnnotations=null;const retirement=retireWork(context,session);session.outputs.clear();session.alignment=null;session.layoutAlignment=null;session.layoutSignature=null;session.pageAlignments.clear();session.semanticPages.clear();session.semanticBinding=null;session.alignmentWorkState=null;session.localGeometryOnly=false;session.localSourceSHA256=null;session.localAlignmentBinding=null;session.registrationNotice=null;session.pendingLegacyAdoption=null;
           session.layer.prepareOutput();setProgress(context,session,{stage:'preparing'});context.error?.remove();context.error=null;
           await retirement;report('retired');if(!current())return;
+          // User-initiated opening also needs the helper for cached layouts.
+          // Background alignment reads never relaunch an app the user quit.
+          await transport.connect(cancel=>{if(current())session.cancel=cancel;else cancel?.();});if(!current())return;
           if(!session.data){
             const pending=session.dataPromise||(session.dataPromise=pdf.pdfDocument.getData());
             try{const returned=await pending;if(!current())return;session.data=PDF.copyOpenPDFData(returned,Components);}
@@ -727,8 +730,13 @@
         }
         if(mode===session.mode&&!session.busy&&!session.pendingDisplay&&session.layer?.visible)return;
         session.mode=mode;session.lastTranslatedMode=mode;notify(context);
+        if(!session.busy&&!session.job)return session.start(session.whole);
         if(!session.busy&&session.job){const epoch=session.epoch;session.busy=true;setProgress(context,session,{stage:'loading'});
-          try{let shown;do{shown=session.mode;await session.display(shown);}while(session.valid()&&session.mode!==shown);}
+          try{
+            await transport.connect(cancel=>{if(session.valid()&&session.epoch===epoch)session.cancel=cancel;else cancel?.();});
+            if(!session.valid()||session.epoch!==epoch||session.mode==='original')return;
+            let shown;do{shown=session.mode;await session.display(shown);}while(session.valid()&&session.mode!==shown);
+          }catch(error){if(session.valid()&&session.epoch===epoch&&session.mode!=='original'&&error?.code!=='stopped'){session.layer.restoreOriginal();showError(context,error);}}
           finally{session.finish(epoch);}
         }
       },
