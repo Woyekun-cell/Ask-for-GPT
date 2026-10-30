@@ -489,7 +489,7 @@
         session.hydration?.cancel?.();
         const run={jobID:session.job.id,epoch:session.epoch,page,viewport,owner,generation:session.selectionGeneration,pages:pages.slice(),failed:false,finished:false,cancel:null},sourcePages=session.job.sourcePages.slice(),layout=session.layoutAlignment;session.hydration=run;
         const current=()=>valid()&&session.hydration===run&&session.epoch===run.epoch&&session.job?.id===run.jobID&&session.mode!=='original'&&session.layer?.visible===true&&session.layer.currentSourcePage===viewport&&(!owner||session.selectionGeneration===run.generation);
-        const idle=async()=>{if(!current())throw new PDF.PDFError('stopped');await session.background?.waitIdle?.();if(!current())throw new PDF.PDFError('stopped');};
+        const idle=async()=>{if(!current())throw new PDF.PDFError('stopped');if(!run.owner)await session.background?.waitIdle?.();if(!current())throw new PDF.PDFError('stopped');};
         const load=()=>{run.cancel=null;if(!current())return;report('alignmentBegin');void(async()=>{
           await idle();
           for(const physical of pages){

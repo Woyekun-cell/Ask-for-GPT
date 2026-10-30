@@ -2,11 +2,11 @@
 
 [下载最新版](https://github.com/Woyekun-cell/Ask-for-GPT/releases/latest) · [Zotero 图文指南](https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/docs/ZOTERO.zh-CN.md) · [翻译后端配置](TRANSLATION-BACKENDS.zh-CN.md)
 
-这份指南面向直接下载使用的读者。安装包里已经有编译好的 Ask for GPT、离线词典和阅读插件，不需要安装 Xcode 或自己编译。模型连接和 PDF 支持在第一次使用时配置，之后可以直接打开应用阅读。本次 macOS 1.1.59 使用 Codex CLI 的 ChatGPT 登录。
+这份指南面向直接下载使用的读者。安装包里已经有编译好的 Ask for GPT、离线词典和阅读插件，不需要安装 Xcode 或自己编译。模型连接和 PDF 支持在第一次使用时配置，之后可以直接打开应用阅读。本次 macOS 1.1.60 使用 Codex CLI 的 ChatGPT 登录。
 
 ## 先选对下载文件
 
-在 GitHub Releases 的 **Assets** 中下载 `Ask-for-GPT-1.1.59-macOS-arm64.dmg`。如果你更习惯解压文件，也可以选同版本的 `.zip`；两者内容相同。
+在 GitHub Releases 的 **Assets** 中下载 `Ask-for-GPT-1.1.60-macOS-arm64.dmg`。如果你更习惯解压文件，也可以选同版本的 `.zip`；两者内容相同。
 
 当前安装版适用于 **Apple Silicon Mac（M1、M2、M3、M4 等 M 系列芯片）**。可以在苹果菜单 **关于本机**中查看芯片。完整 PDF 支持需要 macOS 15 或更新版本；Apple 本机短段翻译需要 macOS 26 和对应语言包。Intel Mac 暂无此安装包。
 
@@ -33,7 +33,7 @@
 
 ## 2. 配置模型连接
 
-macOS 1.1.59 使用 Codex CLI，沿用你自己的 ChatGPT 账号进行翻译、问答和写作。
+macOS 1.1.60 使用 Codex CLI，沿用你自己的 ChatGPT 账号进行翻译、问答和写作。
 
 ### 默认路径：登录自己的 ChatGPT 账号
 
@@ -55,7 +55,7 @@ macOS 1.1.59 使用 Codex CLI，沿用你自己的 ChatGPT 账号进行翻译、
 
 ### 历史可选后端说明
 
-macOS 1.1.59 安装包未包含 API / Claude 可选适配，设置中使用 **CLI 路径**与 **保存并连接**。随包保留的[翻译后端说明](TRANSLATION-BACKENDS.zh-CN.md)用于历史版本及 Windows 预览版参考；可选后端示例见共享源码。
+macOS 1.1.60 安装包未包含 API / Claude 可选适配，设置中使用 **CLI 路径**与 **保存并连接**。随包保留的[翻译后端说明](TRANSLATION-BACKENDS.zh-CN.md)用于历史版本及 Windows 预览版参考；可选后端示例见共享源码。
 
 ## 3. 允许读取你选中的文字
 
@@ -127,5 +127,5 @@ Word/WPS 写作加载项还需要单独的 localhost HTTPS 配置。若需要写
 每次 Release 附带 `SHA256SUMS.txt`。下载后可以在终端检查安装包，输出应与文件内对应行相同：
 
 ```bash
-shasum -a 256 ~/Downloads/Ask-for-GPT-1.1.59-macOS-arm64.dmg
+shasum -a 256 ~/Downloads/Ask-for-GPT-1.1.60-macOS-arm64.dmg
 ```
