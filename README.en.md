@@ -35,7 +35,7 @@ Follow the complete workflow: word lookup, passage translation and contextual qu
 
 ## Download and install
 
-macOS 1.1.61 supports Zotero 10.0.x and fixes add-on CSS loading and connection-module initialization there. Previous selection and responsiveness fixes remain. Word/WPS are unchanged in this release. The Windows assets retain the independently validated `0.1.0-preview.1` build (source `05348ad`); these new macOS reader features are not claimed for that Windows binary.
+macOS 1.1.61 uses English throughout the selection translator, Ask for GPT chat, and settings. It also restores a solid window surface so text behind the title bar no longer shows through. The Zotero 9/10 add-on, selection alignment, and response improvements remain. Word/WPS writing features are unchanged. The Windows assets retain the independently validated `0.1.0-preview.1` build (source `05348ad`); these macOS changes are not claimed for that Windows binary.
 
 **Windows version (x64):** [Windows installer and portable ZIP](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38) · [Setup guide (中文)](docs/INSTALL.Windows.zh-CN.md). Provides selection lookup, an offline dictionary, passage translation and questions, Chrome/Zotero reading integration, bilingual PDFs, and configurable translation backends. [Build and check records](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml) are available in the workflow. The interface examples below use the macOS version.
 
@@ -50,15 +50,15 @@ Choose a macOS installer above to start using the app. The macOS application its
 First setup on macOS takes four steps:
 
 1. **Install the app.** Move Ask for GPT into Applications and open it. This release is not notarized by Apple. If macOS blocks the first launch, follow its confirmation in System Settings → Privacy & Security.
-2. **Configure the model connection.** The default route is the included **`01-登录ChatGPT.command`**. It unpacks and verifies official Codex CLI 0.163.0, then opens browser sign-in. Copy its CLI path into settings, click **保存并连接** (save and connect). No npm or Homebrew installation is needed. This Mac binary uses Codex.
+2. **Configure the model connection.** The default route is the included **`01-登录ChatGPT.command`**. It unpacks and verifies official Codex CLI 0.163.0, then opens browser sign-in. Copy its CLI path into settings and click **Save and connect**. No npm or Homebrew installation is needed. This Mac binary uses Codex.
 3. **Prepare PDF translation when needed.** Run **`02-准备PDF翻译.command`** to download pinned uv, Python 3.12.15, prebuilt dependencies, and the public fonts and models used for layout. This one-time preparation needs internet access and about 1 GB of local storage, with no compilation. Everyday PDF translation still needs a network connection for model requests.
-4. **Connect your reader.** Open **页面内翻译…** from the app's menu bar to install the Zotero add-on or load the Chrome extension.
+4. **Connect your reader.** Open **Page Translation…** from the app's menu bar to install the Zotero add-on or load the Chrome extension.
 
 The [macOS installation guide](docs/INSTALL.macOS.zh-CN.md) covers these steps, permissions, and common problems. The local English dictionary works offline.
 
 ### Model connection in this build
 
-The **macOS 1.1.61 binary uses Codex**. Enter the signed-in Codex CLI under **CLI 路径** (CLI path), then select **保存并连接** (save and connect). The API / Claude adapters described in earlier public source snapshots are not included in this macOS binary. See the [backend notes](docs/TRANSLATION-BACKENDS.zh-CN.md) for historical and Windows configuration scope.
+The **macOS 1.1.61 binary uses Codex**. Enter the signed-in Codex CLI under **CLI path**, then select **Save and connect**. The API / Claude adapters described in earlier public source snapshots are not included in this macOS binary. See the [backend notes](docs/TRANSLATION-BACKENDS.zh-CN.md) for historical and Windows configuration scope.
 
 
 ## Read a paper closely in Zotero
@@ -173,7 +173,7 @@ Reading and writing share the same app settings, making it easy to move from und
 
 ## Settings and shortcuts
 
-In macOS 1.1.61, set **CLI 路径** (CLI path), the question model, and reasoning effort, then select **保存并连接** (save and connect). The settings screenshot below is retained from an earlier version; its optional translation configuration does not describe this Mac binary.
+In macOS 1.1.61, set **CLI path**, the question model, and reasoning effort, then select **Save and connect**. The settings screenshot below is from an earlier version; the current interface is in English, and the optional translation configuration in that image does not describe this Mac binary.
 
 ![Settings for CLI connection, translation, questions, and shortcuts](docs/images/settings.png)
 
@@ -192,7 +192,7 @@ In macOS 1.1.61, set **CLI 路径** (CLI path), the question model, and reasonin
 | macOS version | Apple Silicon Mac; the full PDF environment requires macOS 15+; this release is not Apple-notarized |
 | Windows version | Windows x64; selection lookup, translation, questions, and Chrome/Zotero bilingual PDFs; see the [Windows guide (中文)](docs/INSTALL.Windows.zh-CN.md) for setup and platform scope |
 | Apple on-device passage translation | macOS 26+ with the relevant language packs |
-| AI connections | Codex CLI uses ChatGPT sign-in by default; alternative translation routes use their own service configuration, while questions and writing stay on Codex |
+| AI connections | macOS 1.1.61 uses Codex CLI with ChatGPT sign-in; the Windows preview has its separately documented backend options |
 | Zotero | Zotero 9.x or 10.0.x (add-on activation verified on 9.0.6; PDF translation verified on 10.0.6 and 10.0.7); PDF translation requires the included PDF setup step |
 | Chrome | Chrome 106+; local PDFs require file URL permission |
 | PDF content | Requires a text layer; scans need OCR first, and image text stays unchanged; complex vertical figure text may lack exact phrase correspondence |

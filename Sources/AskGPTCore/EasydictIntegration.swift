@@ -14,19 +14,19 @@ public enum EasydictIntegrationError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .applicationIsRunning:
-            return "请先自行退出 Easydict，再配置阅读翻译；配置后重新打开 Easydict。AskGPT 不会强制退出或清空已有内容。"
+            return "Quit Easydict before setting up reading translation, then reopen it. Ask for GPT will not force quit Easydict or clear its data."
         case .unsupportedBackendIsolation:
-            return "Easydict 现成 CLI 会继承全局指令和工具。请通过本机转接配置阅读翻译。"
+            return "Easydict's CLI inherits global instructions and tools. Configure reading translation through the local bridge."
         case .invalidBridgeConfiguration:
-            return "本机转接配置无效，未修改 Easydict。"
+            return "The local bridge configuration is invalid. Easydict was not changed."
         case .ownedServiceConflict:
-            return "Ask for GPT 的 Easydict 服务已被外部修改或存在标识冲突，未覆盖现有设置。请在 Easydict 中检查这个本机服务。"
+            return "Ask for GPT's Easydict service was changed externally or has an identifier conflict. Existing settings were preserved. Check the local service in Easydict."
         case .invalidPreferences(let key):
-            return "Easydict 设置格式不兼容，未继续修改：\(key)"
+            return "Easydict preferences use an incompatible format. No further changes were made: \(key)"
         case .invalidBackup:
-            return "Easydict 恢复记录格式不匹配，未覆盖现有设置。"
+            return "The Easydict restore record has an incompatible format. Existing settings were preserved."
         case .synchronizationFailed:
-            return "无法同步 Easydict 偏好设置，请检查本机权限后重试。"
+            return "Could not synchronize Easydict preferences. Check local permissions and try again."
         }
     }
 }

@@ -295,7 +295,7 @@ private actor ControlledRefiner: PassageRefining {
             }
             panels.showTranslation(with: selection)
             try await waitForTranslation(currentStore)
-            let translation = try window(titled: "划词翻译", in: app)
+            let translation = try window(titled: "Quick Translate", in: app)
             let reader = try window(titled: "Ask ChatGPT", in: app)
             try checkButtons(translation, name: "translation")
             try checkButtons(reader, name: "reader")
@@ -621,12 +621,12 @@ private actor ControlledRefiner: PassageRefining {
             timed.translateSelection(SelectedExcerpt(text: "A slow native translation must reach a bounded terminal state.",
                 sourceBundleID: "org.askgpt.ui-smoke.timeout"))
             try await waitForTranslation(timed)
-            try require(timed.automaticFailure?.contains("超时") == true && !timed.automaticBusy && timed.automaticText.isEmpty,
+            try require(timed.automaticFailure?.contains("timed out") == true && !timed.automaticBusy && timed.automaticText.isEmpty,
                 "native timeout did not expose a terminal timed-out failure")
             try require(timed.automaticStatus.isEmpty,
                 "native timeout left a waiting/loading status")
             await settle(0.45)
-            try require(timed.automaticText.isEmpty && timed.automaticFailure?.contains("超时") == true && !timed.automaticBusy,
+            try require(timed.automaticText.isEmpty && timed.automaticFailure?.contains("timed out") == true && !timed.automaticBusy,
                 "late native completion overwrote the timed-out terminal state")
             timed.retryTranslation()
             try await waitForTranslation(timed)
@@ -641,7 +641,7 @@ private actor ControlledRefiner: PassageRefining {
                 sourceBundleID: "org.askgpt.ui-smoke.engine-recovery"))
             try await waitForDriver(stuckDriver, calls: 1)
             try await waitForTranslation(recovered)
-            try require(recovered.automaticFailure?.contains("超时") == true && !recovered.automaticBusy,
+            try require(recovered.automaticFailure?.contains("timed out") == true && !recovered.automaticBusy,
                 "held native operation did not reach the deadline error")
             let stuckCompletedBeforeRetry = await stuckDriver.completedCalls
             try require(stuckCompletedBeforeRetry == 0, "old native operation unexpectedly completed before recovery")
@@ -861,7 +861,7 @@ private actor ControlledRefiner: PassageRefining {
             await idleFirst.releaseHeld()
             try await waitForRefinement(idle)
             let elapsed = ProcessInfo.processInfo.systemUptime - clickedAt
-            try require(elapsed >= 0.10 && idle.refinementStatus != "完成 · 0.0 秒",
+            try require(elapsed >= 0.10 && idle.refinementStatus != "Complete · 0.0 s",
                 "refinement footer reported model-turn time instead of click-to-completion time")
             checks["refinement_busy_client_and_native_first_delta_fallback_survive_idle_deadline"] = true
             checks["refinement_elapsed_time_includes_first_delta_wait"] = true
@@ -1133,6 +1133,8 @@ private actor ControlledRefiner: PassageRefining {
         }
         try require(window.titleVisibility == .visible && !window.titlebarAppearsTransparent,
             name + " does not retain its native visible titlebar")
+        try require(window.isOpaque && window.backgroundColor.alphaComponent >= 0.99,
+            name + " does not have an opaque window background")
     }
     @MainActor private static func checkSize(_ window: NSWindow, expected: NSSize, minimum: NSSize, name: String) throws {
         let content = window.contentRect(forFrameRect: window.frame).size

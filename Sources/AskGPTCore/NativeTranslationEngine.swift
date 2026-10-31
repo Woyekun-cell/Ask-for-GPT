@@ -34,25 +34,25 @@ public enum NativeTranslationError: Error, LocalizedError, Sendable, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .emptyInput: return "请选择或粘贴原文。"
-        case .inputTooLong: return "原文过长，请缩小选段。"
-        case .unableToIdentifyLanguage: return "未能识别原文语言。"
-        case .unavailable: return "本机翻译需要 macOS 26 或更新版本。"
+        case .emptyInput: return "Select or paste source text."
+        case .inputTooLong: return "The source text is too long. Select a shorter passage."
+        case .unableToIdentifyLanguage: return "Could not identify the source language."
+        case .unavailable: return "Local translation requires macOS 26 or later."
         case .languagePackMissing(let source, let target):
-            return "尚未安装\(Self.languageName(source)) → \(Self.languageName(target))的本机翻译资源。请先确认源语言；需要这组语言时，再到系统翻译设置下载。"
+            return "The \(Self.languageName(source)) → \(Self.languageName(target)) language pack is not installed. Check the source language, then download this pair in System Settings if needed."
         case .unsupportedLanguagePair(let source, let target):
-            return "本机翻译暂不支持\(Self.languageName(source)) → \(Self.languageName(target))。请确认源语言是否正确。"
-        case .timedOut: return "本机翻译超时，请重试或重新选择原文。"
-        case .emptyTranslation, .translationFailed: return "本机翻译失败，请重试。"
+            return "Local translation does not support \(Self.languageName(source)) → \(Self.languageName(target)). Check the source language."
+        case .timedOut: return "Local translation timed out. Try again or select the text again."
+        case .emptyTranslation, .translationFailed: return "Local translation failed. Try again."
         }
     }
 
     private static func languageName(_ identifier: String) -> String {
-        guard !identifier.isEmpty else { return "未指定语言" }
-        let chinese = Locale(identifier: "zh-Hans")
-        let name = chinese.localizedString(forIdentifier: identifier)
-            ?? chinese.localizedString(forLanguageCode: identifier) ?? identifier
-        return "\(name)（\(identifier)）"
+        guard !identifier.isEmpty else { return "Unspecified language" }
+        let english = Locale(identifier: "en")
+        let name = english.localizedString(forIdentifier: identifier)
+            ?? english.localizedString(forLanguageCode: identifier) ?? identifier
+        return "\(name) (\(identifier))"
     }
 }
 

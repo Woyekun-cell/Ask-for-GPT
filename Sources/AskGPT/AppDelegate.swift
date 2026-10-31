@@ -52,18 +52,18 @@ import AskGPTCore
         statusItem.button?.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "Ask for GPT")
         menu = NSMenu()
         menu.delegate = self
-        addMenu("翻译  \(store.hotKey.displayName)", action: #selector(openTranslation))
+        addMenu("Translate  \(store.hotKey.displayName)", action: #selector(openTranslation))
         addMenu("Ask ChatGPT  \(HotKeySpec.questionSpec.displayName)", action: #selector(openReader))
-        documentItem = addMenu("页面内翻译…", action: #selector(openInlinePages))
-        let pdfMenuItem = NSMenuItem(title: "PDF · 原阅读器", action: nil, keyEquivalent: "")
+        documentItem = addMenu("Page Translation…", action: #selector(openInlinePages))
+        let pdfMenuItem = NSMenuItem(title: "PDF · Native Reader", action: nil, keyEquivalent: "")
         pdfMenuItem.submenu = makeNativePDFMenu()
         menu.addItem(pdfMenuItem)
-        addMenu("Word / WPS 写作检查…", action: #selector(openWriting))
-        automaticItem = addMenu("选中即自动翻译", action: #selector(toggleAutomatic))
-        addMenu("打开 Easydict", action: #selector(openEasydict))
+        addMenu("Word / WPS Writing Review…", action: #selector(openWriting))
+        automaticItem = addMenu("Translate Selection Automatically", action: #selector(toggleAutomatic))
+        addMenu("Open Easydict", action: #selector(openEasydict))
         menu.addItem(.separator())
-        addMenu("设置…", action: #selector(openSettings))
-        addMenu("退出", action: #selector(quit))
+        addMenu("Settings…", action: #selector(openSettings))
+        addMenu("Quit", action: #selector(quit))
         statusItem.menu = menu
         do { try questionHotKey.register(.questionSpec) { [weak self] in self?.panels.showShortcutQuestion() } }
         catch { store.errorMessage = error.localizedDescription }
@@ -97,40 +97,40 @@ import AskGPTCore
         let appItem = NSMenuItem()
         bar.addItem(appItem)
         let appMenu = NSMenu(title: "Ask for GPT")
-        let settingsItem = appMenu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: ",")
+        let settingsItem = appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "隐藏 Ask for GPT", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(withTitle: "Hide Ask for GPT", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 Ask for GPT", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "Quit Ask for GPT", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
 
         let editItem = NSMenuItem()
         bar.addItem(editItem)
-        let edit = NSMenu(title: "编辑")
-        edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = edit.addItem(withTitle: "重做", action: Selector(("redo:")), keyEquivalent: "z")
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         edit.addItem(.separator())
-        edit.addItem(withTitle: "剪切", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "复制", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "粘贴", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        edit.addItem(withTitle: "全选", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
 
         let windowItem = NSMenuItem()
         bar.addItem(windowItem)
-        let window = NSMenu(title: "窗口")
-        let inlineItem = window.addItem(withTitle: "页面内翻译…", action: #selector(openInlinePages), keyEquivalent: "")
+        let window = NSMenu(title: "Window")
+        let inlineItem = window.addItem(withTitle: "Page Translation…", action: #selector(openInlinePages), keyEquivalent: "")
         inlineItem.target = self
-        let writingItem = window.addItem(withTitle: "Word / WPS 写作检查…", action: #selector(openWriting), keyEquivalent: "")
+        let writingItem = window.addItem(withTitle: "Word / WPS Writing Review…", action: #selector(openWriting), keyEquivalent: "")
         writingItem.target = self
-        let pdfItem = NSMenuItem(title: "PDF · 原阅读器", action: nil, keyEquivalent: "")
+        let pdfItem = NSMenuItem(title: "PDF · Native Reader", action: nil, keyEquivalent: "")
         pdfItem.submenu = makeNativePDFMenu()
         window.addItem(pdfItem)
         window.addItem(.separator())
-        window.addItem(withTitle: "关闭", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        window.addItem(withTitle: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        window.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        window.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowItem.submenu = window
         NSApp.mainMenu = bar
         NSApp.windowsMenu = window
@@ -139,15 +139,15 @@ import AskGPTCore
     private func registerTranslationShortcut(_ spec: HotKeySpec, restoringSavedShortcut: Bool = false) throws {
         guard spec != .questionSpec,
               restoringSavedShortcut || spec != .readingSpec || spec == registeredTranslationSpec else {
-            throw ReaderError.message("\(spec.displayName) 已用于提问或页面对照，请选择其他翻译快捷键。")
+            throw ReaderError.message("\(spec.displayName) is already used for questions or page translation. Choose another translation shortcut.")
         }
         try hotKey.register(spec) { [weak self] in self?.panels.showShortcutTranslation() }
         registeredTranslationSpec = spec
-        menu?.items.first?.title = "翻译  \(spec.displayName)"
+        menu?.items.first?.title = "Translate  \(spec.displayName)"
         // The foreground browser/Zotero addon owns Option+Shift+X so it can
         // obtain the current page's permission and render inside that page.
         // A saved custom selection shortcut still retains its existing priority.
-        documentItem?.title = "页面内翻译…"
+        documentItem?.title = "Page Translation…"
     }
 
     @discardableResult private func addMenu(_ title: String, action: Selector) -> NSMenuItem {
@@ -174,23 +174,23 @@ import AskGPTCore
     @objc private func translatePDFToEnglish() { nativePDFs.setDirection(source: "zh-Hans", target: "en") }
 
     private func makeNativePDFMenu() -> NSMenu {
-        let result = NSMenu(title: "PDF · 原阅读器")
+        let result = NSMenu(title: "PDF · Native Reader")
         result.autoenablesItems = false
         result.delegate = self
-        for (title, action) in [("翻译本页  ⌥⇧X", #selector(openDocument)),
-                                ("翻译整份", #selector(openWholeDocument)),
-                                ("选择 PDF…", #selector(openPDF))] {
+        for (title, action) in [("Translate Current Page  ⌥⇧X", #selector(openDocument)),
+                                ("Translate Entire PDF", #selector(openWholeDocument)),
+                                ("Choose PDF…", #selector(openPDF))] {
             result.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
         }
         result.addItem(.separator())
-        for (title, action) in [("只看译文", #selector(showMonoPDF)), ("原文＋译文", #selector(showDualPDF)),
-                                ("EN → 中", #selector(translatePDFToChinese)), ("中 → EN", #selector(translatePDFToEnglish))] {
+        for (title, action) in [("Translation Only", #selector(showMonoPDF)), ("Side by Side", #selector(showDualPDF)),
+                                ("EN → Chinese", #selector(translatePDFToChinese)), ("Chinese → EN", #selector(translatePDFToEnglish))] {
             result.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
         }
         result.addItem(.separator())
-        result.addItem(withTitle: "打开最近译文", action: #selector(showLatestPDFTranslation), keyEquivalent: "").target = self
-        result.addItem(withTitle: "恢复原文", action: #selector(restoreOriginalPDF), keyEquivalent: "").target = self
-        result.addItem(withTitle: "取消翻译", action: #selector(cancelPDFTranslation), keyEquivalent: "").target = self
+        result.addItem(withTitle: "Open Latest Translation", action: #selector(showLatestPDFTranslation), keyEquivalent: "").target = self
+        result.addItem(withTitle: "Restore Original", action: #selector(restoreOriginalPDF), keyEquivalent: "").target = self
+        result.addItem(withTitle: "Cancel Translation", action: #selector(cancelPDFTranslation), keyEquivalent: "").target = self
         return result
     }
 

@@ -106,8 +106,8 @@ final class ReaderPanel: NSPanel {
     func showSettings() {
         cancelPendingShortcutCapture()
         if settings == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 544, height: 372), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-            window.title = "Ask for GPT · 设置"
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 544, height: 300), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            window.title = "Ask for GPT · Settings"
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: SettingsView(store: store))
             applyGlass(to: window)
@@ -143,7 +143,7 @@ final class ReaderPanel: NSPanel {
     private func presentTranslation(anchor: CGRect?) {
         if translation == nil {
             let panel = ReaderPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 250), styleMask: [.nonactivatingPanel, .titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-            panel.title = "划词翻译"
+            panel.title = "Quick Translate"
             panel.isMovable = true
             panel.isMovableByWindowBackground = true
             panel.level = .floating
@@ -270,9 +270,9 @@ final class ReaderPanel: NSPanel {
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         guard identifier.rawValue == "AskGPTReader.settings" else { return nil }
         let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "设置"
-        item.toolTip = "设置"
-        item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "设置")
+        item.label = "Settings"
+        item.toolTip = "Settings"
+        item.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")
         item.target = self
         item.action = #selector(openSettingsFromToolbar)
         return item
@@ -281,8 +281,8 @@ final class ReaderPanel: NSPanel {
     @objc private func openSettingsFromToolbar() { showSettings() }
 
     private func applyGlass(to window: NSWindow) {
-        window.isOpaque = false
-        window.backgroundColor = .clear
+        window.isOpaque = true
+        window.backgroundColor = .windowBackgroundColor
         window.titlebarAppearsTransparent = false
         window.titleVisibility = .visible
         window.titlebarSeparatorStyle = .automatic

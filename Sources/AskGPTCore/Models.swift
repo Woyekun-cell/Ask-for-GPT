@@ -4,7 +4,7 @@ public struct SelectedExcerpt: Equatable, Codable, Sendable {
     public var text: String
     public var sourceBundleID: String
     public var sourceName: String
-    public init(text: String, sourceBundleID: String = "manual", sourceName: String = "粘贴原文") {
+    public init(text: String, sourceBundleID: String = "manual", sourceName: String = "Pasted text") {
         self.text = text; self.sourceBundleID = sourceBundleID; self.sourceName = sourceName
     }
     public var identity: String {

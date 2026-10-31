@@ -125,7 +125,7 @@ public actor CodexBackend {
               let sandbox = result.value["sandbox"] as? [String: Any],
               sandbox["type"] as? String == "readOnly" else {
             await stopConnection()
-            throw CodexBackendError.protocolFailure("会话隔离参数未得到确认")
+            throw CodexBackendError.protocolFailure("Session isolation settings were not confirmed")
         }
         sessions.insert(id)
         return id
@@ -172,11 +172,11 @@ public actor CodexBackend {
                 recordDiagnostic("backend.turnStart.ack")
                 try Task.checkCancellation()
                 guard let turn = result.value["turn"] as? [String: Any], let id = turn["id"] as? String else {
-                    throw CodexBackendError.protocolFailure("turn/start 缺少 turn ID")
+                    throw CodexBackendError.protocolFailure("turn/start is missing a turn ID")
                 }
                 if active?.token == token {
                     if let observedID = active?.turnID, observedID != id {
-                        throw CodexBackendError.protocolFailure("回答 ID 不匹配")
+                        throw CodexBackendError.protocolFailure("Answer ID does not match")
                     }
                     active?.turnID = id
                 }
@@ -219,13 +219,13 @@ public actor CodexBackend {
 
     private func connect() async throws -> BackendConnectionInfo {
         guard FileManager.default.isExecutableFile(atPath: settings.cliPath) else {
-            throw CodexBackendError.unavailable("请在设置中选择已安装的 codex 可执行文件")
+            throw CodexBackendError.unavailable("Select an installed codex executable in Settings")
         }
         let version = try await CLITextProbe.version(executable: settings.cliPath, workingDirectory: workingDirectory)
         guard Self.supportsIsolation(version) else { throw CodexBackendError.unsupportedVersion(version) }
         let names = Self.mcpServerNames(in: configURL)
         guard names.allSatisfy({ $0.range(of: #"^[A-Za-z0-9_-]+$"#, options: .regularExpression) != nil }) else {
-            throw CodexBackendError.unavailable("存在无法安全覆盖的 MCP 名称，请使用仅含字母、数字、下划线或连字符的名称。")
+            throw CodexBackendError.unavailable("An MCP name cannot be safely overridden. Use only letters, numbers, underscores, or hyphens.")
         }
         var environment = ProcessInfo.processInfo.environment
         // Prevent an inherited API key from silently changing the billing/auth route.
@@ -236,7 +236,7 @@ public actor CodexBackend {
         if useInstructionReadSandbox {
             let wrapper = "/usr/bin/sandbox-exec"
             guard FileManager.default.isExecutableFile(atPath: wrapper) else {
-                throw CodexBackendError.unavailable("此系统缺少 sandbox-exec，无法隔离全局 AGENTS；已停止连接。")
+                throw CodexBackendError.unavailable("This system lacks sandbox-exec, so global AGENTS instructions cannot be isolated. Connection stopped.")
             }
             let policy = try Self.instructionReadSandboxPolicy(codexHome: configURL.deletingLastPathComponent())
             executable = wrapper
@@ -331,11 +331,11 @@ public actor CodexBackend {
             }
         case "turn/completed":
             guard let turn = nestedTurn, let status = turn["status"] as? String else {
-                finishTurn(token: current.token, result: .failure(CodexBackendError.protocolFailure("缺少回答结束状态"))); return
+                finishTurn(token: current.token, result: .failure(CodexBackendError.protocolFailure("Answer completion status is missing"))); return
             }
             if status == "completed" {
                 guard let text = active?.finalText ?? active?.lastCompletedText, !text.isEmpty else {
-                    finishTurn(token: current.token, result: .failure(CodexBackendError.protocolFailure("回答缺少最终文字"))); return
+                    finishTurn(token: current.token, result: .failure(CodexBackendError.protocolFailure("Answer has no final text"))); return
                 }
                 let result = BackendTurnResult(text: text, firstDeltaSeconds: active?.firstDeltaSeconds,
                     totalSeconds: ProcessInfo.processInfo.systemUptime - current.started,
@@ -350,7 +350,7 @@ public actor CodexBackend {
         case "error":
             // Some errors are retries; terminal success/failure is decided only by turn/completed.
             if params["willRetry"] as? Bool == false, let error = params["error"] as? [String: Any] {
-                await cancelTurn(token: current.token, error: CodexBackendError.turnFailed(error["message"] as? String ?? "请求失败"))
+                await cancelTurn(token: current.token, error: CodexBackendError.turnFailed(error["message"] as? String ?? "Request failed"))
             }
         default: break
         }
@@ -358,7 +358,7 @@ public actor CodexBackend {
 
     private func acceptWebSearch(_ item: [String: Any], completed: Bool) throws {
         guard let id = item["id"] as? String, !id.isEmpty else {
-            throw CodexBackendError.protocolFailure("检索事件缺少 ID")
+            throw CodexBackendError.protocolFailure("Search event is missing an ID")
         }
         let action = item["action"] as? [String: Any]
         // action is nullable in the supported protocol. Older/initial search
@@ -533,7 +533,7 @@ public actor CodexBackend {
         }
         func quote(_ path: String) throws -> String {
             guard !path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else {
-                throw CodexBackendError.unavailable("Codex 目录路径含控制字符，无法安全建立读取隔离。")
+                throw CodexBackendError.unavailable("The Codex directory path contains control characters and cannot be safely isolated for reading.")
             }
             let escaped = path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
             return "\"" + escaped + "\""
@@ -593,7 +593,7 @@ private enum CLITextProbe {
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
                 if process.terminationStatus == 0 {
                     completion.finish(.success(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)))
-                } else { completion.finish(.failure(CodexBackendError.unavailable("无法读取 CLI 版本"))) }
+                } else { completion.finish(.failure(CodexBackendError.unavailable("Could not read the CLI version"))) }
             }
             do { try process.run(); try? pipe.fileHandleForWriting.close() }
             catch { completion.finish(.failure(CodexBackendError.unavailable(error.localizedDescription))); return }

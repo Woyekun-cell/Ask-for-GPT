@@ -37,7 +37,7 @@ Ask for GPT 提供 Windows 和 macOS 两个版本，把划词查词、带着选�
 
 **Windows版（x64）：** [Windows 安装包与便携版](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38) · [安装与配置](docs/INSTALL.Windows.zh-CN.md)。提供划词、离线词典、段落翻译与提问、Chrome/Zotero 阅读集成、PDF 对照及可配置翻译后端。[构建与检查记录](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml)见工作流。下方界面展示使用 macOS版。
 
-macOS 1.1.61 增加 Zotero 10.0.x 支持，修复插件在新版中读取样式与加载连接模块失败的问题。此前划词对应及响应优化继续保留。Word/WPS 本轮未改。Windows 包沿用独立验证的 `0.1.0-preview.1` 构建（源码 `05348ad`），上述新阅读功能不代表已同步进入该预览包。
+macOS 1.1.61 将划词翻译、Ask for GPT 问答和设置界面改为英文，修复窗口整层透明造成的标题栏透字与边界不清，并保留 Zotero 9/10 双版本插件、划词对应及响应优化。Word/WPS 写作功能本轮未改。Windows 包沿用独立验证的 `0.1.0-preview.1` 构建（源码 `05348ad`），上述 macOS 改动不代表已同步进入该预览包。
 
 macOS版可直接下载上方安装包。应用本体约 **48 MB**，包含约 40 万条英文词条、Chrome/Zotero 插件和写作集成资源。
 
@@ -50,15 +50,15 @@ macOS版可直接下载上方安装包。应用本体约 **48 MB**，包含约 4
 macOS 首次设置分四步：
 
 1. **安装应用。** 将 Ask for GPT 放入“应用程序”并打开。当前版本未经 Apple 公证；若 macOS 阻止首次打开，在“系统设置 → 隐私与安全性”中按系统提示确认。
-2. **配置模型连接。** 默认运行随包的 `01-登录ChatGPT.command`。脚本解压并校验官方 Codex CLI 0.163.0，由你在浏览器完成登录。把提供的 CLI 路径复制到设置，点击 **保存并连接**。这个过程无需安装 npm 或 Homebrew。
+2. **配置模型连接。** 默认运行随包的 `01-登录ChatGPT.command`。脚本解压并校验官方 Codex CLI 0.163.0，由你在浏览器完成登录。把提供的 CLI 路径复制到设置，点击 **Save and connect**。这个过程无需安装 npm 或 Homebrew。
 3. **按需准备 PDF 翻译。** 运行 `02-准备PDF翻译.command`，自动准备固定版本的 uv、Python 3.12.15、预编译依赖，以及排版需要的公开字体和模型。首次需要联网，完成后本地占用约 1 GB；准备过程无需编译。日常 PDF 翻译仍需联网调用模型。
-4. **连接阅读软件。** 在应用菜单栏打开 **页面内翻译…**，安装 Zotero 插件或加载 Chrome 扩展。之后即可在原来的阅读页面使用。
+4. **连接阅读软件。** 在应用菜单栏打开 **Page Translation…**，安装 Zotero 插件或加载 Chrome 扩展。之后即可在原来的阅读页面使用。
 
 每一步的界面、权限与常见问题见[macOS 安装指南](docs/INSTALL.macOS.zh-CN.md)。只查英文单词时，本地词典可以离线使用。
 
 ### 当前版本的模型连接
 
-macOS **1.1.61 安装包使用 Codex**，在设置的 **CLI 路径**中填写已登录的 Codex CLI，点击 **保存并连接**。此前公开源码中的 API / Claude 可选适配未包含在这个 macOS 二进制中；Windows 预览版与历史配置说明见[翻译后端说明](docs/TRANSLATION-BACKENDS.zh-CN.md)。
+macOS **1.1.61 安装包使用 Codex**，在设置的 **CLI path** 中填写已登录的 Codex CLI，点击 **Save and connect**。此前公开源码中的 API / Claude 可选适配未包含在这个 macOS 二进制中；Windows 预览版与历史配置说明见[翻译后端说明](docs/TRANSLATION-BACKENDS.zh-CN.md)。
 
 
 ## 在 Zotero 中精读一篇论文
@@ -159,7 +159,7 @@ Word 写作集成提供拼写检查和 GPT 表达建议。建议卡把原文与�
 
 ## 设置与快捷键
 
-macOS 1.1.61 在设置中填写 **CLI 路径**、提问模型与推理强度，点击 **保存并连接**。下方设置截图保留历史版本来源，其中可选翻译配置不适用于当前 Mac 安装包。
+macOS 1.1.61 在设置中填写 **CLI path**、提问模型与推理强度，点击 **Save and connect**。下方截图来自历史版本；当前安装包使用英文界面，截图中的可选翻译配置也不适用于这个 Mac 安装包。
 
 ![设置：Codex 路径、翻译配置、自动划词和快捷键](docs/images/settings.png)
 

@@ -59,7 +59,7 @@ info={
  'LSUIElement':True,
  'NSHighResolutionCapable':True,
  'NSPrincipalClass':'NSApplication',
- 'NSAccessibilityUsageDescription':'读取你主动选择的文字，用于翻译和提问。'
+ 'NSAccessibilityUsageDescription':'Read text you select to translate it or ask a question.'
 }
 if not re.fullmatch(version_pattern, info['CFBundleVersion']):
     raise SystemExit('ASKGPT_BUILD_NUMBER must use a positive 1-4 digit major and optional 1-2 digit minor/patch')

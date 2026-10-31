@@ -7,7 +7,7 @@ struct WindowDragRegion: NSViewRepresentable {
     func makeNSView(context: Context) -> WindowDragRegionView {
         let view = WindowDragRegionView(frame: .zero)
         view.setAccessibilityElement(false)
-        view.toolTip = "拖动移动翻译窗口"
+        view.toolTip = "Drag to move the translation window"
         return view
     }
     func updateNSView(_ view: WindowDragRegionView, context: Context) {}
@@ -43,9 +43,11 @@ private struct WindowFrost: NSViewRepresentable {
 struct GlassBackdrop: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    var opaque = false
+
     var body: some View {
         ZStack {
-            if reduceTransparency {
+            if opaque || reduceTransparency {
                 Color(nsColor: .windowBackgroundColor)
             } else if #available(macOS 26.0, *) {
                 Color.clear.glassEffect(.regular, in: Rectangle())
@@ -78,8 +80,8 @@ private struct GlassCard: ViewModifier {
             .background { background }
             .overlay {
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(contrast == .increased ? Color.primary.opacity(0.48) :
-                                  Color.white.opacity(colorScheme == .dark ? 0.13 : 0.65), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(contrast == .increased ? 0.48 :
+                                                        (colorScheme == .dark ? 0.20 : 0.12)), lineWidth: 1)
                     .allowsHitTesting(false)
             }
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.12 : 0.035), radius: 12, x: 0, y: 4)
@@ -121,7 +123,7 @@ struct GlassButtonStyle: ButtonStyle {
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(contrast == .increased ? 0.5 : 0.06), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(contrast == .increased ? 0.5 : 0.10), lineWidth: 1)
             }
             .opacity(configuration.isPressed ? 0.8 : 1)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)

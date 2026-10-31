@@ -8,17 +8,17 @@ public enum CodexBackendError: Error, LocalizedError, Sendable {
     case busy, unknownThread, turnFailed(String), unexpectedTool(String), inheritedInstructions
     public var errorDescription: String? {
         switch self {
-        case .unavailable(let detail): return "无法启动 Codex CLI：\(detail)"
-        case .protocolFailure(let detail): return "Codex 通信异常：\(detail)"
-        case .timeout: return "Codex 响应超时，已停止本次请求。"
-        case .disconnected: return "Codex 连接已断开，请重新提问。"
-        case .authentication: return "需要 Codex 的 ChatGPT 登录；此应用不会改用付费 API。请先在终端运行 codex login。"
-        case .unsupportedVersion(let version): return "Codex CLI 版本 \(version) 不支持当前隔离协议；请更新至 0.162.1 或更高版本。"
-        case .busy: return "上一条回答仍在生成，请先停止。"
-        case .unknownThread: return "阅读会话已失效，请重新选取原文。"
-        case .turnFailed(let detail): return "Codex 回答失败：\(detail)"
-        case .unexpectedTool(let type): return "检测到意外工具调用（\(type)），本次回答已停止。"
-        case .inheritedInstructions: return "检测到继承的本地指令，已停止创建阅读会话。"
+        case .unavailable(let detail): return "Could not start Codex CLI: \(detail)"
+        case .protocolFailure(let detail): return "Codex communication error: \(detail)"
+        case .timeout: return "Codex timed out. This request was stopped."
+        case .disconnected: return "Codex disconnected. Ask again."
+        case .authentication: return "Codex requires ChatGPT sign-in. This app will not switch to a paid API. Run codex login in Terminal."
+        case .unsupportedVersion(let version): return "Codex CLI \(version) does not support the required isolation protocol. Update to version 0.162.1 or later."
+        case .busy: return "The previous answer is still generating. Stop it first."
+        case .unknownThread: return "The reading session expired. Select the source text again."
+        case .turnFailed(let detail): return "Codex could not complete the answer: \(detail)"
+        case .unexpectedTool(let type): return "An unexpected tool call (\(type)) was detected. This answer was stopped."
+        case .inheritedInstructions: return "Inherited local instructions were detected. The reading session was not started."
         }
     }
 }
@@ -33,18 +33,18 @@ struct RPCLineFramer {
         var lines: [Data] = []
         while let newline = buffer.firstIndex(of: 0x0A) {
             let count = buffer.distance(from: buffer.startIndex, to: newline)
-            guard count <= maximumLineBytes else { throw CodexBackendError.protocolFailure("JSONL 数据过长") }
+            guard count <= maximumLineBytes else { throw CodexBackendError.protocolFailure("JSONL data is too long") }
             var line = Data(buffer[..<newline])
             if line.last == 0x0D { line.removeLast() }
             buffer.removeSubrange(...newline)
             if !line.isEmpty { lines.append(line) }
         }
-        guard buffer.count <= maximumLineBytes else { throw CodexBackendError.protocolFailure("JSONL 数据过长") }
+        guard buffer.count <= maximumLineBytes else { throw CodexBackendError.protocolFailure("JSONL data is too long") }
         return lines
     }
     mutating func finish() throws {
         guard buffer.allSatisfy({ [0x20, 0x09, 0x0D].contains($0) }) else {
-            throw CodexBackendError.protocolFailure("JSONL 数据在传输途中截断")
+            throw CodexBackendError.protocolFailure("JSONL data was truncated in transit")
         }
         buffer.removeAll()
     }
@@ -170,18 +170,18 @@ actor CodexRPCConnection {
         do {
             for line in try framer.append(data) {
                 guard let value = try JSONSerialization.jsonObject(with: line) as? [String: Any] else {
-                    throw CodexBackendError.protocolFailure("无法识别 JSON-RPC 对象")
+                    throw CodexBackendError.protocolFailure("Unrecognized JSON-RPC object")
                 }
                 if let id = value["id"] as? Int, value["method"] == nil {
                     receivedResponse = true
                     if let error = value["error"] as? [String: Any] {
                         record("rpc.response.error")
-                        resolve(id, result: .failure(CodexBackendError.protocolFailure(error["message"] as? String ?? "RPC 请求失败")))
+                        resolve(id, result: .failure(CodexBackendError.protocolFailure(error["message"] as? String ?? "RPC request failed")))
                     } else if let result = value["result"] as? [String: Any] {
                         record("rpc.response.success")
                         resolve(id, result: .success(RPCObject(result)))
                     } else {
-                        resolve(id, result: .failure(CodexBackendError.protocolFailure("RPC 响应缺少 result")))
+                        resolve(id, result: .failure(CodexBackendError.protocolFailure("RPC response is missing result")))
                     }
                 } else if value["method"] != nil {
                     let method = value["method"] as? String ?? ""
@@ -261,7 +261,7 @@ private final class RPCStartupDiagnostic: @unchecked Sendable {
     var safeCause: String? {
         lock.lock(); let text = String(decoding: tail, as: UTF8.self); lock.unlock()
         for category in ["invalid transport", "invalid type", "missing field", "unknown field", "Permission denied", "Operation not permitted"] {
-            if text.contains(category) { return "子进程启动失败：" + category }
+            if text.contains(category) { return "Child process failed to start: " + category }
         }
         return nil
     }

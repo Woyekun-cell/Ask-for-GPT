@@ -17,14 +17,14 @@ struct ReaderView: View {
                             .font(.system(size: 12)).scrollContentBackground(.hidden)
                             .frame(minHeight: 54, maxHeight: 88).padding(5)
                             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
-                            .accessibilityLabel("原文")
+                            .accessibilityLabel("Source text")
                         HStack {
                             Spacer()
-                            Button("使用原文") { store.usePastedExcerpt() }.buttonStyle(GlassButtonStyle())
+                            Button("Use source text") { store.usePastedExcerpt() }.buttonStyle(GlassButtonStyle())
                         }
                     }.padding(.top, 8)
                 } label: {
-                    SectionHeading(title: "原文", symbol: "text.alignleft")
+                    SectionHeading(title: "Source text", symbol: "text.alignleft")
                 }
                 .padding(10).glassCard(radius: 12)
                 Button {
@@ -34,7 +34,7 @@ struct ReaderView: View {
                 } label: {
                     Image(systemName: "square.and.pencil").frame(width: 28, height: 34)
                 }
-                .buttonStyle(.borderless).help("新对话").accessibilityLabel("新对话")
+                .buttonStyle(.borderless).help("New chat").accessibilityLabel("New chat")
             }.padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
 
             ScrollViewReader { proxy in
@@ -46,10 +46,10 @@ struct ReaderView: View {
                                 HStack(spacing: 7) {
                                     Image(systemName: message.role == .user ? "person.crop.circle" : "sparkle")
                                         .foregroundStyle(message.role == .user ? Color.secondary : Color.accentColor)
-                                    Text(message.role == .user ? "你" : "GPT")
+                                    Text(message.role == .user ? "You" : "GPT")
                                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
                                     if message.role == .assistant && !message.completed && !store.isSending {
-                                        Text("未完成").font(.caption).foregroundStyle(.orange)
+                                        Text("Incomplete").font(.caption).foregroundStyle(.orange)
                                     }
                                     Spacer()
                                     if !message.text.isEmpty {
@@ -61,7 +61,7 @@ struct ReaderView: View {
                                                 .frame(width: 24, height: 24)
                                         }
                                         .buttonStyle(.borderless).foregroundStyle(.secondary)
-                                        .help("复制").accessibilityLabel("复制")
+                                        .help("Copy").accessibilityLabel("Copy")
                                     }
                                 }
                                 if message.text.isEmpty && store.isSending {
@@ -71,7 +71,7 @@ struct ReaderView: View {
                                         .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).lineSpacing(5)
                                 }
                                 if let sources = store.chatSources[message.id], !sources.isEmpty {
-                                    DisclosureGroup("检索网页（\(sources.count)）") {
+                                    DisclosureGroup("Web sources (\(sources.count))") {
                                         VStack(alignment: .leading, spacing: 6) {
                                             ForEach(sources) { source in
                                                 Link(destination: source.url) {
@@ -100,7 +100,7 @@ struct ReaderView: View {
             composer.padding(.horizontal, 12).padding(.bottom, 12).padding(.top, 6)
         }
         .frame(minWidth: 380, minHeight: 400)
-        .background { GlassBackdrop() }
+        .background { GlassBackdrop(opaque: true) }
         .environment(\.openURL, OpenURLAction { url in
             ["http", "https"].contains(url.scheme?.lowercased() ?? "")
                 && url.host != nil && url.user == nil && url.password == nil ? .systemAction : .discarded
@@ -111,7 +111,7 @@ struct ReaderView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             if store.ledger.excerpt == nil && !store.permissionGranted {
-                Button("辅助功能授权…") { store.requestPermission() }.buttonStyle(GlassButtonStyle())
+                Button("Enable Accessibility…") { store.requestPermission() }.buttonStyle(GlassButtonStyle())
             }
         }
         .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -129,20 +129,20 @@ struct ReaderView: View {
                 HStack(spacing: 8) {
                     if store.ledger.excerpt != nil {
                         Button { store.send("请解释这段原文的主要意思、关键术语和证据边界。") } label: {
-                            Label("解释这段", systemImage: "sparkle")
+                            Label("Explain selection", systemImage: "sparkle")
                         }
                         .buttonStyle(GlassButtonStyle())
                         .disabled(store.isSending || store.isTesting)
                     }
                     Spacer(minLength: 4)
                     if store.isSending {
-                        Button("停止") { store.stop() }.buttonStyle(GlassButtonStyle(destructive: true))
+                        Button("Stop") { store.stop() }.buttonStyle(GlassButtonStyle(destructive: true))
                     }
                 }
             }
             ZStack(alignment: .topLeading) {
                 if store.question.isEmpty {
-                    Text("提问或搜索网页…").font(.system(size: 14)).foregroundStyle(.tertiary)
+                    Text("Ask or search the web…").font(.system(size: 14)).foregroundStyle(.tertiary)
                         .padding(.horizontal, 5).padding(.top, 8).allowsHitTesting(false)
                 }
                 QuestionEditor(text: $store.question, isFocused: $inputFocused) { store.send() }
@@ -152,11 +152,11 @@ struct ReaderView: View {
                 Spacer()
                 Button { store.send() } label: {
                     HStack(spacing: 9) {
-                        Text("发送")
+                        Text("Send")
                         Text("↩").font(.system(size: 10, weight: .medium))
                     }
                 }
-                .accessibilityLabel("发送  ↩").help("Enter 发送，Shift＋Enter 换行")
+                .accessibilityLabel("Send  ↩").help("Return to send, Shift-Return for a new line")
                 .buttonStyle(GlassButtonStyle(prominent: true))
                 .disabled(store.isSending || store.isTesting || store.question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -223,7 +223,7 @@ private struct QuestionEditor: NSViewRepresentable {
         editor.autoresizingMask = [.width]
         editor.textContainer?.widthTracksTextView = true
         editor.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-        editor.setAccessibilityLabel("问题")
+        editor.setAccessibilityLabel("Question")
         editor.delegate = context.coordinator
         let scroll = NSScrollView()
         scroll.drawsBackground = false
@@ -284,8 +284,8 @@ struct AutomaticTranslationView: View {
     private var sourceMenu: some View {
         Picker("Direction", selection: Binding(get: { store.translationSourceLanguage },
             set: { store.setTranslationSource($0) })) {
-            Text("EN→中").tag("en")
-            Text("中→EN").tag("zh-Hans")
+            Text("EN→ZH").tag("en")
+            Text("ZH→EN").tag("zh-Hans")
             Text("Auto").tag("auto")
         }.pickerStyle(.segmented).controlSize(.mini).labelsHidden().frame(width: 154)
             .accessibilityLabel("Translation direction").help("Translation direction")
@@ -439,7 +439,7 @@ struct AutomaticTranslationView: View {
                     .accessibilityLabel("Ask ChatGPT ⌥X").help("Ask ChatGPT ⌥X")
                     .disabled(store.automaticExcerpt == nil)
             }
-        }.padding(12).frame(minWidth: 320, minHeight: 200).background { GlassBackdrop() }
+        }.padding(12).frame(minWidth: 320, minHeight: 200).background { GlassBackdrop(opaque: true) }
         .overlay {
             ZStack {
                 VStack { WindowDragRegion().frame(height: 10); Spacer(); WindowDragRegion().frame(height: 10) }
@@ -461,20 +461,20 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 12) {
-                    Label("翻译与提问", systemImage: "bubble.left.and.bubble.right")
+                    Label("Translate & Ask GPT", systemImage: "bubble.left.and.bubble.right")
                         .font(.system(size: 14, weight: .semibold))
                     Spacer(minLength: 12)
-                    Toggle("选中自动翻译", isOn: Binding(get: { store.automaticEnabled }, set: { store.setAutomatic($0) }))
+                    Toggle("Auto-translate selections", isOn: Binding(get: { store.automaticEnabled }, set: { store.setAutomatic($0) }))
                         .toggleStyle(.switch).controlSize(.small).font(.system(size: 12))
-                        .help("划词后自动弹出译文；关闭后仍可使用翻译快捷键")
+                        .help("Show translations after selecting text. The shortcut remains available when this is off.")
                 }
                 Divider()
                 VStack(spacing: 11) {
-                    settingsField("CLI 路径", text: $store.settings.cliPath)
-                    settingsField("提问模型", text: $store.settings.model)
+                    settingsField("CLI path", text: $store.settings.cliPath)
+                    settingsField("Chat model", text: $store.settings.model)
                     HStack(spacing: 12) {
-                        settingsLabel("推理强度")
-                        Picker("提问推理强度", selection: $store.settings.reasoningEffort) {
+                        settingsLabel("Reasoning")
+                        Picker("Chat reasoning effort", selection: $store.settings.reasoningEffort) {
                             ForEach(["low", "medium", "high"], id: \.self) { Text($0).tag($0) }
                         }.labelsHidden().frame(width: 130)
                         Spacer(minLength: 0)
@@ -483,40 +483,40 @@ struct SettingsView: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(spacing: 12) {
-                        settingsLabel("翻译快捷键")
+                        settingsLabel("Shortcut")
                         HStack(spacing: 12) {
                             Toggle("⌃", isOn: $control).accessibilityLabel("Control")
                             Toggle("⌥", isOn: $option).accessibilityLabel("Option")
                             Toggle("⌘", isOn: $command).accessibilityLabel("Command")
                             Toggle("⇧", isOn: $shift).accessibilityLabel("Shift")
-                            Picker("翻译快捷键按键", selection: $keyCode) {
+                            Picker("Translation shortcut key", selection: $keyCode) {
                                 ForEach(keys, id: \.1) { Text($0.0).tag($0.1) }
                             }.labelsHidden().frame(width: 60)
                         }
                         Spacer(minLength: 0)
                     }
-                    Text("⌥X 提问 · " + (store.hotKey == .readingSpec ? "页面翻译使用插件按钮" : "⌥⇧X 页面翻译"))
+                    Text("⌥X Ask GPT · " + (store.hotKey == .readingSpec ? "Use the plugin button for page translation" : "⌥⇧X Page translation"))
                         .font(.caption).foregroundStyle(.secondary).padding(.leading, 96)
                 }
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(spacing: 8) {
-                        Button("保存并连接") { saveSettings() }
+                        Button("Save and connect") { saveSettings() }
                             .buttonStyle(GlassButtonStyle(prominent: true)).disabled(store.isSending || store.isTesting)
-                        Button("测试连接") { store.testConnection() }.buttonStyle(GlassButtonStyle())
+                        Button("Test connection") { store.testConnection() }.buttonStyle(GlassButtonStyle())
                             .disabled(store.isSending || store.isTesting || store.settings != store.appliedSettings)
                         Spacer(minLength: 0)
-                        Text(store.modelVerified ? "已验证" : "待验证").font(.caption).foregroundStyle(.secondary)
+                        Text(store.modelVerified ? "Verified" : "Not verified").font(.caption).foregroundStyle(.secondary)
                     }
                     if store.settings != store.appliedSettings {
-                        Text("保存后生效").font(.caption).foregroundStyle(.secondary)
+                        Text("Applies after saving").font(.caption).foregroundStyle(.secondary)
                     }
                     if !store.permissionGranted {
                         HStack(spacing: 8) {
-                            Label("划词需辅助功能授权", systemImage: "hand.raised")
+                            Label("Accessibility access required for selections", systemImage: "hand.raised")
                                 .font(.caption).foregroundStyle(.secondary)
                             Spacer(minLength: 0)
-                            Button("授权") { store.requestPermission() }
-                            Button("刷新") { store.refreshPermission() }
+                            Button("Grant access") { store.requestPermission() }
+                            Button("Refresh") { store.refreshPermission() }
                         }.buttonStyle(GlassButtonStyle())
                     }
                     if let error = store.errorMessage {
@@ -524,8 +524,7 @@ struct SettingsView: View {
                     }
                 }
             }.padding(18).frame(maxWidth: .infinity, alignment: .leading).glassCard()
-                .padding(16)
-        }.frame(width: 544, height: 372).background { GlassBackdrop() }
+        }.frame(width: 544, height: 300).background { GlassBackdrop(opaque: true) }
         .onAppear {
             store.refreshPermission()
             keyCode = store.hotKey.keyCode
@@ -536,7 +535,7 @@ struct SettingsView: View {
         }
     }
     private func saveSettings() {
-        guard control || option || command else { store.errorMessage = "快捷键至少选择 ⌃、⌥ 或 ⌘ 中的一项。"; return }
+        guard control || option || command else { store.errorMessage = "Choose Control, Option, or Command for the shortcut."; return }
         let modifiers = (control ? UInt32(controlKey) : 0) | (option ? UInt32(optionKey) : 0) | (command ? UInt32(cmdKey) : 0) | (shift ? UInt32(shiftKey) : 0)
         store.hotKey = HotKeySpec(keyCode: keyCode, modifiers: modifiers)
         store.saveSettings()

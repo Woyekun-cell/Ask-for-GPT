@@ -324,7 +324,7 @@ struct CodexBackendTests {
         let backend = fixture.backend()
         let thread = try await backend.startSession(instructions: "说明")
         do { _ = try await backend.send(threadID: thread, text: "hello", onDelta: { _ in }); Issue.record("tool event") }
-        catch { #expect(error.localizedDescription.contains("工具")) }
+        catch { #expect(error.localizedDescription.contains("tool call")) }
         await backend.shutdown()
         #expect(try fixture.requests().contains { $0["method"] as? String == "turn/interrupt" })
     }
@@ -414,7 +414,7 @@ struct CodexBackendTests {
         let thread = try await backend.startSession(instructions: "说明")
         await backend.releaseSession(threadID: thread)
         do { _ = try await backend.send(threadID: thread, text: "hello", onDelta: { _ in }); Issue.record("Released session is invalid") }
-        catch { #expect(error.localizedDescription.contains("失效")) }
+        catch { #expect(error.localizedDescription.contains("expired")) }
         await backend.shutdown()
         let requests = try fixture.requests()
         #expect(requests.contains { $0["method"] as? String == "thread/unsubscribe" })
@@ -426,7 +426,7 @@ struct CodexBackendTests {
         defer { fixture.remove() }
         let backend = fixture.backend()
         do { _ = try await backend.startSession(instructions: "说明"); Issue.record("inherited AGENTS") }
-        catch { #expect(error.localizedDescription.contains("指令")) }
+        catch { #expect(error.localizedDescription.contains("instructions")) }
         await backend.shutdown()
     }
 

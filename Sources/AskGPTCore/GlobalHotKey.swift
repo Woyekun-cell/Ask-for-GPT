@@ -34,7 +34,7 @@ public struct HotKeySpec: Codable, Equatable {
 
 public struct HotKeyRegistrationError: LocalizedError {
     public let status: OSStatus
-    public var errorDescription: String? { "无法注册全局快捷键（\(status)），请更换快捷键。" }
+    public var errorDescription: String? { "Could not register the global shortcut (\(status)). Choose another shortcut." }
 }
 
 @MainActor

@@ -62,11 +62,11 @@ struct NativeTranslationEngineTests {
     @Test func languageErrorsIdentifyActualSourceAndDestination() {
         let missing = NativeTranslationError.languagePackMissing(sourceLanguage: "en", targetLanguage: "zh-Hans").localizedDescription
         let unsupported = NativeTranslationError.unsupportedLanguagePair(sourceLanguage: "de", targetLanguage: "zh-Hans").localizedDescription
-        #expect(missing.contains("英语") && missing.contains("中文"))
+        #expect(missing.contains("English") && missing.contains("Chinese"))
         #expect(missing.contains("en") && missing.contains("zh-Hans"))
-        #expect(unsupported.contains("德语") && unsupported.contains("中文"))
+        #expect(unsupported.contains("German") && unsupported.contains("Chinese"))
         #expect(unsupported.contains("de") && unsupported.contains("zh-Hans"))
-        #expect(NativeTranslationError.timedOut.localizedDescription.contains("超时"))
+        #expect(NativeTranslationError.timedOut.localizedDescription.contains("timed out"))
     }
 
     @Test func installedLowLatencyWinsWithoutQueryingAnotherModel() async {

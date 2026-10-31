@@ -7,7 +7,7 @@ import os
     @Published var ledger = ConversationLedger()
     @Published var question = ""
     @Published var pastedExcerpt = ""
-    @Published var status = "连接中…"
+    @Published var status = "Connecting…"
     @Published var errorMessage: String?
     @Published var isSending = false
     @Published private(set) var chatSources: [UUID: [CodexWebSource]] = [:]
@@ -139,7 +139,7 @@ import os
                     try await translationBridge.start()
                     guard !shuttingDown else { return }
                     bridgeReady = true
-                } catch { setupStatus = "可选 Easydict 转接未就绪：" + error.localizedDescription }
+                } catch { setupStatus = "Optional Easydict bridge unavailable: " + error.localizedDescription }
             }
         }
         // Local translation remains usable independently of CLI login or quota.
@@ -160,11 +160,11 @@ import os
             do {
                 let info = try await engine.validateConnection()
                 guard generation == connectionGeneration else { return }
-                if info.authMode != "chatgpt" { throw ReaderError.message("请使用 ChatGPT 登录 Codex。") }
-                status = "已连接"
+                if info.authMode != "chatgpt" { throw ReaderError.message("Sign in to Codex with ChatGPT.") }
+                status = "Connected"
             } catch {
                 guard generation == connectionGeneration else { return }
-                status = "连接未就绪"; errorMessage = error.localizedDescription
+                status = "Connection unavailable"; errorMessage = error.localizedDescription
             }
         }
     }
@@ -191,12 +191,12 @@ import os
         question = ""
         pastedExcerpt = ""
         errorMessage = nil
-        status = "新对话"
+        status = "New chat"
     }
 
     func usePastedExcerpt() {
         let text = pastedExcerpt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { errorMessage = "请先在原文框粘贴文字。"; return }
+        guard !text.isEmpty else { errorMessage = "Paste source text first."; return }
         adopt(SelectedExcerpt(text: text))
     }
 
@@ -212,7 +212,7 @@ import os
         isSending = true
         errorMessage = nil
         question = ""
-        status = "正在回答…"
+        status = "Generating answer…"
         sendTask = Task { [weak self] in
             guard let self else { return }
             var requestThread: String?
@@ -238,8 +238,8 @@ import os
                         guard let self, generation == self.conversationGeneration,
                               ticket == self.ledger.activeTicket else { return }
                         switch activity {
-                        case .searchingWeb: self.status = "正在检索网页…"
-                        case .readingWeb: self.status = "正在阅读网页…"
+                        case .searchingWeb: self.status = "Searching the web…"
+                        case .readingWeb: self.status = "Reading web pages…"
                         }
                     }
                 }) { [weak self] delta in
@@ -253,7 +253,7 @@ import os
                 chatSources[ticket.assistantMessageID] = result.sources
                 isSending = false
                 modelVerified = settings == appliedSettings
-                status = "回答完成"
+                status = "Answer complete"
             } catch {
                 // Cleanup belongs to this request's backend, even after settings
                 // or selection changes. An unknown thread/start needs retirement.
@@ -266,7 +266,7 @@ import os
                 ledger.cancel(ticket: ticket)
                 isSending = false
                 threadID = nil
-                status = "本次未完成"
+                status = "Request incomplete"
                 errorMessage = error.localizedDescription
                 Task {
                     let counts = await engine.diagnostics()
@@ -293,7 +293,7 @@ import os
                 await engine.releaseSession(threadID: current)
             }
         }
-        if !ledger.messages.isEmpty { status = "已停止" }
+        if !ledger.messages.isEmpty { status = "Stopped" }
     }
 
     func translateAutomatic(_ excerpt: SelectedExcerpt) {
@@ -446,7 +446,7 @@ import os
             automaticFailure = failure
             return
         }
-        automaticStatus = "正在翻译…"
+        automaticStatus = "Translating…"
         automaticBusy = true
         let work = prepareTranslationWork(excerpt, key: key)
         automaticTask = Task { [weak self] in
@@ -464,7 +464,7 @@ import os
                       (!requiresAutomaticMode || automaticEnabled) else { return }
                 automaticBusy = false
                 automaticStatus = ""
-                automaticFailure = error is CancellationError ? "翻译已取消，请重试。" : error.localizedDescription
+                automaticFailure = error is CancellationError ? "Translation canceled. Try again." : error.localizedDescription
             }
         }
     }
@@ -501,13 +501,13 @@ import os
         refinementFailure = nil
         if let ready = refinementResults[mode] {
             refinementText = ready
-            refinementStatus = "已完成"
+            refinementStatus = "Complete"
             refinementStartedAt = nil
             return
         }
         cancelRefinementIdleRetirement()
         refinementText = ""
-        refinementStatus = "正在连接 GPT…"
+        refinementStatus = "Connecting to GPT…"
         refinementStartedAt = startedAt
         refinementBusy = true
         let generation = refinementGeneration
@@ -545,7 +545,7 @@ import os
                         guard let self, generation == self.refinementGeneration,
                               self.automaticExcerpt?.identity == identity else { return }
                         self.refinementText += delta
-                        self.refinementStatus = "正在生成…"
+                        self.refinementStatus = "Generating…"
                     }
                 }
                 guard !Task.isCancelled, generation == refinementGeneration,
@@ -553,15 +553,15 @@ import os
                 refinementText = result.text
                 refinementResults[mode] = result.text
                 refinementBusy = false
-                refinementStatus = String(format: "完成 · %.1f 秒", ProcessInfo.processInfo.systemUptime - startedAt)
+                refinementStatus = String(format: "Complete · %.1f s", ProcessInfo.processInfo.systemUptime - startedAt)
                 // Freeze this generation so already queued deltas cannot append
                 // after the authoritative final text replaces the stream.
                 refinementGeneration = UUID()
             } catch {
                 if generation == refinementGeneration {
                     refinementBusy = false
-                    refinementFailure = error is CancellationError ? "已停止，可重试。" : error.localizedDescription
-                    refinementStatus = "本次未完成"
+                    refinementFailure = error is CancellationError ? "Stopped. Try again." : error.localizedDescription
+                    refinementStatus = "Request incomplete"
                     refinementGeneration = UUID()
                 }
             }
@@ -575,8 +575,8 @@ import os
         refinementTask = nil
         refinementRequestID = nil
         if refinementBusy {
-            refinementStatus = "已停止"
-            refinementFailure = "已停止，可重试。"
+            refinementStatus = "Stopped"
+            refinementFailure = "Stopped. Try again."
         }
         refinementBusy = false
         if task != nil {
@@ -652,19 +652,19 @@ import os
 
     func setAutomatic(_ value: Bool) {
         if value && !capture.isTrusted {
-            errorMessage = "自动翻译需要辅助功能权限。授权后再开启。"
+            errorMessage = "Automatic translation requires Accessibility access. Grant access, then enable it."
             return
         }
         automaticEnabled = value
         if !value { cancelAutomatic() }
         onAutomaticModeChanged?(value)
-        setupStatus = value ? "自动翻译已开启" : "自动翻译已关闭；仍可按 \(hotKey.displayName) 翻译"
+        setupStatus = value ? "Automatic translation on" : "Automatic translation off. Use \(hotKey.displayName) to translate."
     }
 
     func configureEasydict() {
         guard bridgeReady else {
             guard bridgeStartupTask == nil else { return }
-            setupStatus = "正在启动可选的 Easydict 转接…"
+            setupStatus = "Starting optional Easydict bridge…"
             bridgeStartupTask = Task { [weak self] in
                 guard let self else { return }
                 defer { bridgeStartupTask = nil }
@@ -686,24 +686,24 @@ import os
                     cancelAutomatic()
                     onAutomaticModeChanged?(false)
                     try? integration.restoreSelectionIcon()
-                    setupStatus = "本机转接已配置；自动模式未能维持，已停止。"
+                    setupStatus = "Local bridge configured, but automatic mode stopped."
                     errorMessage = error.localizedDescription
                     return
                 }
             }
-            setupStatus = "Easydict 已接入本机翻译"
+            setupStatus = "Easydict connected to local translation"
         }
         catch { setupStatus = error.localizedDescription }
     }
 
     func restoreEasydict() {
         setAutomatic(false)
-        do { try integration.restoreConfiguration(); setupStatus = "已撤销本助手修改的 Easydict 设置" }
+        do { try integration.restoreConfiguration(); setupStatus = "Restored the Easydict settings changed by Ask for GPT" }
         catch { setupStatus = error.localizedDescription }
     }
 
     func saveSettings() {
-        guard !settings.cliPath.isEmpty, !settings.model.isEmpty else { errorMessage = "CLI 路径和模型名称不能为空。"; return }
+        guard !settings.cliPath.isEmpty, !settings.model.isEmpty else { errorMessage = "Enter a CLI path and model name."; return }
         do { try onHotKeyChanged?(hotKey) }
         catch { hotKey = appliedHotKey; errorMessage = error.localizedDescription; return }
         appliedHotKey = hotKey
@@ -731,18 +731,18 @@ import os
             guard let self, generation == self.connectionGeneration else { return }
             self.connect()
         }
-        status = "正在检查 ChatGPT 登录…"
+        status = "Checking ChatGPT sign-in…"
         errorMessage = nil
     }
 
     func testConnection() {
         guard !isSending, !isTesting else { return }
-        guard settings == appliedSettings else { errorMessage = "请先保存新模型设置，再测试连接。"; return }
+        guard settings == appliedSettings else { errorMessage = "Save the new model settings before testing the connection."; return }
         let engine = backend
         let generation = connectionGeneration
         isTesting = true
         errorMessage = nil
-        status = "正在测试所选模型…"
+        status = "Testing the selected model…"
         Task { [weak self] in
             guard let self else { return }
             var session: String?
@@ -756,7 +756,7 @@ import os
                 guard generation == connectionGeneration else { return }
                 isTesting = false
                 modelVerified = settings == appliedSettings
-                status = String(format: "模型验证通过 · %.1f 秒", result.totalSeconds)
+                status = String(format: "Model verified · %.1f s", result.totalSeconds)
             } catch {
                 if let session {
                     await Task { await engine.releaseSession(threadID: session) }.value
@@ -765,7 +765,7 @@ import os
                 }
                 guard generation == connectionGeneration else { return }
                 if session == nil { threadID = nil }
-                isTesting = false; modelVerified = false; errorMessage = error.localizedDescription; status = "模型验证未通过"
+                isTesting = false; modelVerified = false; errorMessage = error.localizedDescription; status = "Model verification failed"
             }
         }
     }
@@ -774,7 +774,7 @@ import os
         capture.requestPermission()
         // Let the OS authorization prompt open its current Privacy pane. Older
         // preference URLs can land on the unrelated top-level Accessibility page.
-        setupStatus = "请在系统设置的“隐私与安全性 → 辅助功能”开启 Ask for GPT。"
+        setupStatus = "Enable Ask for GPT in System Settings → Privacy & Security → Accessibility."
         permissionGranted = capture.isTrusted
     }
     func refreshPermission() { permissionGranted = capture.isTrusted }

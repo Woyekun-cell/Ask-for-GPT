@@ -45,9 +45,11 @@ macOS 1.1.61 使用 Codex CLI，沿用你自己的 ChatGPT 账号进行翻译、
 /Users/你的用户名/Library/Application Support/AskGPTReader/Tools/codex-0.163.0/bin/codex
 ```
 
-在 Ask for GPT 菜单栏选择 **设置…**，把它粘贴到 **CLI 路径**，点击 **保存并连接**。如果你本来就有 Codex CLI，也可以直接填写自己已安装、版本不低于 0.162.1 的可执行文件路径。
+在 Ask for GPT 菜单栏选择 **Settings…**，把它粘贴到 **CLI path**，点击 **Save and connect**。如果你本来就有 Codex CLI，也可以直接填写自己已安装、版本不低于 0.162.1 的可执行文件路径。
 
-![设置：Codex CLI 路径与可选翻译配置文件](images/settings.png)
+![旧版设置截图：Codex CLI 路径与可选翻译配置文件](images/settings.png)
+
+截图来自历史版本；1.1.61 的设置界面为英文，且不包含图中的可选翻译配置。
 
 提问模型和推理强度可以在这里调整。先保留默认设置测试 Codex；若账号不支持所填模型，再选择自己可用的模型。Codex 功能使用该账号相应的模型权限和额度。
 
@@ -55,7 +57,7 @@ macOS 1.1.61 使用 Codex CLI，沿用你自己的 ChatGPT 账号进行翻译、
 
 ### 历史可选后端说明
 
-macOS 1.1.61 安装包未包含 API / Claude 可选适配，设置中使用 **CLI 路径**与 **保存并连接**。随包保留的[翻译后端说明](TRANSLATION-BACKENDS.zh-CN.md)用于历史版本及 Windows 预览版参考；可选后端示例见共享源码。
+macOS 1.1.61 安装包未包含 API / Claude 可选适配，设置中使用 **CLI path** 与 **Save and connect**。随包保留的[翻译后端说明](TRANSLATION-BACKENDS.zh-CN.md)用于历史版本及 Windows 预览版参考；可选后端示例见共享源码。
 
 ## 3. 允许读取你选中的文字
 
@@ -63,7 +65,9 @@ macOS 1.1.61 安装包未包含 API / Claude 可选适配，设置中使用 **CL
 
 打开一段英文，选中一个单词，再按 `Option+D`。应该出现查词浮窗。也可以先在浮窗里手动粘贴文字，检查基本界面。
 
-![查词浮窗](images/translation.png)
+![旧版查词浮窗](images/translation.png)
+
+截图来自历史版本；1.1.61 的划词窗口名为 **Quick Translate**，控件文案为英文。
 
 本地词典已经包含在安装包中。需要 Apple 本机短段翻译时，使用 macOS 26，并按系统提示准备相应语言资源；选择 **GPT**或 **Explain**时使用 Codex。
 
@@ -85,7 +89,7 @@ macOS 1.1.61 安装包未包含 API / Claude 可选适配，设置中使用 **CL
 
 ## 5. 在 Zotero 安装插件
 
-1. 启动 Ask for GPT，点击菜单栏气泡图标，选择 **页面内翻译…**。
+1. 启动 Ask for GPT，点击菜单栏气泡图标，选择 **Page Translation…**。
 2. 点击 **Zotero 插件文件**，找到 `askgpt-inline-zotero.xpi`。
 3. 在 Zotero 9 或 10.0.x 的插件管理界面选择从文件安装，选中这个 XPI，并按提示重启 Zotero。
 4. 打开一份有文字层的 PDF，在右侧 **PDF 翻译**面板选择 **当前页**、语言方向和显示方式，再点击 **翻译**。
@@ -96,17 +100,17 @@ macOS 1.1.61 安装包未包含 API / Claude 可选适配，设置中使用 **CL
 
 ## 6. Chrome 与其他阅读器
 
-需要网页翻译时，在 **页面内翻译…**点击 **浏览器扩展目录**。打开 Chrome 的 `chrome://extensions`，开启开发者模式，再加载应用导出的目录。在网页中按 `Option+Shift+X`即可翻译或恢复原页面。本地 PDF 还需在扩展详情中允许访问文件网址。
+需要网页翻译时，在 **Page Translation…** 中点击 **浏览器扩展目录**。打开 Chrome 的 `chrome://extensions`，开启开发者模式，再加载应用导出的目录。在网页中按 `Option+Shift+X`即可翻译或恢复原页面。本地 PDF 还需在扩展详情中允许访问文件网址。
 
 请加载应用导出的目录，而不是源码目录；导出时才会生成你自己的本机连接配置。更新应用后，在 Chrome 扩展管理页手动重载一次。
 
-Preview 或 WPS PDF 可以通过菜单栏 **PDF · 原阅读器**使用译本。若应用无法取得当前 PDF 地址，手动选择本机文件即可，原 PDF 会保留。
+Preview 或 WPS PDF 可以通过菜单栏 **PDF · Native Reader** 使用译本。若应用无法取得当前 PDF 地址，手动选择本机文件即可，原 PDF 会保留。
 
 Word/WPS 写作加载项还需要单独的 localhost HTTPS 配置。若需要写作功能，按[完整手册](https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/docs/HANDBOOK.zh-CN.md#5-word--wps-写作加载项)准备；阅读、词典和 Zotero 功能不依赖这个步骤。
 
 ## 常见问题
 
-**Codex 连接失败。** 检查 CLI 路径是否指向实际文件，以及是否已用 ChatGPT 登录。重新运行登录入口后，点击 **保存并连接**。模型名需符合账号权限。
+**Codex 连接失败。** 检查 CLI 路径是否指向实际文件，以及是否已用 ChatGPT 登录。重新运行登录入口后，点击 **Save and connect**。模型名需符合账号权限。
 
 **可选翻译配置失败。** 检查 JSON 文件路径与字段；API 方式还需检查 HTTPS 地址、模型 ID 和密钥文件权限，Claude Code 方式检查 CLI 路径、参数兼容性和终端登录。修改后重启应用，具体见[配置指南](TRANSLATION-BACKENDS.zh-CN.md)。此入口失败会报告错误，不自动改用另一服务。
 
