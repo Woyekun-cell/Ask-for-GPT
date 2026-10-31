@@ -2,11 +2,11 @@
 
 [下载最新版](https://github.com/Woyekun-cell/Ask-for-GPT/releases/latest) · [Zotero 图文指南](https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/docs/ZOTERO.zh-CN.md) · [翻译后端配置](TRANSLATION-BACKENDS.zh-CN.md)
 
-这份指南面向直接下载使用的读者。安装包里已经有编译好的 Ask for GPT、离线词典和阅读插件，不需要安装 Xcode 或自己编译。模型连接和 PDF 支持在第一次使用时配置，之后可以直接打开应用阅读。本次 macOS 1.1.60 使用 Codex CLI 的 ChatGPT 登录。
+这份指南面向直接下载使用的读者。安装包里已经有编译好的 Ask for GPT、离线词典和阅读插件，不需要安装 Xcode 或自己编译。模型连接和 PDF 支持在第一次使用时配置，之后可以直接打开应用阅读。本次 macOS 1.1.61 使用 Codex CLI 的 ChatGPT 登录。
 
 ## 先选对下载文件
 
-在 GitHub Releases 的 **Assets** 中下载 `Ask-for-GPT-1.1.60-macOS-arm64.dmg`。如果你更习惯解压文件，也可以选同版本的 `.zip`；两者内容相同。
+在 GitHub Releases 的 **Assets** 中下载 `Ask-for-GPT-1.1.61-macOS-arm64.dmg`。如果你更习惯解压文件，也可以选同版本的 `.zip`；两者内容相同。
 
 当前安装版适用于 **Apple Silicon Mac（M1、M2、M3、M4 等 M 系列芯片）**。可以在苹果菜单 **关于本机**中查看芯片。完整 PDF 支持需要 macOS 15 或更新版本；Apple 本机短段翻译需要 macOS 26 和对应语言包。Intel Mac 暂无此安装包。
 
@@ -33,7 +33,7 @@
 
 ## 2. 配置模型连接
 
-macOS 1.1.60 使用 Codex CLI，沿用你自己的 ChatGPT 账号进行翻译、问答和写作。
+macOS 1.1.61 使用 Codex CLI，沿用你自己的 ChatGPT 账号进行翻译、问答和写作。
 
 ### 默认路径：登录自己的 ChatGPT 账号
 
@@ -55,7 +55,7 @@ macOS 1.1.60 使用 Codex CLI，沿用你自己的 ChatGPT 账号进行翻译、
 
 ### 历史可选后端说明
 
-macOS 1.1.60 安装包未包含 API / Claude 可选适配，设置中使用 **CLI 路径**与 **保存并连接**。随包保留的[翻译后端说明](TRANSLATION-BACKENDS.zh-CN.md)用于历史版本及 Windows 预览版参考；可选后端示例见共享源码。
+macOS 1.1.61 安装包未包含 API / Claude 可选适配，设置中使用 **CLI 路径**与 **保存并连接**。随包保留的[翻译后端说明](TRANSLATION-BACKENDS.zh-CN.md)用于历史版本及 Windows 预览版参考；可选后端示例见共享源码。
 
 ## 3. 允许读取你选中的文字
 
@@ -87,7 +87,7 @@ macOS 1.1.60 安装包未包含 API / Claude 可选适配，设置中使用 **CL
 
 1. 启动 Ask for GPT，点击菜单栏气泡图标，选择 **页面内翻译…**。
 2. 点击 **Zotero 插件文件**，找到 `askgpt-inline-zotero.xpi`。
-3. 在 Zotero 9 的插件管理界面选择从文件安装，选中这个 XPI，并按提示重启 Zotero。
+3. 在 Zotero 9 或 10.0.x 的插件管理界面选择从文件安装，选中这个 XPI，并按提示重启 Zotero。
 4. 打开一份有文字层的 PDF，在右侧 **PDF 翻译**面板选择 **当前页**、语言方向和显示方式，再点击 **翻译**。
 
 先处理一页，可以很快熟悉切换原文、译文和对照的方式，再决定是否翻译整篇。词语对应、八色标注、联动滚动、图表定位和后台任务的完整操作见 [Zotero 图文指南](https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/docs/ZOTERO.zh-CN.md)。
@@ -112,7 +112,7 @@ Word/WPS 写作加载项还需要单独的 localhost HTTPS 配置。若需要写
 
 **PDF 提示组件未准备。** 先完成 PDF 配置入口，看到资源准备成功后重启 Ask for GPT。安装阶段需要能连接 GitHub、Python 包源和上游公开资源。
 
-**Zotero 没出现翻译侧栏。** 确认使用 Zotero 9、XPI 已启用，并重启过 Zotero。Ask for GPT 主程序也应保持运行。
+**Zotero 没出现翻译侧栏。** 确认使用 Zotero 9 或 10.0.x、XPI 已启用，并重启过 Zotero。Ask for GPT 主程序也应保持运行。
 
 **选区能复制，但暂时没有另一侧的词语对应。** PDF 翻译和词语映射分别准备。稍等顶部状态完成，或在更多菜单重试；已有译本可以继续阅读。
 
@@ -127,5 +127,5 @@ Word/WPS 写作加载项还需要单独的 localhost HTTPS 配置。若需要写
 每次 Release 附带 `SHA256SUMS.txt`。下载后可以在终端检查安装包，输出应与文件内对应行相同：
 
 ```bash
-shasum -a 256 ~/Downloads/Ask-for-GPT-1.1.60-macOS-arm64.dmg
+shasum -a 256 ~/Downloads/Ask-for-GPT-1.1.61-macOS-arm64.dmg
 ```

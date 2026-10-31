@@ -16,7 +16,7 @@ Ask for GPT 是 macOS 阅读与英文写作助手：划词后查看本机译文�
 | 源码构建 | Swift 6 工具链、macOS SDK、Python 3，以及系统 `codesign`、`security`、`openssl` |
 | PDF 排版组件安装 | Apple Silicon、macOS 15+；配置入口自动准备 uv、Python 3.12 和预编译依赖，首次需要联网 |
 | Chrome 扩展 | Chrome 106 或更新版本；以本地未打包扩展方式加载 |
-| Zotero 插件 | 当前 manifest 声明兼容 Zotero 9.x |
+| Zotero 插件 | 当前 manifest 声明兼容 Zotero 9.x 和 10.0.x |
 
 先确认所需工具已安装，例如运行 `swift --version`、`codex --version`、`uv --version` 和 `python3.12 --version`。默认 Codex 路径先在终端完成 `codex login`，使用 ChatGPT 登录。可选翻译配置使用你指定的服务与账号；应用遇到连接或额度错误时不会自动切换服务。
 

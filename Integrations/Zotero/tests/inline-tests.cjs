@@ -1636,8 +1636,8 @@ function transportFixture(request) {
   const f=await backgroundFixture({holdPage:1});try{await f.advance(700);const first=f.current,second={...f.reader,tabID:'second-fixture',_iframeWindow:new DOM.Window()};f.reader._window.Zotero_Tabs.selectedID=second.tabID;await f.plugin.toggle(second,{whole:true});await settle(()=>!f.plugin.state(second).busy);await f.advance(700);assert.deepEqual(f.controls,[]);const oldStatusCount=first.alignment.length;f.releasePage(1);await f.advance(1500);assert.equal(first.alignment.length,oldStatusCount);assert.equal(first.alignment.at(-1),null);assert(f.mounts.get(second).alignment.some(value=>value?.state==='complete'));assert(!f.events.some(e=>e.method==='DELETE'));}finally{await f.done();}
  });
  const manifest=JSON.parse(fs.readFileSync(path.join(__dirname,'../manifest.json'),'utf8'));
- await check('Zotero 9 manifest and bootstrap load PDF layout before adapter',()=>{
-  assert.equal(manifest.manifest_version,2);assert.equal(manifest.applications.zotero.id,'askgpt-inline@local.askgpt.reader');assert.equal(manifest.applications.zotero.strict_min_version,'9.0');assert.equal(manifest.applications.zotero.strict_max_version,'9.*');assert(new URL(manifest.applications.zotero.update_url).hostname==='127.0.0.1');
+ await check('Zotero 9 and 10 manifest and bootstrap load PDF layout before adapter',()=>{
+  assert.equal(manifest.manifest_version,2);assert.equal(manifest.applications.zotero.id,'askgpt-inline@local.askgpt.reader');assert.equal(manifest.applications.zotero.strict_min_version,'9.0');assert.equal(manifest.applications.zotero.strict_max_version,'10.0.*');assert(new URL(manifest.applications.zotero.update_url).hostname==='127.0.0.1');
   const boot=fs.readFileSync(path.join(__dirname,'../bootstrap.js'),'utf8');assert(boot.indexOf("'content/pdf-layout.js'")<boot.indexOf("'content/inline.js'"));
  });
  clearTimeout(watchdog);process.stdout.write(JSON.stringify({status:'PASS',checks})+'\n');

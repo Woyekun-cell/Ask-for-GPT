@@ -2,11 +2,11 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const Layout=require('../content/pdf-layout.js');
 const Security=require('../content/connection-security.js');
-async function fixture(){
+async function fixture(version='9.0.6'){
   const writes=[],loads=[];let dependencies,now=1000;
   const file={path:'/fixture',clone(){return {...this};},append(value){this.path+='/'+value;},exists:()=>true,isFile:()=>true,fileSize:240,isSymlink:()=>false,permissions:0o600};
   const register=target=>{target.AskGPTPDFLayout=Layout;target.AskGPTConnectionSecurity=Security;target.AskGPTPDFConnection=require('../content/pdf-connection.js');target.AskGPTInline={create(value){dependencies=value;assert.equal(typeof value.ensurePDFReady,'function');return {start(){}};}};};
-  const scope={Date:{now:()=>now},Zotero:{version:'9.0.6',initializationPromise:Promise.resolve(),uiReadyPromise:Promise.resolve(),File:{getContentsFromURLAsync:async()=>'',putContentsAsync:async(file,value)=>writes.push({file,value:JSON.parse(value)})}},Services:{dirsvc:{get:()=>file},scriptloader:{loadSubScript(url,target){loads.push({url,target});register(target);},loadSubScriptWithOptions(url,options){loads.push({url,...options});register(options.target);}}},Components:{interfaces:{nsIFile:{}}},ChromeUtils:{},IOUtils:{},setTimeout,clearTimeout};
+  const scope={Date:{now:()=>now},Zotero:{version,initializationPromise:Promise.resolve(),uiReadyPromise:Promise.resolve(),File:{getResourceAsync:async url=>{assert.equal(url,'file:///fixture/content/inline.css');return 'fixture-css';},getContentsFromURLAsync:async()=>{throw Error('jar resources must not use HTTP.request');},putContentsAsync:async(file,value)=>writes.push({file,value:JSON.parse(value)})}},Services:{dirsvc:{get:()=>file},scriptloader:{loadSubScript(url,target){loads.push({url,target});register(target);},loadSubScriptWithOptions(url,options){loads.push({url,...options});register(options.target);}}},Components:{interfaces:{nsIFile:{}}},ChromeUtils:{},IOUtils:{},setTimeout,clearTimeout};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../bootstrap.js'),'utf8'),scope,{filename:'bootstrap.js'});
   await scope.startup({rootURI:'file:///fixture/',id:'fixture'},0);return {writes,loads,report:dependencies.reportDiagnostic,advance:value=>{now+=value;}};
 }
@@ -16,6 +16,8 @@ async function fixture(){
   assert.equal(new Set(f.loads.map(call=>call.target)).size,1);assert(f.loads.every(call=>call.url.startsWith('file:///fixture/content/')));
   assert(f.loads.findIndex(call=>call.url.endsWith('/pdf-layout.js'))<f.loads.findIndex(call=>call.url.endsWith('/inline.js')));
   process.stdout.write('PASS every owned startup module bypasses stale compiled script caches in order\n');
+  const v10=await fixture('10.0.7');assert.equal(v10.loads.length,f.loads.length);
+  process.stdout.write('PASS Zotero 10 loads the same owned modules\n');
   await f.report('output',{name:'Error',code:'compatibility',errorDetail:'nativePaint',message:secret,promise:secret});
   await f.report('nativeResourcesReleased',{name:'NativeResourceDiagnostic',code:'rendered',resourceNumbers:{parentListeners:1,mediaListeners:1,pendingTimers:0,destroyRequests:1,text:secret}});
   let value=f.writes.at(-1).value;

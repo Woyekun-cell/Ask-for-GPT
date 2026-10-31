@@ -149,4 +149,4 @@
   const api = { windows, readerDirectory, withPrivateFile, writeDiagnostic };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.AskGPTConnectionSecurity = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this);
+})(this);

@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const security = require('../content/connection-security.js');
 const adapter = require('../content/inline.js');
+const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
 let checks = 0;
 function fixture(os = 'Darwin') {
   const requests = [], reads = [], directoryKeys = [];
@@ -14,6 +15,9 @@ function fixture(os = 'Darwin') {
   return {file,dependencies,directoryKeys,requests,reads};
 }
 (async()=>{
+  const scope={globalThis:{}};
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../content/connection-security.js'),'utf8'),scope);
+  assert.equal(typeof scope.AskGPTConnectionSecurity?.readerDirectory,'function','bootstrap target must receive the security module even when globalThis is different');checks++;
   let f=fixture(); let directory=security.readerDirectory(f.dependencies);
   assert.equal(directory.path,'/Users/example/Library/Application Support/AskGPTReader');assert.deepEqual(f.directoryKeys,['Home']);checks++;
   f=fixture('WINNT');directory=security.readerDirectory(f.dependencies);

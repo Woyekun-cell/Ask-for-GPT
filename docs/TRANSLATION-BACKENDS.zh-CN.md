@@ -1,6 +1,6 @@
 # 选择自己的翻译服务
 
-> 版本范围：macOS 1.1.60 安装包使用 Codex，未包含本文的 API / Claude 可选适配。本文保留历史版本及 Windows 预览版配置参考；不要将这些选项视为 1.1.60 macOS 界面功能。
+> 版本范围：macOS 1.1.61 安装包使用 Codex，未包含本文的 API / Claude 可选适配。本文保留历史版本及 Windows 预览版配置参考；不要将这些选项视为 1.1.61 macOS 界面功能。
 
 [返回首页](../README.md) · [macOS 安装指南](INSTALL.macOS.zh-CN.md) · [Zotero 阅读指南](ZOTERO.zh-CN.md)
 

@@ -9,7 +9,7 @@ async function startup(data, reason) {
   const generation = ++askGPTInlineGeneration;
   await Zotero.initializationPromise;
   await Zotero.uiReadyPromise;
-  if (generation !== askGPTInlineGeneration || !/^9\./.test(Zotero.version)) return;
+  if (generation !== askGPTInlineGeneration || !/^(?:9\.|10\.0\.)/.test(Zotero.version)) return;
   const scope = { Zotero, Services, Components, ChromeUtils, IOUtils };
   // Match Zotero's plugin bootstrap loader: a replaced XPI keeps the same URI,
   // so its owned modules must not reuse bytecode from an older plugin build.
@@ -39,7 +39,7 @@ async function startup(data, reason) {
   loadScript('content/sidebar.js');
   loadScript('content/connection-security.js');
   loadScript('content/inline.js');
-  const css = await Zotero.File.getContentsFromURLAsync(data.rootURI + 'content/inline.css');
+  const css = await Zotero.File.getResourceAsync(data.rootURI + 'content/inline.css');
   if (generation !== askGPTInlineGeneration) return;
   let diagnosticWrite = Promise.resolve();
   const diagnosticStarted=Date.now();
