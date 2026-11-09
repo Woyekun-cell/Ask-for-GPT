@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Look up words, ask about a passage, and read bilingual PDFs with Ask for GPT.">
+<meta name="theme-color" content="#fbfcff">
+<title>Ask for GPT — Stay with the paper.</title>
+<link rel="icon" href="assets/ask-for-gpt.png">
+<link rel="stylesheet" href="style.css?v=6">
+<script src="site.js?v=6" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top" id="top">
+  <div class="progress" aria-hidden="true"></div>
+  <div class="nav wrap">
+    <a class="brand" href="#top"><img src="assets/ask-for-gpt.png" width="36" height="36" alt="">Ask for GPT</a>
+    <nav aria-label="Main navigation">
+      <a href="#workflow">Workflow</a><a href="#zotero">Zotero</a><a href="#beyond">Integrations</a><a href="https://github.com/Woyekun-cell/Ask-for-GPT">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+    <a class="nav-download" href="#download">Get the app <span aria-hidden="true">↗</span></a>
+  </div>
+</header>
+<main id="main">
+<section class="hero" aria-labelledby="hero-title">
+  <div class="wrap hero-layout">
+    <div class="screen-intro">
+      <h1 id="hero-title">Stay with<br>the paper.</h1>
+      <p class="lede">Translate PDFs with the layout intact, match phrases across languages, and ask about what you’re reading.</p>
+      <div class="actions">
+        <a class="button primary" href="https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.61/Ask-for-GPT-1.1.61-macOS-arm64.dmg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 15v5h14v-5"/></svg>Download for macOS
+        </a>
+        <a class="text-link" href="#zotero">Explore Zotero <span aria-hidden="true">↓</span></a>
+      </div>
+    </div>
+    <figure class="film" id="demo-film" aria-label="Interactive preview of Ask for GPT on macOS">
+      <div class="film-screen">
+        <video id="hero-video" muted playsinline preload="none" poster="assets/zotero-workflow-poster.jpg" aria-label="Real screen recording of bilingual PDF reading, phrase alignment, Quick Translate, and Ask for GPT">
+          <source src="assets/zotero-workflow.mp4" type="video/mp4">
+        </video>
+      </div>
+      <div class="film-player">
+        <div class="film-scenes" role="group" aria-label="Jump to a demo chapter">
+          <button type="button" data-film-start="0" aria-pressed="true">Compare</button>
+          <button type="button" data-film-start="7.3" aria-pressed="false">Annotate</button>
+          <button type="button" data-film-start="21.9" aria-pressed="false">Ask GPT</button>
+        </div>
+        <div class="film-actions">
+          <button type="button" id="film-toggle" class="film-icon" aria-label="Play demo" aria-controls="hero-video" disabled>
+            <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path class="film-play" d="M7 4.5v11l8-5.5z"/><path class="film-pause" d="M6 5h3v10H6zm5 0h3v10h-3z"/></svg>
+          </button>
+          <a class="film-icon" href="assets/zotero-workflow.mp4" target="_blank" rel="noopener" aria-label="Open full-size video" title="Open full-size video">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/></svg>
+          </a>
+        </div>
+        <progress id="film-progress" aria-label="Demo playback progress" max="1" value="0"></progress>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<section class="workflow wrap" id="workflow">
+  <div class="section-intro">
+
+    <h2>From a word<br>to a whole paper.</h2>
+    <p>Start with the detail that stopped you. Keep the surrounding passage in view as you look it up, ask a question, or open a translation.</p>
+  </div>
+  <div class="steps">
+    <article><span class="step-number">01</span><div><h3>Look up a word</h3><p>Select an English word for pronunciation, definitions, parts of speech, and inflections from the offline dictionary.</p></div><a class="step-link" href="#demo" data-demo="word" aria-label="Try the dictionary preview">Try it <span aria-hidden="true">↗</span></a></article>
+    <article><span class="step-number">02</span><div><h3>Ask in context</h3><p>Attach a selected passage to your question. Read the streaming reply, ask a follow-up, or use web search for supporting sources.</p></div><a class="step-link" href="#demo" data-demo="ask" aria-label="Try the Ask GPT preview">Try it <span aria-hidden="true">↗</span></a></article>
+    <article><span class="step-number">03</span><div><h3>Read side by side</h3><p>Translate a page or a full document, then compare the original PDF and its translation in Zotero.</p></div><a class="step-link" href="#demo" data-demo="dual" aria-label="Try the bilingual reading preview">Try it <span aria-hidden="true">↗</span></a></article>
+  </div>
+  <div class="workflow-demo">
+    <div><h3>Try a reading tool.</h3><p>Switch from a definition to a question or a bilingual view using the same sample passage.</p></div>
+    <div class="demo-shell" id="demo"><div class="demo">
+      <div class="demo-heading"><span><span class="demo-dot"></span>Reading desk</span></div>
+      <div class="tabs" role="tablist" aria-label="Reading tools">
+        <button id="tab-word" type="button" role="tab" aria-controls="panel-word" aria-selected="true">Look up</button>
+        <button id="tab-ask" type="button" role="tab" aria-controls="panel-ask" aria-selected="false" tabindex="-1">Ask GPT</button>
+        <button id="tab-dual" type="button" role="tab" aria-controls="panel-dual" aria-selected="false" tabindex="-1">Bilingual</button>
+      </div>
+      <div class="demo-body">
+        <div id="panel-word" role="tabpanel" aria-labelledby="tab-word" tabindex="0">
+          <h2>Reading across languages</h2>
+          <p class="paper-text">A reader can often <mark>infer</mark> the meaning of an unfamiliar term from the surrounding text. A quick lookup can help them check their interpretation.</p>
+          <div class="response">
+            <div class="response-top"><span>Dictionary</span><kbd>⌥ D</kbd></div>
+            <p class="response-title">infer <small>verb</small></p>
+            <p>To reach a conclusion from evidence or reasoning.</p>
+          </div>
+        </div>
+        <div id="panel-ask" role="tabpanel" aria-labelledby="tab-ask" tabindex="0" hidden>
+          <h2>Reading across languages</h2>
+          <p class="paper-text"><mark>A reader can often infer the meaning of an unfamiliar term from the surrounding text.</mark> A quick lookup can help them check their interpretation.</p>
+          <div class="response">
+            <div class="response-top"><span>Ask GPT · Example answer</span><kbd>⌥ X</kbd></div>
+            <p class="response-title">What does the author mean?</p>
+            <p>The author means that nearby words and sentences can give you clues to a term’s meaning.</p>
+          </div>
+        </div>
+        <div id="panel-dual" role="tabpanel" aria-labelledby="tab-dual" tabindex="0" hidden>
+          <h2>Reading across languages</h2>
+          <div class="parallel">
+            <div><span>Original</span><p>A reader can often infer the meaning of an unfamiliar term from the surrounding text.</p></div>
+            <div><span>Chinese translation</span><p lang="zh-Hans">读者通常可以根据上下文推断陌生术语的含义。</p></div>
+          </div>
+          <div class="response parallel-foot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m10 13 4-4m-5 6-2 2a3 3 0 0 1-4-4l4-4a3 3 0 0 1 4 0m2 0 2-2a3 3 0 0 1 4 4l-4 4a3 3 0 0 1-4 0"/></svg>Linked reading keeps both versions in view.</div>
+        </div>
+      </div>
+    </div></div>
+  </div>
+</section>
+
+<section class="zotero" id="zotero">
+  <div class="wrap">
+    <div class="zotero-intro">
+      <div><h2>Two languages.<br>One open paper.</h2></div>
+      <p>Translate a page or an entire PDF while keeping the page layout. Pair source and translation 1:1 by page, scroll them together, and mark passages in Zotero.</p>
+    </div>
+    <div class="reader-tour" aria-label="Zotero feature tour">
+      <div class="tour-chapters" aria-label="Zotero reading chapters">
+        <article><button type="button" data-chapter="0" aria-pressed="true"><span>01</span>Read side by side</button><p>Original and translation share a reading position.</p></article>
+        <article><button type="button" data-chapter="1" aria-pressed="false"><span>02</span>Translate the layout</button><p>Follow text, figures, and tables on the translated page.</p></article>
+        <article><button type="button" data-chapter="2" aria-pressed="false"><span>03</span>Follow a phrase</button><p>Find corresponding text and save notes with Zotero’s native palette.</p></article>
+        <article><button type="button" data-chapter="3" aria-pressed="false"><span>04</span>Separate the panes</button><p>Keep your place while checking another page.</p></article>
+        <article><button type="button" data-chapter="4" aria-pressed="false"><span>05</span>Find the evidence</button><p>Jump to a figure or table in the pane you choose.</p></article>
+        <article><button type="button" data-chapter="5" aria-pressed="false"><span>06</span>Inspect and export</button><p>Zoom into a figure or save it as a PNG.</p></article>
+      </div>
+      <div class="tour-stage">
+      <div class="tour-controls" role="group" aria-label="Choose a Zotero feature">
+        <button type="button" data-scene="0" aria-pressed="true">01 <span>Compare</span></button>
+        <button type="button" data-scene="1" aria-pressed="false">02 <span>Translate</span></button>
+        <button type="button" data-scene="2" aria-pressed="false">03 <span>Annotate</span></button>
+        <button type="button" data-scene="3" aria-pressed="false">04 <span>Split view</span></button>
+        <button type="button" data-scene="4" aria-pressed="false">05 <span>Find figures</span></button>
+        <button type="button" data-scene="5" aria-pressed="false">06 <span>Export PNG</span></button>
+      </div>
+      <figure class="capture">
+        <div class="capture-frame"><img id="tour-image" src="assets/zotero-bilingual.jpg" alt="The original English PDF and its Chinese translation open side by side in Zotero" width="1920" height="1106" loading="lazy"></div>
+        <div class="tour-caption">
+          <div id="tour-description" aria-live="polite" aria-atomic="true"><h3 id="tour-title">Read both versions together.</h3><p id="tour-text">Open the original and translated PDF in two native panes. Linked scrolling follows your reading position from either side.</p></div>
+          <div class="tour-arrows"><button type="button" id="tour-prev" aria-label="Previous Zotero feature">←</button><span id="tour-count" aria-hidden="true">1 / 6</span><button type="button" id="tour-next" aria-label="Next Zotero feature">→</button></div>
+        </div>
+        <figcaption><a id="tour-full" href="assets/zotero-bilingual.jpg" target="_blank" rel="noopener">View screenshot ↗</a></figcaption>
+      </figure>
+      </div>
+    </div>
+    <div class="reader-details">
+      <article><h3>Keep your place</h3><p>Turn on the reading position prompt to return to where you left off. Completed translations are stored locally and can reopen with the source.</p></article>
+      <article><h3>Follow the terminology</h3><p>Hover for a quick gloss. Select a phrase to see its counterpart, then choose from eight Zotero colors to highlight or underline it.</p></article>
+      <article><h3>Read while it translates</h3><p>Keep the original open while a translation runs. Track progress, stop or retry a task, and switch between the original, translated, and side-by-side views.</p></article>
+    </div>
+  </div>
+</section>
+
+<section class="integrations wrap" id="beyond">
+  <div class="integration-heading"><h2>Read wherever<br>the source is.</h2><p>Use the same reading tools across the desktop, your browser, and your PDF reader.</p></div>
+  <div class="app-list">
+    <article><span class="app-key"><kbd>⌥ D</kbd></span><div><h3>Desktop selection</h3><p>Translate selected or pasted text with Apple’s on-device translation, ask GPT for a closer translation, or use Explain to unpack terminology and reasoning. Set the direction manually or use automatic language detection.</p></div></article>
+    <article><span class="app-key"><kbd>⌥ ⇧ X</kbd></span><div><h3>Chrome pages and PDFs</h3><p>Translate a web page inline, paragraph by paragraph, as you scroll. Pause, resume, or restore the original. For PDFs, choose a page or the full document and switch among original, translated, and bilingual views.</p></div></article>
+    <article><span class="app-key">PDF</span><div><h3>Preview and WPS PDF</h3><p>On macOS, translate a page or the whole document, then open the generated translation in the PDF reader you were already using.</p></div></article>
+  </div>
+</section>
+
+<section class="writing">
+  <div class="wrap writing-grid">
+    <div><h2>From reading<br>to writing.</h2><p>Review spelling and GPT writing suggestions in Word. Compare the original and revision before applying an edit, dismissing it, or adding a word to your dictionary.</p><a class="text-link" href="https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/docs/HANDBOOK.zh-CN.md#5-word--wps-写作加载项">Read the setup guide ↗</a></div>
+    <figure><img src="assets/writing.png" alt="A Word suggestion comparing the original and revised wording with Apply and Ignore actions" loading="lazy"></figure>
+  </div>
+</section>
+
+<section class="walkthrough wrap" aria-labelledby="walkthrough-title">
+  <div class="walkthrough-media">
+    <video id="walkthrough-video" muted playsinline controls preload="none" poster="assets/github-walkthrough.jpg" aria-label="Ask for GPT product film">
+      <source src="assets/github-walkthrough.mp4" type="video/mp4">
+    </video>
+  </div>
+  <div><h2 id="walkthrough-title">See it in action.</h2><p>A short product film about reading, translating, and writing on macOS.</p><a class="text-link" href="https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4">Watch on GitHub ↗</a></div>
+</section>
+
+<section class="faq wrap" id="faq">
+  <div><h2>Setup and<br>compatibility.</h2></div>
+  <div class="questions">
+    <details><summary>What do I need on macOS?<span aria-hidden="true"></span></summary><p>The installer supports Apple Silicon Macs. Full PDF translation requires macOS 15 or later. Apple’s on-device passage translation requires macOS 26 and the relevant language packs.</p></details>
+    <details><summary>Do I need to start Codex myself?<span aria-hidden="true"></span></summary><p>Sign in to Codex CLI once and save its path in Ask for GPT settings. Ask for GPT starts the CLI when an AI feature needs it.</p></details>
+    <details><summary>What stays on my device?<span aria-hidden="true"></span></summary><p>English dictionary lookup runs offline. Completed PDF translations are stored on your Mac. AI requests send the relevant text and context through your configured Codex connection.</p></details>
+    <details><summary>Can I translate a scanned PDF?<span aria-hidden="true"></span></summary><p>Use a PDF with selectable text, or run OCR on scanned pages before translating.</p></details>
+    <details><summary>Which Zotero versions are supported?<span aria-hidden="true"></span></summary><p>The bundled add-on supports Zotero 9.x and 10.0.x. Follow the Zotero guide to install the add-on and prepare the PDF translation environment.</p></details>
+  </div>
+</section>
+
+<section class="download" id="download">
+  <div class="wrap download-inner">
+    <div><h2>Back to the paper.</h2><p>macOS 1.1.61 for Apple Silicon.</p></div>
+    <div class="download-links">
+      <a class="button primary" href="https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.61/Ask-for-GPT-1.1.61-macOS-arm64.dmg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 15v5h14v-5"/></svg>Download for macOS</a>
+      <a class="text-link" href="https://github.com/Woyekun-cell/Ask-for-GPT">View project on GitHub <span aria-hidden="true">↗</span></a>
+    </div>
+  </div>
+</section>
+</main>
+<footer class="foot"><div class="wrap"><a class="brand" href="#top"><img src="assets/ask-for-gpt.png" width="32" height="32" alt="">Ask for GPT</a><div><a href="https://github.com/Woyekun-cell/Ask-for-GPT/blob/main/docs/ZOTERO.zh-CN.md">Zotero guide</a><a href="https://github.com/Woyekun-cell/Ask-for-GPT">GitHub</a><details class="sources"><summary>Demo sources</summary><div><a href="https://doi.org/10.1038/s41576-020-0236-x">Video paper · Logsdon et al.</a><a href="https://doi.org/10.1038/s41586-023-05896-x">Screenshot paper · Liao et al. (CC BY 4.0)</a></div></details></div></div></footer>
+</body>
+</html>
