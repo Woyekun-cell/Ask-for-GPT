@@ -4,6 +4,24 @@ import Foundation
 
 @Suite(.serialized)
 struct CodexBackendTests {
+    @Test func subscriptionCatalogPaginatesAndUsesRequestModelIDsWithoutStartingATurn() async throws {
+        let fixture = try Fixture(mode: "catalog")
+        defer { fixture.remove() }
+        let backend = fixture.backend()
+        let models = try await backend.listModels()
+        await backend.shutdown()
+
+        #expect(models.map(\.id) == ["fixture-a", "fixture-b"])
+        #expect(models[0].reasoningEfforts == ["low", "xhigh"])
+        #expect(models[0].defaultReasoningEffort == "xhigh")
+        #expect(models[1].reasoningEfforts == ["medium"])
+        let requests = try fixture.requests()
+        let list = requests.filter { $0["method"] as? String == "model/list" }
+        #expect(list.count == 2)
+        #expect((list.last?["params"] as? [String: Any])?["cursor"] as? String == "next-models")
+        #expect(!requests.contains { ["thread/start", "turn/start"].contains($0["method"] as? String ?? "") })
+    }
+
     @Test func structuredTurnForwardsOnlyExactOutputSchemaWithoutChangingOrdinaryTurns() async throws {
         let fixture = try Fixture(mode: "success")
         defer { fixture.remove() }
@@ -482,6 +500,16 @@ private struct Fixture {
             m=r.get('method'); i=r.get('id'); p=r.get('params',{})
             if m=='initialize': emit({'id':i,'result':{'userAgent':'fixture'}})
             elif m=='account/read': emit({'id':i,'result':{'account':{'type':'apiKey' if MODE=='apiKey' else 'chatgpt'},'requiresOpenaiAuth':True}})
+            elif m=='model/list':
+                def model(slug,efforts,default,hidden=False):
+                    return {'id':'catalog-'+slug,'model':slug,'hidden':hidden,
+                        'supportedReasoningEfforts':[{'reasoningEffort':effort} for effort in efforts],
+                        'defaultReasoningEffort':default}
+                a=model('fixture-a',['low','xhigh'],'xhigh')
+                if p.get('cursor')=='next-models':
+                    emit({'id':i,'result':{'data':[a,model('fixture-b',['medium'],'medium')],'nextCursor':None}})
+                else:
+                    emit({'id':i,'result':{'data':[a,model('fixture-hidden',['low'],'low',True)],'nextCursor':'next-models'}})
             elif m=='thread/start':
                 thread_count+=1
                 thread_id='thread-fixture-'+str(thread_count) if MODE=='reusedTurnID' else 'thread-fixture'

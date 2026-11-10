@@ -12,17 +12,17 @@ Ask for GPT 是 macOS 阅读与英文写作助手：划词后查看本机译文�
 | 本机翻译、网页本机翻译 | macOS 26 或更新版本，并已安装所需语言对的系统翻译资源；26.4 起使用可用的翻译策略选择 |
 | Word / WPS 写作服务 | macOS 15 或更新版本，另需对应宿主、加载项和 localhost TLS 配置 |
 | 默认 AI 翻译、提问与写作润色 | Codex CLI 0.162.1 或更新版本，并通过 ChatGPT 账号登录；模型可用性及额度取决于账号 |
-| 可选翻译配置 | API 使用兼容的 HTTPS Chat Completions 接口及本地密钥文件；Claude Code 使用已安装、已登录且兼容适配参数的 CLI；属于未做连通/效果测试的实验性接入 |
+| API 模型连接 | 当前 macOS 源码支持厂商预设、自定义 OpenAI 兼容接口和本机 Ollama。需要的密钥及模型权限取决于服务 |
 | 源码构建 | Swift 6 工具链、macOS SDK、Python 3，以及系统 `codesign`、`security`、`openssl` |
 | PDF 排版组件安装 | Apple Silicon、macOS 15+；配置入口自动准备 uv、Python 3.12 和预编译依赖，首次需要联网 |
 | Chrome 扩展 | Chrome 106 或更新版本；以本地未打包扩展方式加载 |
 | Zotero 插件 | 当前 manifest 声明兼容 Zotero 9.x 和 10.0.x |
 
-先确认所需工具已安装，例如运行 `swift --version`、`codex --version`、`uv --version` 和 `python3.12 --version`。默认 Codex 路径先在终端完成 `codex login`，使用 ChatGPT 登录。可选翻译配置使用你指定的服务与账号；应用遇到连接或额度错误时不会自动切换服务。
+先确认所需工具已安装，例如运行 `swift --version`、`codex --version`、`uv --version` 和 `python3.12 --version`。默认 Codex 路径先在终端完成 `codex login`，使用 ChatGPT 登录。API 连接使用你指定的服务和账号。
 
-应用默认查找 `/opt/homebrew/bin/codex`；如果你的 CLI 安装在其他位置，在应用“设置”的 **Codex 路径**中填写实际绝对路径。提问模型和推理强度可在设置中修改。点击 **保存设置**保存，**测试 Codex**仅检查 Codex 连接。
+应用默认查找 `/opt/homebrew/bin/codex`。如果你的 CLI 安装在其他位置，在 **Settings…** 的 **CLI path** 填写实际绝对路径，点击 **Save and connect**。问答窗口底部的模型菜单可切换模型并选择支持的思考深度。
 
-**翻译配置文件**留空时，短段精译/解释、PDF 正文和句词映射仍走原有 Codex 路径。填写本机 JSON 路径后，这些任务采用配置中的 API 或 Claude Code；问答、网页检索与写作保持 Codex。独立翻译配置可单独保存，不要求 Codex 连通。配置字段、示例和权限要求见[翻译后端配置](TRANSLATION-BACKENDS.zh-CN.md)。修改配置或密钥文件后重启应用，让后续任务读取新配置。
+当前 macOS 源码可在 **Settings…** 的 **Add profile** 添加 API 连接。问答、短段精译、PDF 正文翻译和句词对应使用所选连接，Word/WPS 写作审阅使用 Codex。配置步骤及历史版本说明见[翻译后端配置](TRANSLATION-BACKENDS.zh-CN.md)。
 
 Easydict 是可选兼容入口，基本划词翻译不依赖它。
 

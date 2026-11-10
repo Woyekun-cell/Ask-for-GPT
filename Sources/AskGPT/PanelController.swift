@@ -18,6 +18,7 @@ final class ReaderPanel: NSPanel {
 
 @MainActor final class PanelController: NSObject, NSToolbarDelegate, NSWindowDelegate {
     var onOpenDocument: (() -> Void)?
+    var onZoteroPaperShortcut: ((String) async -> Void)?
     private let store: ReaderStore
     private let capture: SelectionCapture
     private var reader: ReaderPanel!
@@ -29,6 +30,7 @@ final class ReaderPanel: NSPanel {
     private var translationTrackingMenus = Set<ObjectIdentifier>()
     private var shortcutCaptureTask: Task<Void, Never>?
     private var shortcutCaptureGeneration = UUID()
+    private var paperShortcutGate = ZoteroPaperShortcutGate()
     private let windowLog = Logger(subsystem: "local.askgpt.reader", category: "window")
 
     init(store: ReaderStore, capture: SelectionCapture) {
@@ -36,7 +38,7 @@ final class ReaderPanel: NSPanel {
         super.init()
         reader = ReaderPanel(contentRect: NSRect(x: 0, y: 0, width: 400, height: 490),
             styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        reader.title = "Ask ChatGPT"
+        reader.title = "Ask GPT"
         reader.isReleasedWhenClosed = false
         reader.delegate = self
         reader.onClose = { [weak self] in self?.cancelPendingShortcutCapture() }
@@ -47,7 +49,7 @@ final class ReaderPanel: NSPanel {
         toolbar.displayMode = .iconOnly
         reader.toolbarStyle = .unifiedCompact
         reader.toolbar = toolbar
-        let readerContent = NSHostingView(rootView: ReaderView(store: store))
+        let readerContent = NSHostingView(rootView: ReaderView(store: store, openSettings: { [weak self] in self?.showSettings() }))
         readerContent.sizingOptions = [.minSize]
         reader.contentView = readerContent
         reader.contentMinSize = NSSize(width: 380, height: 400)
@@ -61,10 +63,21 @@ final class ReaderPanel: NSPanel {
 
     func showQuestion(with explicit: CapturedSelection? = nil) {
         cancelPendingShortcutCapture()
-        let selection = explicit ?? capture.capture() ?? store.automaticExcerpt.map {
-            CapturedSelection(excerpt: $0, anchor: nil)
-        }
+        let selection = explicit ?? capture.capture() ?? recentQuestionSelection
         presentQuestion(selection)
+    }
+
+    func showPaperQuestion(_ context: PaperContext, shortcutNonce: String?) -> Bool {
+        if let shortcutNonce {
+            guard consumePaperShortcut(shortcutNonce) else { return false }
+            // Let the outbound request receive its acknowledgement. Dismissal
+            // invalidates the generation so it cannot also present an AX draft.
+            shortcutCaptureTask = nil
+        }
+        dismissTranslation()
+        store.attachPaper(context)
+        revealQuestion()
+        return true
     }
 
     func showShortcutQuestion() { beginShortcutCapture(question: true) }
@@ -72,32 +85,68 @@ final class ReaderPanel: NSPanel {
 
     private func beginShortcutCapture(question: Bool) {
         cancelPendingShortcutCapture()
+        let source = question ? NSWorkspace.shared.frontmostApplication : nil
+        let sourcePID = source?.processIdentifier
+        // A repeated press after the paper composer takes focus keeps its draft.
+        if sourcePID == ProcessInfo.processInfo.processIdentifier, store.paperContext != nil {
+            if !reader.isKeyWindow { revealQuestion() }
+            return
+        }
+        let requestPaper = onZoteroPaperShortcut
+        let nonce = requestPaper == nil ? nil : paperShortcutGate.begin(bundleID: source?.bundleIdentifier, processID: sourcePID)
         let generation = shortcutCaptureGeneration
         shortcutCaptureTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            defer {
+                if generation == shortcutCaptureGeneration {
+                    shortcutCaptureTask = nil
+                    paperShortcutGate.cancel()
+                }
+            }
+            if let nonce, let requestPaper {
+                await requestPaper(nonce)
+                guard !Task.isCancelled, generation == shortcutCaptureGeneration,
+                      consumePaperShortcut(nonce) else { return }
+            }
             let selected = await capture.captureForShortcut()
-            guard !Task.isCancelled, generation == shortcutCaptureGeneration else { return }
+            guard !Task.isCancelled, generation == shortcutCaptureGeneration,
+                  nonce == nil || NSWorkspace.shared.frontmostApplication?.processIdentifier == sourcePID else { return }
             // Presentation dismisses the old translation panel. Clear the task
             // first so that dismissal cannot cancel this successful capture.
             shortcutCaptureTask = nil
             if question {
-                let selection = selected ?? store.automaticExcerpt.map { CapturedSelection(excerpt: $0) }
-                presentQuestion(selection)
+                presentQuestion(selected ?? recentQuestionSelection)
             } else { presentManualTranslation(selected) }
         }
     }
 
+    private func consumePaperShortcut(_ nonce: String) -> Bool {
+        let active = NSWorkspace.shared.frontmostApplication
+        return paperShortcutGate.consume(nonce, bundleID: active?.bundleIdentifier, processID: active?.processIdentifier)
+    }
+
     private func cancelPendingShortcutCapture() {
         shortcutCaptureGeneration = UUID()
+        paperShortcutGate.cancel()
         shortcutCaptureTask?.cancel()
         shortcutCaptureTask = nil
+    }
+
+    private var recentQuestionSelection: CapturedSelection? {
+        guard store.paperContext == nil else { return nil }
+        return store.automaticExcerpt.map { CapturedSelection(excerpt: $0) }
     }
 
     private func presentQuestion(_ selection: CapturedSelection?) {
         dismissTranslation()
         if let selection { store.adopt(selection.excerpt) }
+        else { store.detachPaperContext() }
+        revealQuestion(anchor: selection?.anchor)
+    }
+
+    private func revealQuestion(anchor: CGRect? = nil) {
         if reader.isMiniaturized { reader.deminiaturize(nil) }
-        place(reader, anchor: selection?.anchor)
+        place(reader, anchor: anchor)
         NSApp.activate(ignoringOtherApps: true)
         reader.makeKeyAndOrderFront(nil)
         store.refreshPermission()
@@ -106,7 +155,7 @@ final class ReaderPanel: NSPanel {
     func showSettings() {
         cancelPendingShortcutCapture()
         if settings == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 544, height: 300), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 544, height: 452), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
             window.title = "Ask for GPT · Settings"
             window.isReleasedWhenClosed = false
             window.contentView = NSHostingView(rootView: SettingsView(store: store))
@@ -115,6 +164,7 @@ final class ReaderPanel: NSPanel {
         }
         NSApp.activate(ignoringOtherApps: true)
         if settings?.isMiniaturized == true { settings?.deminiaturize(nil) }
+        settings?.level = reader.isVisible ? reader.level : .normal
         settings?.makeKeyAndOrderFront(nil)
     }
 

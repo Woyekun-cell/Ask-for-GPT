@@ -43,6 +43,17 @@ import AskGPTCore
         let preferences = UserDefaults(suiteName: "local.askgpt.reader")
         var settings = preferences?.data(forKey: "codexSettings")
             .flatMap { try? JSONDecoder().decode(CodexSettings.self, from: $0) } ?? CodexSettings()
+        // An old or recovered PDF with no route snapshot keeps its Codex backend.
+        settings.apiProfile = nil
+        if batchMode || alignmentMode || phraseMode || selectionMode,
+           let snapshot = ProcessInfo.processInfo.environment["ASKGPT_PDF_MODEL_ROUTE"] {
+            let data = Data(snapshot.utf8)
+            guard data.count <= 8 * 1024,
+                  let route = try? JSONDecoder().decode(CodexSettings.self, from: data) else {
+                write(Response(id: "", error: "gpt_unavailable")); return
+            }
+            settings = route
+        }
         let batch = batchMode ? PDFBatchTranslator(settings: settings) : nil
         let alignment = alignmentMode ? PDFSentenceAlignmentTranslator(settings: settings) : nil
         let phrase = phraseMode ? PDFPhraseAlignmentTranslator(settings: settings) : nil

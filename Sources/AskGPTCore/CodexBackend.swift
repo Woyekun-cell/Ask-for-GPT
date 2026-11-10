@@ -9,6 +9,12 @@ public struct CodexWebSource: Identifiable, Equatable, Sendable {
     public init(title: String, url: URL) { self.title = title; self.url = url }
 }
 
+public struct CodexSubscriptionModel: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let reasoningEfforts: [String]
+    public let defaultReasoningEffort: String?
+}
+
 public struct BackendConnectionInfo: Sendable {
     public let authMode: String
     public let cliVersion: String
@@ -27,7 +33,7 @@ public struct BackendTurnResult: Sendable {
 }
 
 /// Owns one independent stdio child. It never reads credentials or changes global Codex settings.
-public actor CodexBackend {
+public actor CodexBackend: ModelBackend {
     private let settings: CodexSettings
     private let capabilities: CodexCapabilities
     private let timeoutSeconds: Double
@@ -96,6 +102,51 @@ public actor CodexBackend {
         }
     }
 
+    /// Reads the signed-in account's picker catalog without opening a thread.
+    public func listModels() async throws -> [CodexSubscriptionModel] {
+        try Task.checkCancellation()
+        _ = try await validateConnection()
+        try Task.checkCancellation()
+        guard let connection else { throw CodexBackendError.disconnected }
+        var models: [CodexSubscriptionModel] = []
+        var seenModels = Set<String>()
+        var seenCursors = Set<String>()
+        var params: [String: Any] = ["includeHidden": false, "limit": 100]
+        for _ in 0..<8 {
+            let result = try await connection.request("model/list", params: RPCObject(params), timeout: min(timeoutSeconds, 15))
+            guard let rows = result.value["data"] as? [[String: Any]], rows.count <= 100 else {
+                throw CodexBackendError.protocolFailure("Invalid Codex model list")
+            }
+            for row in rows {
+                guard row["hidden"] as? Bool != true, let rawID = row["model"] as? String,
+                      let id = APIProviderProfile.normalizedModelID(rawID), seenModels.insert(id).inserted else { continue }
+                var seenEfforts = Set<String>()
+                let entries = row["supportedReasoningEfforts"] as? [[String: Any]] ?? []
+                let efforts = entries.compactMap { Self.catalogEffort($0["reasoningEffort"]) }
+                    .filter { seenEfforts.insert($0).inserted }
+                let preferred = Self.catalogEffort(row["defaultReasoningEffort"])
+                let options = efforts.isEmpty ? preferred.map { [$0] } ?? [] : efforts
+                models.append(.init(id: id, reasoningEfforts: options,
+                    defaultReasoningEffort: preferred.flatMap { options.contains($0) ? $0 : nil } ?? options.first))
+            }
+            let next = result.value["nextCursor"]
+            if next == nil || next is NSNull { return models }
+            guard let cursor = next as? String, !cursor.isEmpty, cursor.utf8.count <= 512,
+                  seenCursors.insert(cursor).inserted else {
+                throw CodexBackendError.protocolFailure("Invalid Codex model list cursor")
+            }
+            params["cursor"] = cursor
+        }
+        throw CodexBackendError.protocolFailure("Codex model list exceeds the supported number of pages")
+    }
+
+    private static func catalogEffort(_ value: Any?) -> String? {
+        guard let effort = value as? String, (1...24).contains(effort.utf8.count),
+              effort.utf8.allSatisfy({ (97...122).contains($0) || (48...57).contains($0) || $0 == 45 || $0 == 95 })
+        else { return nil }
+        return effort
+    }
+
     public func startSession(instructions: String) async throws -> String {
         _ = try await validateConnection()
         guard let connection else { throw CodexBackendError.disconnected }
@@ -139,7 +190,7 @@ public actor CodexBackend {
         try await sendTurn(threadID: threadID, text: text, outputSchema: nil, onActivity: onActivity, onDelta: onDelta)
     }
 
-    func sendStructured(threadID: String, text: String, schema: RPCObject,
+    public func sendStructured(threadID: String, text: String, schema: RPCObject,
                         onDelta: @escaping @Sendable (String) -> Void) async throws -> BackendTurnResult {
         try await sendTurn(threadID: threadID, text: text, outputSchema: schema, onActivity: nil, onDelta: onDelta)
     }

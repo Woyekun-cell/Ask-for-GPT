@@ -252,7 +252,7 @@ private actor ControlledRefiner: PassageRefining {
             try await checkControlledRefinement(capture: capture, integration: integration, checks: &checks)
 
             let panels = PanelController(store: currentStore, capture: capture)
-            let initialReader = try window(titled: "Ask ChatGPT", in: app)
+            let initialReader = try window(titled: "Ask GPT", in: app)
             observations["reader_before_any_presentation"] = [
                 "contentWidth": initialReader.contentRect(forFrameRect: initialReader.frame).width,
                 "contentHeight": initialReader.contentRect(forFrameRect: initialReader.frame).height,
@@ -296,7 +296,7 @@ private actor ControlledRefiner: PassageRefining {
             panels.showTranslation(with: selection)
             try await waitForTranslation(currentStore)
             let translation = try window(titled: "Quick Translate", in: app)
-            let reader = try window(titled: "Ask ChatGPT", in: app)
+            let reader = try window(titled: "Ask GPT", in: app)
             try checkButtons(translation, name: "translation")
             try checkButtons(reader, name: "reader")
             checks["native_close_minimize_buttons_present_visible_enabled"] = true
@@ -358,16 +358,16 @@ private actor ControlledRefiner: PassageRefining {
             panels.askAboutTranslation()
             await settle(0.1)
             try require(currentStore.ledger.excerpt?.identity == excerpt.identity,
-                "Ask ChatGPT did not adopt the translated excerpt")
+                "Ask GPT did not adopt the translated excerpt")
             try require(reader.isVisible && !translation.isVisible,
-                "Ask ChatGPT did not switch from translation to question window")
+                "Ask GPT did not switch from translation to question window")
             checks["ask_chatgpt_transfers_current_excerpt"] = true
             currentStore.question = "同一段原文的草稿应保留"
             panels.showTranslation(with: selection)
             try await waitForTranslation(currentStore)
             panels.askAboutTranslation()
             try require(currentStore.question == "同一段原文的草稿应保留",
-                "reopening Ask ChatGPT for the same excerpt discarded the question draft")
+                "reopening Ask GPT for the same excerpt discarded the question draft")
             checks["same_excerpt_preserves_question_draft"] = true
 
             panels.showTranslation(with: selection)

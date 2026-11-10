@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "project": "Ask for GPT",
-  "snapshotDate": "2026-10-31",
+  "snapshotDate": "2026-11-10",
   "distribution": "source",
   "files": [
     {
@@ -171,8 +171,8 @@
     },
     {
       "path": "Integrations/PDFLayout/selection_service.py",
-      "bytes": 43590,
-      "sha256": "75cebad9a4e3c8ec7a0864005ddbbb895f3f6be7bb42bc02defc729bf74f5f93"
+      "bytes": 43772,
+      "sha256": "76563bc4065741ebbc1b0407746c445220f4e3d12d03e55c27f7112721fc02db"
     },
     {
       "path": "Integrations/PDFLayout/sentence_alignment.py",
@@ -181,13 +181,13 @@
     },
     {
       "path": "Integrations/PDFLayout/sentence_service.py",
-      "bytes": 58275,
-      "sha256": "0fa6025271cb843d5918d75f1f421568429e87504b52920bc56ceb6ddf79be05"
+      "bytes": 58376,
+      "sha256": "44d14ca1cd2b629d8bbdd8ed99f80d36e24b7a5b76cd0908dd544e9d99a337d3"
     },
     {
       "path": "Integrations/PDFLayout/server.py",
-      "bytes": 84811,
-      "sha256": "0ccc234ff99e4944d02f39730aacc82ebff92800d85c899cbd8304aef71a41e6"
+      "bytes": 86325,
+      "sha256": "d89688d12a20545b95c89fdbc66b76e512cb15be6b0924b2932146244fb3af1d"
     },
     {
       "path": "Integrations/PDFLayout/tests/helper_fixture.py",
@@ -381,18 +381,18 @@
     },
     {
       "path": "Integrations/PDFLayout/tests/test_server.py",
-      "bytes": 39112,
-      "sha256": "0d7a8da6478bf3b158f1e27e1ea1a92161c1eba82c7dc32557aeef33c0f43257"
+      "bytes": 41614,
+      "sha256": "3e84346b3a6e782dd4d472ef913cd6eab7b5d830ddbd27de6f09ed240faa2bd3"
     },
     {
       "path": "Integrations/PDFLayout/tests/test_worker.py",
-      "bytes": 2466,
-      "sha256": "c370b6ef7b9e69880ec239b838df93ca0b19d4501c908341231b56cff092c9fa"
+      "bytes": 3177,
+      "sha256": "ddda3020cdd86393c75c155e3d386c466409c4ff8cd503e70b51f5a73b0694be"
     },
     {
       "path": "Integrations/PDFLayout/worker.py",
-      "bytes": 39997,
-      "sha256": "62cc53a5e569f0ce7aaeb19188adeec1bc232b2fdea145a7812f7ac4a78e963d"
+      "bytes": 40450,
+      "sha256": "0e9a777a9bc5e20d972e5e4f67648afa77e4b5c29cf5b11b48b71d1d978f3d55"
     },
     {
       "path": "Integrations/Writing/package.json",
@@ -561,8 +561,18 @@
     },
     {
       "path": "Integrations/Zotero/bootstrap.js",
-      "bytes": 3895,
-      "sha256": "735dcf7fbf9f1bee2fc743d503c0eab39ba02e768f3be6b34b861275df9daa05"
+      "bytes": 4175,
+      "sha256": "f1ceb2725db61af573952bb3c2ba6b0ce780ac8ce40e27d4601411c7b015db7e"
+    },
+    {
+      "path": "Integrations/Zotero/content/ask-paper-shortcut.js",
+      "bytes": 3268,
+      "sha256": "e4341298973fa34d10bb7f75fd849ebcb3bf72806097c6cfa4807c0e5bd75c7d"
+    },
+    {
+      "path": "Integrations/Zotero/content/ask-paper.js",
+      "bytes": 9442,
+      "sha256": "fff2072fd24ae94e8da1dcfd97335ee829a60a9de2978d2c325cf952744a84ff"
     },
     {
       "path": "Integrations/Zotero/content/connection-security.js",
@@ -581,13 +591,13 @@
     },
     {
       "path": "Integrations/Zotero/content/inline.js",
-      "bytes": 88511,
-      "sha256": "4bb2ec16eb64b9006c8653342eed5b415453e91bc353e094f900d56046130019"
+      "bytes": 94004,
+      "sha256": "213d6f308e1e0a89934cbc9063995cec15e7f10ab194d13f8821f7f36cef1e20"
     },
     {
       "path": "Integrations/Zotero/content/pdf-connection.js",
-      "bytes": 5451,
-      "sha256": "c574dc4d017b1c13d555c4b799283651afabc111cec3ba72ae3545a4aacfb9ab"
+      "bytes": 5549,
+      "sha256": "70e18d6b158eb5b40fdd7e0e75004cfb39b3eda845739780a88da2dd2c7dba19"
     },
     {
       "path": "Integrations/Zotero/content/pdf-figure-bridge.js",
@@ -646,8 +656,8 @@
     },
     {
       "path": "Integrations/Zotero/content/pdf-layout.js",
-      "bytes": 98122,
-      "sha256": "2495aaee068c6efcc31fef608968c5c54e0a2adef946d44442b0ffa217170b6f"
+      "bytes": 98161,
+      "sha256": "596bc01ccd1cf98f10d66a340abc2f1a3ac5f2fd81e2afedeaac9c46f0cfb2ab"
     },
     {
       "path": "Integrations/Zotero/content/pdf-local-version.js",
@@ -656,8 +666,8 @@
     },
     {
       "path": "Integrations/Zotero/content/pdf-native-view.js",
-      "bytes": 222709,
-      "sha256": "4e84a8e9159211f0b9ad174147d6ed015e4d4e1935931a2fca4a9181eca04545"
+      "bytes": 223239,
+      "sha256": "cfdea64163f709ce6e128b0ac22189926c5979b51fde6e6c41a7667be9da8066"
     },
     {
       "path": "Integrations/Zotero/content/pdf-pane-gestures.js",
@@ -716,8 +726,18 @@
     },
     {
       "path": "Integrations/Zotero/manifest.json",
-      "bytes": 468,
-      "sha256": "5f2f2a9898723be7d0703f012162eadfa6cac0e718006641e5e2cc5191300bed"
+      "bytes": 484,
+      "sha256": "6cb654f2b8e19dbc320d0883c9a065829a33a2e88b303392969f2373a3712450"
+    },
+    {
+      "path": "Integrations/Zotero/tests/ask-paper-shortcut-tests.cjs",
+      "bytes": 3945,
+      "sha256": "344acc0b6c39a8a3a8415adf7e4f0f087d28679f168cd72d394f46981184762f"
+    },
+    {
+      "path": "Integrations/Zotero/tests/ask-paper-tests.cjs",
+      "bytes": 6346,
+      "sha256": "8053f3a51cac394377def499e88f0a2a428d7c84bd2c14fb3f61bb669b7605fa"
     },
     {
       "path": "Integrations/Zotero/tests/connection-security-tests.cjs",
@@ -731,8 +751,8 @@
     },
     {
       "path": "Integrations/Zotero/tests/inline-tests.cjs",
-      "bytes": 257127,
-      "sha256": "141cef55f8e9089f5581a198c2170e0224e9646603eb450cda49a92c6e54223b"
+      "bytes": 265489,
+      "sha256": "396664450ad8c31c1d6bc9f4a0f0fc60bb43f15ee9130e3755e0fc723affa9b7"
     },
     {
       "path": "Integrations/Zotero/tests/pdf-alignment-progress-tests.cjs",
@@ -761,13 +781,13 @@
     },
     {
       "path": "Integrations/Zotero/tests/pdf-bootstrap-diagnostic-tests.cjs",
-      "bytes": 5494,
-      "sha256": "34059fa38be2aecce413af803a0d0b52ba4c6ee368fb66fd7e22f5fcefc90bc0"
+      "bytes": 5547,
+      "sha256": "e4c77959f9cbf71ec2217b8623507cf29ca825800bcf2d4dd56b3aa7977dd0ce"
     },
     {
       "path": "Integrations/Zotero/tests/pdf-connection-tests.cjs",
-      "bytes": 11387,
-      "sha256": "33ab4c4334e57543a8123ced0a0637a5ee87f3dc7715dab54f23201667a37447"
+      "bytes": 11782,
+      "sha256": "21aad814403387dde84f8bf1afedbd54117589d90605a055a6ef8e9678f5a1b2"
     },
     {
       "path": "Integrations/Zotero/tests/pdf-figure-bridge-tests.cjs",
@@ -1086,13 +1106,13 @@
     },
     {
       "path": "README.en.md",
-      "bytes": 20597,
-      "sha256": "0d01d3017b876e89e37d287acea45b7805b5f379dd629b7165bf0bf74fc1030c"
+      "bytes": 22453,
+      "sha256": "50cbb761e2c5b0679dc202986fb07a0253a69cc057139e7c78540f96cc4fe2e0"
     },
     {
       "path": "README.md",
-      "bytes": 17766,
-      "sha256": "7222ebdef6ed8c978a56fd7373b24b40a9af84d2a3ea52c2f085571ecca96e96"
+      "bytes": 19360,
+      "sha256": "72342c78963ea870b3e80e7f80ce8cc03ee00bcdf239c9cca8d4077b10076f4c"
     },
     {
       "path": "Resources/AppIcon.icns",
@@ -1181,8 +1201,8 @@
     },
     {
       "path": "Sources/AskGPT/AppDelegate.swift",
-      "bytes": 13648,
-      "sha256": "ed1e1db3ac289a63e33d26557036e634a0e5dd447e6b9e119fa5d6ad48236970"
+      "bytes": 16275,
+      "sha256": "27b4d597beea612469fa04f1f5211dfd1162275dd70da93fe3849c9f7749e32f"
     },
     {
       "path": "Sources/AskGPT/AppMain.swift",
@@ -1211,8 +1231,8 @@
     },
     {
       "path": "Sources/AskGPT/InlineIntegrationController.swift",
-      "bytes": 9642,
-      "sha256": "33dba279b3695b4ccd804af763fe5cd4c2da04768b4c44c8dfdc4d896b802cd8"
+      "bytes": 10348,
+      "sha256": "bf90d50c2239cb8c2d391489e9310126316ed735d349988826c1ab10b92943e3"
     },
     {
       "path": "Sources/AskGPT/NativePDFTranslationController.swift",
@@ -1226,18 +1246,18 @@
     },
     {
       "path": "Sources/AskGPT/PanelController.swift",
-      "bytes": 15291,
-      "sha256": "e9f7c47e496d58dd60103d7799beade4e64fa1e3c8587897a8bcdfa79acce8bd"
+      "bytes": 17669,
+      "sha256": "c3133d29ce44deec0032085df0c32e4300d7a55a6cf0faf17ca7b0693e4977df"
     },
     {
       "path": "Sources/AskGPT/ReaderStore.swift",
-      "bytes": 39870,
-      "sha256": "5dee5ca2fc944a13738ccba0b9ddbbfe451b56196a9f39482cd6bc80f929f48d"
+      "bytes": 60803,
+      "sha256": "2b381e174949f6e729a5e786cf93b1b4cd13133f962d2fe20ded9ced75007eab"
     },
     {
       "path": "Sources/AskGPT/Views.swift",
-      "bytes": 30053,
-      "sha256": "c573a8332c895e5f2929ece895e0f7f3b4c14dfbdbf9a9147be67b388a8d07de"
+      "bytes": 49005,
+      "sha256": "836ecb695ccb411deb57affe182dc2cb35789a654c7fd792b444d288eeec63eb"
     },
     {
       "path": "Sources/AskGPT/WordWritingAXObserver.swift",
@@ -1260,6 +1280,11 @@
       "sha256": "3e79c6b978c28a5cbd8ab22ddacd773858f46fb68164aacd51290e269ab0229d"
     },
     {
+      "path": "Sources/AskGPTCore/APIModelBackend.swift",
+      "bytes": 19669,
+      "sha256": "2d67e7c7fddb0f3c72b12c2f65fdc5d703e73881f23b7f0221c64370edd645f4"
+    },
+    {
       "path": "Sources/AskGPTCore/ActiveReadingCapture.swift",
       "bytes": 31552,
       "sha256": "a2a9bfe08f663af0fa1ea737cf605c7634df5e26ca83c92de9e268fdcfa61ba3"
@@ -1271,18 +1296,18 @@
     },
     {
       "path": "Sources/AskGPTCore/CodexBackend.swift",
-      "bytes": 34342,
-      "sha256": "6954bff9ba8398ec8f739e45cf6189cde5379a0fe9aebda3ea6a697c633b577e"
+      "bytes": 37216,
+      "sha256": "678a1972e4fb802884b62fb76da1edb6e6d8389d35183a929e3ed811ab6b3a75"
     },
     {
       "path": "Sources/AskGPTCore/CodexRPC.swift",
-      "bytes": 13105,
-      "sha256": "ad956fea3a70efe2f31c4b1c005f75d56f128239c440666a4fc502fb8c9f75b4"
+      "bytes": 13112,
+      "sha256": "1d5181d94036d546e5cbe1e54641e77eb2f2ef6115c6c4f76bdc42da22940ca2"
     },
     {
       "path": "Sources/AskGPTCore/ConversationLedger.swift",
-      "bytes": 1865,
-      "sha256": "f18c8b904e08b5db2cc233461681a649ab244661f08d76f4e5a79e4bb6ad1a4d"
+      "bytes": 1931,
+      "sha256": "a4de8818f3391d54d1258d5f94c978f6d018a37ff12116e9fb97b159028aafcf"
     },
     {
       "path": "Sources/AskGPTCore/EasydictIntegration.swift",
@@ -1301,8 +1326,8 @@
     },
     {
       "path": "Sources/AskGPTCore/InlineTranslationBridge.swift",
-      "bytes": 28194,
-      "sha256": "6ca232860949329d32dab34685cfad259c22805f0bdaea28b0e987563e0e3d38"
+      "bytes": 29396,
+      "sha256": "3f3ba6c3b1ebc2e54f400571685bf8e10f9de5d99a13f279c5ce0c00b8cff5e5"
     },
     {
       "path": "Sources/AskGPTCore/LocalProofreader.swift",
@@ -1320,9 +1345,19 @@
       "sha256": "c97cbd86f3f5f7dc6112e30e20898ab85d441248678485079ce6b364f933e5d3"
     },
     {
+      "path": "Sources/AskGPTCore/ModelBackend.swift",
+      "bytes": 825,
+      "sha256": "d821ade8e2fef65ff897a87b2e18af04d92dfa4480f35767916afdb12a74f7e2"
+    },
+    {
+      "path": "Sources/AskGPTCore/ModelProvider.swift",
+      "bytes": 16244,
+      "sha256": "059e0bd610ed44dfd8f5576115089a5c1554f6e75004df59400abc308c1503cb"
+    },
+    {
       "path": "Sources/AskGPTCore/Models.swift",
-      "bytes": 1364,
-      "sha256": "41f02d9fc718f64a5564450f4d3c483e6ce51140984678e9c3cdee2925610580"
+      "bytes": 1514,
+      "sha256": "db9ee0610d615ee31dc3c3a88658ca2c587b8c4d1ab11de2308ed0d47cb01ced"
     },
     {
       "path": "Sources/AskGPTCore/NativePDFTranslationStore.swift",
@@ -1346,28 +1381,28 @@
     },
     {
       "path": "Sources/AskGPTCore/PDFBatchTranslator.swift",
-      "bytes": 23998,
-      "sha256": "7df15557b84beb3828307de319438902b50913c847af86ea57d8638dc5fee377"
+      "bytes": 24010,
+      "sha256": "285128e68e443f0a6f4676ba08cc42208b84bc62ea31ea7e3e02e4cb78d0efa9"
     },
     {
       "path": "Sources/AskGPTCore/PDFLayoutService.swift",
-      "bytes": 17261,
-      "sha256": "ff1a77f5177a72e83524b96d0a6b611af9066f742839b0fc0c62dfcbde35c815"
+      "bytes": 19532,
+      "sha256": "35aabd3d8d70f608b27f67399f0f21f389aae1110d8bb5f8af6297e6217f3b82"
     },
     {
       "path": "Sources/AskGPTCore/PDFPhraseAlignmentTranslator.swift",
-      "bytes": 17242,
-      "sha256": "b98f67ba873fa7ab6ffd301b65c03574356d756b569d365648a9af109de80e14"
+      "bytes": 17254,
+      "sha256": "45f3b48aac9a16a0d6d634e67d6c679504f05fb704be4e5551ea84b9f7853822"
     },
     {
       "path": "Sources/AskGPTCore/PDFSelectionAlignmentTranslator.swift",
-      "bytes": 19218,
-      "sha256": "165f62a0ba8ece05384577141ef341b1344ba19eb030f750e2ee085402707b97"
+      "bytes": 19230,
+      "sha256": "f63e57b47e3f5860833947bf3ab9adf01721695f3da381e8a5200bb80b8b87e2"
     },
     {
       "path": "Sources/AskGPTCore/PDFSentenceAlignmentTranslator.swift",
-      "bytes": 12113,
-      "sha256": "98459c0b58e9f73b42f640265ce3a8e83b32bab4439a1b0dde6d56047996e9ff"
+      "bytes": 12125,
+      "sha256": "4551bb2e0947fded39b8e97339c92ac5a64050b249aedc8c3837642d44349741"
     },
     {
       "path": "Sources/AskGPTCore/PDFTranslationDocument.swift",
@@ -1375,9 +1410,19 @@
       "sha256": "3c2d2da9f76356df67d003275fe96217dae970ebdf0220045de9c8b89bd212ec"
     },
     {
+      "path": "Sources/AskGPTCore/PaperChatHistory.swift",
+      "bytes": 6340,
+      "sha256": "e02d3081cdf70ad02e5e25176fb039616e33b43d5d14b380e393edb86969265d"
+    },
+    {
+      "path": "Sources/AskGPTCore/PaperContext.swift",
+      "bytes": 3474,
+      "sha256": "341c13747cc4a5121b11dc3e5b9e1c386d28e92936dd939c02507211adf52f88"
+    },
+    {
       "path": "Sources/AskGPTCore/PassageRefinement.swift",
-      "bytes": 7847,
-      "sha256": "30627db7bfb6cc84183895ad1971850e22282ae793a91d168d659751d5769fb3"
+      "bytes": 7820,
+      "sha256": "30a27820662b56cdead960fdde344eb2ddfae1b803f99e0fab335d35b06198e1"
     },
     {
       "path": "Sources/AskGPTCore/RequestCancellationGate.swift",
@@ -1460,9 +1505,19 @@
       "sha256": "1117bbc5584cb7906bb4e149b1a6ce9015ddedf91bc311a7a2d3ad4253727f47"
     },
     {
+      "path": "Sources/AskGPTCore/ZoteroPaperShortcut.swift",
+      "bytes": 4236,
+      "sha256": "e2cd5ad3e3a22fd993363dff5ba09d0b35f145e66e538f5ba4c437843e2317cf"
+    },
+    {
       "path": "Sources/AskGPTTranslate/AppMain.swift",
-      "bytes": 11823,
-      "sha256": "ad8323496543b2b3c73ce11045cd9550694bb8adfa4f96140de0a053b81cf00b"
+      "bytes": 12407,
+      "sha256": "53eb3d3d48fbeeb17cf33983571f9f5d9a72a57f8cf7e7927201d57be4ecbe91"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/APIModelBackendTests.swift",
+      "bytes": 13130,
+      "sha256": "bd054b5a6e57e2864bf1a337ce91c14a48dd57cab5054d0a883d974c16071102"
     },
     {
       "path": "Tests/AskGPTCoreTests/ActiveReadingCaptureTests.swift",
@@ -1476,8 +1531,8 @@
     },
     {
       "path": "Tests/AskGPTCoreTests/CodexBackendTests.swift",
-      "bytes": 34478,
-      "sha256": "55a0f3022430e76dc53bea140e23f00095117592ffe0e2c8f1171677efbdf0c6"
+      "bytes": 36125,
+      "sha256": "f0d15ced9f32c2c764622e2a01f78c7e42edfdfdfa22c93f0897b8919fda6e78"
     },
     {
       "path": "Tests/AskGPTCoreTests/ConversationLedgerTests.swift",
@@ -1501,8 +1556,8 @@
     },
     {
       "path": "Tests/AskGPTCoreTests/InlineTranslationBridgeTests.swift",
-      "bytes": 42428,
-      "sha256": "e097c79679608a859c3e882f1e1b0a05da0674bcd0dcf2c28a32c343210dc839"
+      "bytes": 45807,
+      "sha256": "9a65ce0d0c8c92d75e984faeba37d5cde478e3b38d2f19baf2799017b4a6a205"
     },
     {
       "path": "Tests/AskGPTCoreTests/LocalProofreaderTests.swift",
@@ -1518,6 +1573,11 @@
       "path": "Tests/AskGPTCoreTests/LocalTranslationBridgeTests.swift",
       "bytes": 22950,
       "sha256": "7e60121a98169046e0a44a7fbc28e038e3f1f190a1b0ea5331c33ac92359ee26"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/ModelProviderTests.swift",
+      "bytes": 7842,
+      "sha256": "2171b84089196ee746316da5df68230dd984f10d90862f71de23390b9ddfb674"
     },
     {
       "path": "Tests/AskGPTCoreTests/NativePDFTranslationStoreTests.swift",
@@ -1546,8 +1606,8 @@
     },
     {
       "path": "Tests/AskGPTCoreTests/PDFLayoutServiceTests.swift",
-      "bytes": 15392,
-      "sha256": "43f57e45f3fb0c910f0346661c5cdbe53bfd13707eb92f713472e1246e87c1da"
+      "bytes": 17550,
+      "sha256": "f6628cd88ba43f5509f7cd1fb3dc79679e3c86dbd7118b572f2527de0c658769"
     },
     {
       "path": "Tests/AskGPTCoreTests/PDFPhraseAlignmentTranslatorTests.swift",
@@ -1568,6 +1628,11 @@
       "path": "Tests/AskGPTCoreTests/PDFTranslationDocumentTests.swift",
       "bytes": 12895,
       "sha256": "e6949acb36551dc34efa5bdf28779fe2c08c82a5021b1d9697618391550aeb3f"
+    },
+    {
+      "path": "Tests/AskGPTCoreTests/PaperChatHistoryTests.swift",
+      "bytes": 4511,
+      "sha256": "5580f5318239b1b1791336e432408cef490eec75fad21932d9074c3e7e8d600a"
     },
     {
       "path": "Tests/AskGPTCoreTests/PassageRefinementTests.swift",
@@ -1645,14 +1710,19 @@
       "sha256": "cd8f874b2c86591ee791d20fbecb2e26c6466a0e4272c1e45678c328526c8289"
     },
     {
+      "path": "Tests/AskGPTCoreTests/ZoteroPaperShortcutTests.swift",
+      "bytes": 3383,
+      "sha256": "54a6b679fd73878e2dd5119072ddbd68de1ee85efb9fb299a342d1ce87c107e4"
+    },
+    {
       "path": "docs/GALLERY.md",
       "bytes": 9726,
       "sha256": "2d31314b95a1629a51d3a592def3cf1b1aa5b991c58878c3cfcef6a901df8ac2"
     },
     {
       "path": "docs/HANDBOOK.zh-CN.md",
-      "bytes": 15883,
-      "sha256": "0aeff33dbf472c4307aeb2107f99f471da144c9fde9f1c07177ee506973c70c0"
+      "bytes": 15546,
+      "sha256": "21f3f093ffb20903587d6323c58ca1ffc269e67b39336f978443b6d53aa3ff0e"
     },
     {
       "path": "docs/INSTALL.Windows.zh-CN.md",
@@ -1666,13 +1736,13 @@
     },
     {
       "path": "docs/TRANSLATION-BACKENDS.zh-CN.md",
-      "bytes": 7119,
-      "sha256": "835aa6cf5a99ffefc4eba70482885a953d80a29898bc2919c44ccb93bf7df31d"
+      "bytes": 8834,
+      "sha256": "699ff158c42ab43f19e9be8d92b96838d96d4d7797b6db2d17ec44750a0022fe"
     },
     {
       "path": "docs/ZOTERO.zh-CN.md",
-      "bytes": 17809,
-      "sha256": "77f2d03202335a5dcd57f5551a8a0dc212a5dc2677e5bb1ece8dc38ce993f3ae"
+      "bytes": 19024,
+      "sha256": "cb9cd5ff617883d932b0282fcaf08febe205ca29ecc96dd6e92893059ef4745f"
     },
     {
       "path": "docs/demo-source/READMEPreviews.swift",
@@ -1936,8 +2006,8 @@
     },
     {
       "path": "scripts/package-macos-release",
-      "bytes": 7171,
-      "sha256": "dcea3a7a68960faa9fd4e11e3e8e68cf9a487384fec01ab64e9e0d15bf0025f8"
+      "bytes": 7118,
+      "sha256": "27c1c69942af8c2709374de8bd49cf674e502378f9d3068b9793cede84f66085"
     },
     {
       "path": "scripts/package-pdf-layout",
@@ -1986,8 +2056,8 @@
     },
     {
       "path": "scripts/tests/reader-lifecycle.swift",
-      "bytes": 12103,
-      "sha256": "e3e00118ae93d4336a91fcaf24770b3f992f40c3db0339573d1e5440e633bb86"
+      "bytes": 29548,
+      "sha256": "9f74f9bf58ddd7d59af791f4dcee2b2d98c7b079078e55494def823a217e961c"
     },
     {
       "path": "scripts/tests/test_install_app.py",
@@ -2001,8 +2071,8 @@
     },
     {
       "path": "scripts/ui-smoke.swift",
-      "bytes": 74326,
-      "sha256": "404f947acdd7dc5d7912d243b7c5cdb6a8f3d48ee8c68635e28ae762ab579106"
+      "bytes": 74306,
+      "sha256": "5058f18154b861dcd9e7c2c87a3b749c594e0b9e3171c84cb4bb2f8dfa7783f5"
     },
     {
       "path": "scripts/web-chat-smoke",
@@ -2091,8 +2161,8 @@
     },
     {
       "path": "scripts/zotero-inline-test",
-      "bytes": 5819,
-      "sha256": "b30d2a4c27f119aeabff8961db9a7396cee00dd683d2c3f07c00f34e6ab63d5c"
+      "bytes": 6113,
+      "sha256": "9fe72b7de815a2fcd517c99727bd31eccc0e454eb1a466527965c10c99f16632"
     }
   ],
   "excluded": [

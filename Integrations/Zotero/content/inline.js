@@ -18,6 +18,8 @@
   const FigureWindow=root.AskGPTPDFFigureWindow||optional('pdf-figure-window');
   const FigureMarkup=root.AskGPTPDFFigureMarkup||optional('pdf-figure-markup');
   const FigureStore=root.AskGPTPDFFigureMarkupStore||optional('pdf-figure-markup-store');
+  const AskPaper=root.AskGPTPaper||optional('ask-paper');
+  const PaperShortcut=root.AskGPTPaperShortcut||optional('ask-paper-shortcut');
   const XHTML='http://www.w3.org/1999/xhtml';
   function element(doc,name,className,text){const node=doc.createElementNS(XHTML,name);if(className)node.className=className;if(text!=null)node.textContent=text;return node;}
   async function readConnection(dependencies){
@@ -81,16 +83,27 @@
     const timers={...dependencies,setTimer:dependencies.setTimer||((fn,ms)=>Zotero.getMainWindow().setTimeout(fn,ms)),clearTimer:dependencies.clearTimer||(id=>Zotero.getMainWindow()?.clearTimeout(id))};
     const localVersions=LocalVersion?.create(dependencies);
     const transport=createPDFTransport(timers),lookupWord=createWordLookup(timers),lookupFigure=createFigureLookup(timers),contexts=new Map(),mainWindows=new Map();
+    const askPaper=AskPaper&&(Services?.appinfo?.OS==='Darwin'||Zotero.isMac===true)
+      ? AskPaper.create({...timers,readConnection:()=>readConnection(dependencies),ensureReady:dependencies.ensureAskReady})
+      : null;
+    const chinese=String(Zotero.locale||'').startsWith('zh');
     let hoverOn=true;try{hoverOn=Zotero.Prefs?.get?.('extensions.askgpt-inline.hoverGloss',true)!==false;}catch(_){}
     let resumeOn=true;try{resumeOn=Zotero.Prefs?.get?.('extensions.askgpt-inline.readingResume',true)!==false;}catch(_){}
     const resumeStore=ResumeStore?.create?.({Zotero,validateAnchor:Resume?.validateAnchor});
     const figureStore=FigureStore?.create?.({...dependencies,getWindow:()=>Zotero.getMainWindow?.(),reportExportDiagnostic:value=>report('figureExport',{code:'rendered',figureNumbers:{fieldsReady:200+value.phase,opsReady:value.result}})});
     const subscribers=new Set();
-    let disposed=false,notifierID=null,sidebar=null,backgroundOwner=null;
+    let disposed=false,notifierID=null,sidebar=null,backgroundOwner=null,disposePaperShortcut=null;
     const report=(stage,error)=>{try{void dependencies.reportDiagnostic?.(stage,error);}catch(_){}};
     const cleanup=operation=>{try{return operation();}catch(_){report('nativeDispose',{name:'Error',code:'compatibility'});}};
     const alive=reader=>!disposed&&!reader?._window?.closed;
     function active(reader){return alive(reader)&&(!reader.tabID||reader._window?.Zotero_Tabs?.selectedID===reader.tabID);}
+    const optionX=event=>!event.defaultPrevented&&!event.repeat&&event.altKey&&!event.ctrlKey&&!event.metaKey&&event.code==='KeyX';
+    function handleReaderKey(context,event){
+      if(!optionX(event)||!active(context.reader))return;
+      if(!event.shiftKey){handlePaperKey(context,event);return;}
+      event.preventDefault();event.stopImmediatePropagation();
+      void toggle(context.reader,{translationAction:true});
+    }
     function updateToolbar(context){for(const node of context.buttons){const opened=Boolean(context.session);node.hidden=Boolean(context.session?.native&&context.toolbarControlsAttached);if(node.hidden)node.style.setProperty('display','none','important');else node.style.removeProperty('display');node.textContent=opened?'原文':'翻译';const title=(opened?'Original PDF · 恢复原 PDF':'Translate PDF · 保留版式翻译')+' · Option+Shift+X';node.setAttribute('title',title);node.setAttribute('aria-label',title);}}
     function attachToolbarControls(context){const layer=context.session?.native&&context.session.layer;context.toolbarControlsAttached=Boolean(layer?.attachToolbar?.(context.toolbarSlot));updateToolbar(context);}
     function progressValue(value){
@@ -244,7 +257,7 @@
       const ownsContext=()=>!disposed&&contexts.get(reader)===context;
       const attach=win=>{
         if(!win||context.keyWindows.has(win)||!ownsContext())return;
-        const handler=event=>{if(ownsContext()&&!event.defaultPrevented&&!event.repeat&&event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey&&event.code==='KeyX'&&active(reader)){event.preventDefault();event.stopImmediatePropagation();void toggle(reader,{translationAction:true});}};
+        const handler=event=>{if(ownsContext())handleReaderKey(context,event);};
         const onFocus=()=>{if(ownsContext())resumePresentation(context);};
         const onUnload=()=>{if(ownsContext())removeContext(reader);};
         win.addEventListener('keydown',handler,true);win.addEventListener('focus',onFocus);win.addEventListener('unload',onUnload);context.keyWindows.set(win,{handler,onFocus,onUnload});
@@ -668,6 +681,7 @@
         };
         const layer=await mount(session.native?nativeContext:pdf,css,{
           current:()=>startFromToolbar(false),whole:()=>startFromToolbar(true),resume:()=>resumeFromToolbar(),
+          askPaperKey:event=>handlePaperKey(context,event),
           stop:()=>{if(session.cancel){session.epoch++;void retireWork(context,session);session.busy=false;setProgress(context,session,null);}},exit:()=>closeSession(context),original:()=>instance.original(reader),mode:mode=>instance.setMode(reader,mode),
           direction:next=>{if(next===session.direction||!valid())return;session.direction=next;void start(session.whole);},
           toggleHover:()=>instance.setHoverEnabled(!hoverOn),
@@ -680,12 +694,98 @@
         if(!valid()){layer.dispose();if(context.session===session)closeSession(context,{restorePosition:false});return;}session.layer=layer;attachToolbarControls(context);setProgress(context,session,session.progress);void start(session.whole,{fullTranslation:session.whole,explicitWhole});
       }catch(error){report('mount',error);if(context.session!==session)return;closeSession(context);showError(context,error);}
     }
+    function updateAskButtons(context){
+      for(const node of [context.askButton,context.askPopup]){
+        if(!node)continue;
+        node.disabled=Boolean(context.askRequest);
+        node.setAttribute('aria-busy',String(node.disabled));
+        node.textContent=node.disabled?(chinese?'读取论文…':'Reading paper…'):'Ask GPT';
+      }
+    }
+    function askButton(doc,action){
+      const node=element(doc,'button','toolbar-button askgpt-paper-action','Ask GPT');
+      const label=chinese?'向 GPT 询问这篇论文':'Ask GPT about this paper';
+      node.setAttribute('type','button');
+      node.setAttribute('title',label);
+      node.setAttribute('aria-label',label);
+      node.setAttribute('style','width:auto;min-width:max-content;padding-inline:6px');
+      node.addEventListener('pointerdown',event=>{if(event.button===0)event.preventDefault();});
+      node.addEventListener('click',event=>{event.stopPropagation?.();void action();});
+      return node;
+    }
+    function focusedPaperReader(){
+      const win=Services?.focus?.activeWindow;
+      if(!win||win.closed||win.document?.hasFocus?.()!==true)return null;
+      const readers=(Zotero.Reader._readers||[]).filter(reader=>reader.type==='pdf'&&reader._window===win&&active(reader));
+      return readers.length===1?readers[0]:null;
+    }
+    function ownsPaperContext(context){
+      const {reader}=context;
+      return contexts.get(reader)===context&&active(reader)&&reader._window?.document?.hasFocus?.()!==false;
+    }
+    function handlePaperKey(context,event){
+      if(!askPaper||!optionX(event)||event.shiftKey||!ownsPaperContext(context))return false;
+      event.preventDefault();event.stopImmediatePropagation();
+      void openPaper(context);
+      return true;
+    }
+    async function openPaper(context,explicitSelection,shortcut){
+      const {reader}=context;
+      const isActive=()=>ownsPaperContext(context)&&(!shortcut||focusedPaperReader()===reader);
+      if(!askPaper)return 'unavailable';
+      if(!isActive())return 'stopped';
+      const layer=context.session?.layer;
+      const selection=explicitSelection??(layer?.visible?layer.paperSelection:AskPaper.sourceSelection(reader));
+      const source=reader._internalReader?._primaryView?._iframeWindow?.PDFViewerApplication;
+      const currentPage=layer?.visible?layer.currentSourcePage:source?.pdfViewer?.currentPageNumber-1;
+      const binding=[source?.pdfDocument,currentPage,selection?.text||'',selection?.pageIndex,!!selection?.translated];
+      const pending=context.askRequest;
+      if(pending){
+        const same=binding.every((value,index)=>Object.is(value,pending.binding[index]));
+        return same&&(shortcut||pending.shortcut)?pending.promise:'busy';
+      }
+      const request={binding,shortcut:!!shortcut,promise:null};
+      context.askRequest=request;
+      updateAskButtons(context);
+      request.promise=(async()=>{
+        try{
+          await askPaper(reader,{isActive,selection,currentPage,shortcut});
+          return 'ok';
+        }catch(error){
+          if(error?.code==='stopped')return 'stopped';
+          if(!shortcut&&isActive())
+            Services?.prompt?.alert(reader._window,'Ask GPT',AskPaper.errorMessage(error,Zotero.locale));
+          return 'unavailable';
+        }finally{
+          context.askRequest=null;
+          updateAskButtons(context);
+        }
+      })();
+      return request.promise;
+    }
+    function openPaperFromShortcut(nonce,connection){
+      const reader=focusedPaperReader();
+      return reader?openPaper(ensureContext(reader),undefined,{nonce,connection}):'no_reader';
+    }
+    const selectionPopup=event=>{
+      const {reader,doc,params}=event;
+      if(!askPaper||reader?.type!=='pdf'||!active(reader))return;
+      const annotation=params?.annotation;
+      if(typeof annotation?.text!=='string'||!annotation.text.trim())return;
+      const context=ensureContext(reader),layer=context.session?.layer;
+      context.askPopup?.remove();
+      context.askPopup=askButton(doc,()=>openPaper(context,layer?.visible?layer.paperSelection:
+        {text:annotation.text,pageIndex:annotation.position?.pageIndex}));
+      updateAskButtons(context);
+      event.append(context.askPopup);
+    };
     const toolbar=event=>{
       if(disposed||event.reader?.type!=='pdf')return;const context=ensureContext(event.reader);
       if(context.toolbarSlot?.ownerDocument!==event.doc){
         context.toolbarSlot?.remove();for(const node of context.buttons)node.remove();context.buttons.clear();context.toolbarControlsAttached=false;
         const slot=element(event.doc,'span','askgpt-inline-toolbar-slot');slot.setAttribute('style','display:inline-flex;align-items:center;gap:3px;min-width:0;-webkit-app-region:no-drag');context.toolbarSlot=slot;
         const node=element(event.doc,'button','toolbar-button askgpt-inline-toolbar');node.setAttribute('type','button');node.setAttribute('tabindex','-1');node.addEventListener('click',()=>{void toggle(event.reader,{translationAction:true});});context.buttons.add(node);slot.appendChild(node);
+        if(askPaper){context.askButton=askButton(event.doc,()=>openPaper(context));slot.appendChild(context.askButton);updateAskButtons(context);}
       }
       // Zotero clears CustomSections before each renderToolbar event. Re-append
       // our persistent slot synchronously, including when the fallback slot was
@@ -698,18 +798,32 @@
       clearFigure(context,true);for(const handle of [...(context.figureHandles||[])])cleanup(()=>handle.dispose());context.figureHandles?.clear();context.figureHandle=null;context.figureView=null;
       const resume=context.resume,hover=context.hover;context.resume=null;context.hover=null;
       cleanup(()=>resume?.dispose());cleanup(()=>hover?.dispose());cleanup(()=>closeSession(context));cleanup(()=>context.error?.remove());context.error=null;
+      cleanup(()=>context.askPopup?.remove());context.askPopup=null;context.askButton=null;
       for(const [win,callbacks] of context.keyWindows)for(const [type,callback,capture] of [['keydown',callbacks.handler,true],['focus',callbacks.onFocus,false],['unload',callbacks.onUnload,false]])cleanup(()=>win.removeEventListener(type,callback,capture));
       for(const node of context.buttons)cleanup(()=>node.remove());cleanup(()=>context.toolbarSlot?.remove());context.toolbarSlot=null;context.keyWindows.clear();context.buttons.clear();context.initializingView=null;context.hoverView=null;context.resumeView=null;context.attachPDF=null;
     }
     const instance={
       start(){
         Zotero.Reader.registerEventListener('renderToolbar',toolbar,pluginID);
+        if(askPaper)Zotero.Reader.registerEventListener('renderTextSelectionPopup',selectionPopup,pluginID);
         notifierID=Zotero.Notifier.registerObserver({notify(event,type,ids){if(type!=='tab')return;for(const [reader,context] of [...contexts]){if(event==='close'&&ids.includes(reader.tabID))removeContext(reader);else if(event==='select'){if(ids.includes(reader.tabID))resumePresentation(context);else{stopBackground(context.session);clearFigure(context);}}}}},['tab'],pluginID);
         for(const win of Zotero.getMainWindows())instance.attachMainWindow(win);
         for(const reader of Zotero.Reader._readers||[])if(reader.type==='pdf')ensureContext(reader);
         if(Sidebar&&Zotero.ItemPaneManager){sidebar=Sidebar.create({Zotero,pluginID,rootURI:dependencies.rootURI||'',actions:instance});sidebar.start();}
+        if(askPaper)disposePaperShortcut=PaperShortcut?.register({Zotero,Services,
+          readConnection:()=>readConnection(dependencies),open:openPaperFromShortcut});
       },
-      attachMainWindow(win){if(disposed||mainWindows.has(win))return;sidebar?.attachWindow(win);const handler=event=>{if(event.defaultPrevented||event.repeat||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey||event.code!=='KeyX')return;const reader=Zotero.Reader.getByTabID(win.Zotero_Tabs?.selectedID);if(!reader||reader.type!=='pdf')return;event.preventDefault();event.stopImmediatePropagation();void toggle(reader,{translationAction:true});};win.addEventListener('keydown',handler,true);mainWindows.set(win,handler);},
+      attachMainWindow(win){
+        if(disposed||mainWindows.has(win))return;
+        sidebar?.attachWindow(win);
+        const handler=event=>{
+          if(!optionX(event)||(!event.shiftKey&&!askPaper))return;
+          const reader=Zotero.Reader.getByTabID(win.Zotero_Tabs?.selectedID);
+          if(reader?.type==='pdf'&&reader._window===win)handleReaderKey(ensureContext(reader),event);
+        };
+        win.addEventListener('keydown',handler,true);
+        mainWindows.set(win,handler);
+      },
       detachMainWindow(win){sidebar?.detachWindow(win);const handler=mainWindows.get(win);if(handler)win.removeEventListener('keydown',handler,true);mainWindows.delete(win);for(const reader of [...contexts.keys()])if(reader._window===win)removeContext(reader);},
       state,subscribe(callback){subscribers.add(callback);return()=>subscribers.delete(callback);},
       hoverEnabled(){return hoverOn;},
@@ -742,7 +856,7 @@
       },
       original(reader){return instance.setMode(reader,'original');},
       restore(reader){const context=contexts.get(reader);if(context&&active(reader))closeSession(context);},
-      shutdown(){disposed=true;sidebar?.shutdown();sidebar=null;if(typeof Zotero.Reader._unregisterEventListenerByPluginID==='function')Zotero.Reader._unregisterEventListenerByPluginID(pluginID);if(notifierID!==null)Zotero.Notifier.unregisterObserver(notifierID);notifierID=null;for(const reader of [...contexts.keys()])removeContext(reader);for(const win of [...mainWindows.keys()])instance.detachMainWindow(win);subscribers.clear();},toggle
+      shutdown(){disposed=true;disposePaperShortcut?.();disposePaperShortcut=null;sidebar?.shutdown();sidebar=null;if(typeof Zotero.Reader._unregisterEventListenerByPluginID==='function')Zotero.Reader._unregisterEventListenerByPluginID(pluginID);if(notifierID!==null)Zotero.Notifier.unregisterObserver(notifierID);notifierID=null;for(const reader of [...contexts.keys()])removeContext(reader);for(const win of [...mainWindows.keys()])instance.detachMainWindow(win);subscribers.clear();},toggle
     };return instance;
   }
   root.AskGPTInline={create};

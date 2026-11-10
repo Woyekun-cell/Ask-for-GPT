@@ -2,8 +2,9 @@
   'use strict';
   const PDF=root.AskGPTPDFLayout||(typeof require==='function'?require('./pdf-layout.js'):null);
   const HEALTH='http://127.0.0.1:43795/v1/pdf/health',UNREACHABLE=Symbol('unreachable');
-  function create(dependencies){
+  function create(dependencies,{inline=false}={}){
     const {Zotero,Services,Components}=dependencies;
+    const healthURL=inline?'http://127.0.0.1:43792/v1/inline/health':HEALTH;
     const setTimer=dependencies.setTimer||((fn,ms)=>Zotero.getMainWindow().setTimeout(fn,ms));
     const clearTimer=dependencies.clearTimer||(id=>Zotero.getMainWindow()?.clearTimeout(id));
     let disposed=false,pending=null;
@@ -13,7 +14,7 @@
     async function health(batch){
       check(batch);let reply;
       try{
-        reply=await Zotero.HTTP.request('GET',HEALTH,{
+        reply=await Zotero.HTTP.request('GET',healthURL,{
           headers:{Authorization:'Bearer '+batch.token},responseType:'text',timeout:1000,
           followRedirects:false,anon:true,noCache:true,debug:false,logBodyLength:0,errorDelayMax:0,
           successCodes:[200,400,401,403,404,408,429,500,502,503,504],

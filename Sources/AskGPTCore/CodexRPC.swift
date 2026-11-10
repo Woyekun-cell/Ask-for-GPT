@@ -51,7 +51,7 @@ struct RPCLineFramer {
 }
 
 /// Foundation JSON values are confined to serialized RPC handling, then carried as an immutable box.
-struct RPCObject: @unchecked Sendable {
+public struct RPCObject: @unchecked Sendable {
     let value: [String: Any]
     init(_ value: [String: Any]) { self.value = value }
 }

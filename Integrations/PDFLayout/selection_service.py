@@ -569,15 +569,16 @@ class SelectionAlignmentService:
             phase_began = time.monotonic()
             from worker import NativeHelper
             pair = (job.cache_info["source"], job.cache_info["target"])
+            route = job.model_route
             with self.lock:
                 if self.closed: raise ProtocolFailure("service_stopping")
-                available = next((h for h in self.helpers if (h.source,h.target) == pair), None)
+                available = next((h for h in self.helpers if (h.source,h.target,h.model_route) == (*pair,route)), None)
                 phases["helperReused"] = available is not None
                 if available: self.helpers.remove(available); helper = available
                 else:
                     if len(self.helpers)+len(self.active_helpers) >= MAX_HELPERS and self.helpers:
                         self.helpers.pop(0).close()
-                    helper = NativeHelper(self.manager.translator, *pair, batch_timeout=MODEL_TIMEOUT)
+                    helper = NativeHelper(self.manager.translator, *pair, batch_timeout=MODEL_TIMEOUT, model_route=route)
                 self.active_helpers.add(helper)
             phases["helperSetupSeconds"] = round(time.monotonic()-phase_began,6)
             phase_began = time.monotonic()
@@ -651,13 +652,14 @@ class SelectionAlignmentService:
         # Only this background task touches the native helper; GET never waits
         # for a connection, session creation, pool eviction or a warmup ACK.
         pair = (job.cache_info["source"], job.cache_info["target"])
+        route = (*pair, job.model_route)
         with self.lock:
-            if (self.closed or self.manager.stopping or pair in self.warming_pairs
-                    or any((h.source,h.target)==pair for h in self.helpers)
-                    or any((h.source,h.target)==pair for h in self.active_helpers)):
+            if (self.closed or self.manager.stopping or route in self.warming_pairs
+                    or any((h.source,h.target,h.model_route)==route for h in self.helpers)
+                    or any((h.source,h.target,h.model_route)==route for h in self.active_helpers)):
                 return
             if not self.slots.acquire(blocking=False): return
-            self.warming_pairs.add(pair)
+            self.warming_pairs.add(route)
 
             def warm():
                 helper = None; ready = False
@@ -666,7 +668,7 @@ class SelectionAlignmentService:
                     with self.lock:
                         if self.closed or self.manager.stopping: return
                         evicted = self.helpers.pop(0) if len(self.helpers)+len(self.active_helpers)>=MAX_HELPERS and self.helpers else None
-                        helper = NativeHelper(self.manager.translator, *pair, batch_timeout=MODEL_TIMEOUT)
+                        helper = NativeHelper(self.manager.translator, *pair, batch_timeout=MODEL_TIMEOUT, model_route=job.model_route)
                         self.active_helpers.add(helper)
                     if evicted is not None: evicted.close()
                     helper.warm_selection(timeout=WARMUP_TIMEOUT)
@@ -690,7 +692,7 @@ class SelectionAlignmentService:
                                 release_slot = False
                             elif self.closed or len(self.helpers)>=MAX_HELPERS: helper.close()
                             else: self.helpers.append(helper)
-                        self.warming_pairs.discard(pair)
+                        self.warming_pairs.discard(route)
                         self.warmup_threads.discard(threading.current_thread())
                     if release_slot:self.slots.release()
 
@@ -698,7 +700,7 @@ class SelectionAlignmentService:
             self.warmup_threads.add(thread)
             try: thread.start()
             except RuntimeError:
-                self.warmup_threads.discard(thread);self.warming_pairs.discard(pair);self.slots.release()
+                self.warmup_threads.discard(thread);self.warming_pairs.discard(route);self.slots.release()
 
     def links(self, job, page):
         if type(page) is not int or page not in job.source_pages: raise ProtocolFailure("selection_invalid")

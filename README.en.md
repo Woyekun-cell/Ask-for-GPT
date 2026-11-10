@@ -23,7 +23,9 @@ Look up words, ask about a passage, and read web pages and PDFs in two languages
 
 Ask for GPT comes in Windows and macOS versions, bringing word lookup, passage-based questions, and bilingual web and PDF reading together while keeping annotations and notes in Zotero. The macOS version also provides Word/WPS writing assistance. I continue to develop it around the practical needs of reading and academic writing.
 
-The app works where you already read and write: your Zotero attachment and annotations, the page open in Chrome, or a manuscript in Word. English word lookup uses a local dictionary. In macOS 1.1.61, AI features use your own ChatGPT login session through Codex.
+The app works with your Zotero attachment and annotations, the page open in Chrome, or a manuscript in Word. English word lookup uses a local dictionary.
+
+The macOS installers above are v1.1.61. The Zotero paper chat, one-click summaries, per-paper conversation history, and model switching described below are available in the **macOS 1.1.67 source with Zotero add-on 0.3.98**. Follow the handbook to [build and install from source](docs/HANDBOOK.zh-CN.md#2-从源码构建与安装).
 
 ## Full feature walkthrough
 
@@ -56,12 +58,31 @@ First setup on macOS takes four steps:
 
 The [macOS installation guide](docs/INSTALL.macOS.zh-CN.md) covers these steps, permissions, and common problems. The local English dictionary works offline.
 
-### Model connection in this build
+### Model connections and switching
 
-The **macOS 1.1.61 binary uses Codex**. Enter the signed-in Codex CLI under **CLI path**, then select **Save and connect**. The API / Claude adapters described in earlier public source snapshots are not included in this macOS binary. See the [backend notes](docs/TRANSLATION-BACKENDS.zh-CN.md) for historical and Windows configuration scope.
+The **macOS 1.1.61 installer uses Codex**. Enter the signed-in Codex CLI under **CLI path**, then select **Save and connect**.
 
+The current macOS source supports two connection types. Click the model name at the bottom of the chat window to switch. You can also set **Reasoning** there for models that support it.
+
+- **Codex (ChatGPT)** uses your existing Codex CLI login and lists the models available through your subscription. Choose a model and a supported **Reasoning** level, then select **Use model**.
+- **API connections** can be added under **Settings… → Add profile**. Choose a provider, enter its API key, and select **Save & use**. Models in the same connection share a key. Use **Fetch models** to get the provider’s list or enter a model ID manually.
+
+See the [model and translation backend guide](docs/TRANSLATION-BACKENDS.zh-CN.md) for provider presets, custom endpoints, and Windows preview configuration.
 
 ## Read a paper closely in Zotero
+
+### Ask, summarize, and resume a chat with the current PDF (current source)
+
+Select text in a Zotero PDF and press **⌥X** to open Ask GPT with the current attachment and selection. You can also open **Ask GPT** from the PDF toolbar or selection popup.
+
+| Scope | Text used for questions and summaries |
+| --- | --- |
+| **Nearby** | The current page or the page containing the selection, plus one page on each side |
+| **Whole paper** | Text extracted from the PDF. Hover over the scope control to see how many pages were read |
+
+Choose a scope and click **Summarize** to submit a summary request. For a custom question, type it and click **Send**. Either action sends the available material for the selected scope and the context needed for the conversation to your chosen model.
+
+Completed conversations stay on your Mac, separated by PDF attachment, scope, and model connection. Return to the same PDF and press **⌥X** to resume its conversation under the same connection.
 
 ### Start with one page, then translate the document
 
@@ -153,7 +174,7 @@ Choose **EN → 中** or **中 → EN** for the language direction. **Auto** det
 
 Choose **Ask GPT** in the reading panel, or select a difficult sentence and press **`⌥X`**. The passage becomes context for your question. Ask what a condition refers to, how a term relates to the previous paragraph, or how the sentence is structured. Replies stream into the panel, and you can follow up without copying the passage again.
 
-Questions can also use web search and source links when you need supporting material. Press **Enter** to send and **Shift+Enter** for a new line.
+General Codex chat supports web search and source links when you need supporting material. Press **Enter** to send and **Shift+Enter** for a new line.
 
 ## Follow translations on the original web page
 
@@ -180,7 +201,7 @@ In macOS 1.1.61, set **CLI path**, the question model, and reasoning effort, the
 | Default shortcut | Action |
 | --- | --- |
 | `⌥D` | Translate selected text; configurable |
-| `⌥X` | Ask about selected text |
+| `⌥X` | Ask about selected text. The current macOS source also attaches the open Zotero PDF |
 | `⌥⇧X` | Translate or restore a page in Chrome / Zotero |
 | `⌘,` | Open settings |
 | `Enter` / `Shift+Enter` | Send / new line in questions |

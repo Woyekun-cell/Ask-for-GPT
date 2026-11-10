@@ -27,7 +27,7 @@ function fixture(options={}){
     setTimer(fn,milliseconds){const id=++serial;timers.set(id,{at:time+milliseconds,fn});return id;},
     clearTimer(id){timers.delete(id);}
   };
-  const owner=Connection.create(deps);
+  const owner=Connection.create(deps,{inline:options.inline===true});
   async function settle(promise){
     let done=false;promise.then(()=>{done=true;},()=>{done=true;});
     for(let i=0;i<200&&!done;i++){
@@ -51,6 +51,12 @@ async function test(name,run){await run();count++;console.log('PASS '+name);}
   await test('closed service launches the fixed user app in the background then waits for ready',async()=>{
     const f=fixture({queue:[unavailable(),unavailable(),ready]});await f.settle(f.owner.ensure(connection));
     assert.deepEqual(f.launches,[{executable:'/usr/bin/open',args:['-g','-a','/Users/test/Applications/Ask for GPT.app','askgpt://connect','--args','--background']}]);assert.equal(f.requests.length,3);assert(f.time<25000);assert.equal(f.timers.size,0);
+  });
+  await test('paper handoff wakes against inline health without waiting for the PDF layout runtime',async()=>{
+    const f=fixture({inline:true,queue:[unavailable(),ready]});
+    await f.settle(f.owner.ensure(connection));
+    assert.equal(f.launches.length,1);
+    assert(f.requests.every(request=>request.url==='http://127.0.0.1:43792/v1/inline/health'));
   });
   await test('concurrent explicit actions share one recovery and one launch',async()=>{
     const f=fixture({queue:[unavailable(),ready]});const first=f.owner.ensure(connection),second=f.owner.ensure(connection);await f.settle(Promise.all([first,second]));assert.equal(f.launches.length,1);assert.equal(f.requests.length,2);

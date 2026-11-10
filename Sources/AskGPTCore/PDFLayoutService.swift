@@ -66,6 +66,46 @@ struct PDFLayoutWorkerPaths: Sendable {
 public actor PDFLayoutService: PDFLayoutServing {
     public static let shared = PDFLayoutService()
     public static let endpoint = URL(string: "http://127.0.0.1:43795")!
+    private static var supportDirectory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("AskGPTReader/PDFLayout", isDirectory: true)
+    }
+
+    public static func publishModelRoute(settings: CodexSettings) throws {
+        try publishModelRoute(settings: settings, in: supportDirectory)
+    }
+
+    static func publishModelRoute(settings: CodexSettings, in directory: URL) throws {
+        let files = FileManager.default
+        var route = settings
+        if var profile = route.apiProfile {
+            profile.recentModels = nil
+            profile.availableModels = nil
+            profile.modelReasoningEfforts = profile.effectiveReasoningEffort.map { [profile.model: $0] }
+            route.apiProfile = profile
+        }
+        let data = try JSONEncoder().encode(route)
+        guard data.count <= 8 * 1024 else { throw PDFLayoutServiceError.configuration }
+        try files.createDirectory(at: directory, withIntermediateDirectories: true,
+                                  attributes: [.posixPermissions: 0o700])
+        let attributes = try files.attributesOfItem(atPath: directory.path)
+        guard attributes[.type] as? FileAttributeType == .typeDirectory,
+              (attributes[.ownerAccountID] as? NSNumber)?.uint32Value == getuid(),
+              (attributes[.posixPermissions] as? NSNumber)?.intValue == 0o700 else {
+            throw PDFLayoutServiceError.configuration
+        }
+        let target = directory.appendingPathComponent("model-route.json")
+        let temporary = directory.appendingPathComponent(".model-route-" + UUID().uuidString)
+        let descriptor = Darwin.open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
+        guard descriptor >= 0 else { throw PDFLayoutServiceError.configuration }
+        defer { try? files.removeItem(at: temporary) }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        try handle.write(contentsOf: data)
+        try handle.synchronize()
+        try handle.close()
+        guard Darwin.rename(temporary.path, target.path) == 0 else { throw PDFLayoutServiceError.configuration }
+    }
+
     private var process: Process?
     private var token: String?
     private var startTask: Task<Void, Error>?
@@ -143,8 +183,7 @@ public actor PDFLayoutService: PDFLayoutServing {
             return
         }
         if existingHealth == "runtime_missing" { throw PDFLayoutServiceError.runtimeMissing }
-        let support = files.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("AskGPTReader/PDFLayout", isDirectory: true)
+        let support = Self.supportDirectory
         let python = workerPathsOverride?.python ?? support.appendingPathComponent("runtime/bin/python3")
         guard files.isExecutableFile(atPath: python.path) else { throw PDFLayoutServiceError.runtimeMissing }
         guard let script = workerPathsOverride?.script ?? Bundle.main.resourceURL?.appendingPathComponent("PDFLayout/server.py"),
@@ -159,6 +198,9 @@ public actor PDFLayoutService: PDFLayoutServing {
         worker.executableURL = python
         worker.arguments = [script.path, "--config", configurationURL.path,
             "--translator", translator.path, "--cache-root", cache.path]
+        if workerPathsOverride == nil {
+            worker.arguments?.append(contentsOf: ["--model-route", support.appendingPathComponent("model-route.json").path])
+        }
         worker.standardInput = FileHandle.nullDevice
         worker.standardOutput = FileHandle.nullDevice
         worker.standardError = FileHandle.nullDevice

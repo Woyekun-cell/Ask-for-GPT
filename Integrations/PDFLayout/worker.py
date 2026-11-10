@@ -66,10 +66,11 @@ class JobProgress:
 
 class NativeHelper:
     def __init__(self, executable: Path, source: str, target: str, *, timeout: float = 15,
-                 batch_timeout: float = 100):
+                 batch_timeout: float = 100, model_route: str | None = None):
         self.executable = Path(executable)
         self.source, self.target, self.timeout = source, target, timeout
         self.batch_timeout = batch_timeout
+        self.model_route = model_route
         self.process = None
         self.process_mode = None
         self.buffer = bytearray()
@@ -187,6 +188,11 @@ class NativeHelper:
         if self.process is not None and self.process.poll() is None and self.process_mode == mode: return self.process
         self.close()
         environment = dict(os.environ)
+        environment.pop("ASKGPT_PDF_MODEL_ROUTE", None)
+        if mode and self.model_route is not None:
+            if not isinstance(self.model_route, str) or len(self.model_route.encode()) > 8 * 1024:
+                raise ProtocolFailure("gpt_unavailable")
+            environment["ASKGPT_PDF_MODEL_ROUTE"] = self.model_route
         # BabelDOC's private asset HOME must not hide the user's installed Apple
         # language packs from the dedicated native helper.
         environment["HOME"] = platform.actual_user_home()
@@ -638,7 +644,8 @@ def translate_job(job_dir: Path, cache_root: Path, helper_path: Path):
     page_workers=min(MAX_PAGE_WORKERS,len(selected))
     # A page may use the existing two 120-second validated attempts. The old
     # 100-second pipe deadline killed the native helper before it could finish.
-    with NativeHelperPool(lambda:NativeHelper(helper_path,source,target,batch_timeout=250),page_workers,
+    with NativeHelperPool(lambda:NativeHelper(helper_path,source,target,batch_timeout=250,
+            model_route=request.get("modelRoute")),page_workers,
             global_permit_directory=cache_root/PERMIT_SUBDIRECTORY) as helpers:
         checkpoint = BatchCheckpoint(cache_root, request.get("batchCacheKey"), source, target)
         translate_batch = (lambda rows, context=None: checkpoint.translate(helpers.translate_batch, rows, context)) if checkpoint.directory else helpers.translate_batch

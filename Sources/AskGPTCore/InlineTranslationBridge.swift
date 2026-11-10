@@ -72,16 +72,18 @@ public struct InlineConnectionConfiguration: Codable, Sendable {
     }
 }
 
-/// Only the paired extension and privileged local clients can submit bounded
-/// plain paragraphs. This listener is independent of the Easydict bridge.
+/// Only paired clients can submit bounded paragraphs. The Zotero paper
+/// handoff is a local draft; only the desktop composer can send a model request.
 public actor InlineTranslationBridge {
     typealias Translator = @Sendable (_ text: String, _ source: String, _ target: String) async throws -> String
     typealias TranslatorFactory = @Sendable () -> Translator
+    public typealias PaperHandler = @MainActor @Sendable (PaperContext, String?) -> Bool
     private let configuration: InlineConnectionConfiguration
     private let port: UInt16
     private let readTimeout: Double
     private let translationTimeout: Double
     private let wordLookupEngine: WordLookupEngine
+    private let paperHandler: PaperHandler?
     private let translatorFactory: TranslatorFactory
     private var translator: Translator
     private let queue = DispatchQueue(label: "AskGPT.inline.loopback", qos: .userInitiated)
@@ -93,9 +95,11 @@ public actor InlineTranslationBridge {
     private var activeRequest: UUID?
     private var stopping = false
 
-    public init(configuration: InlineConnectionConfiguration, wordLookupEngine: WordLookupEngine = WordLookupEngine()) {
+    public init(configuration: InlineConnectionConfiguration, wordLookupEngine: WordLookupEngine = WordLookupEngine(),
+                paperHandler: PaperHandler? = nil) {
         self.configuration = configuration; port = InlineConnectionConfiguration.port
         self.wordLookupEngine = wordLookupEngine
+        self.paperHandler = paperHandler
         readTimeout = 10; translationTimeout = 3
         let factory = Self.nativeTranslatorFactory()
         translatorFactory = factory; translator = factory()
@@ -114,9 +118,10 @@ public actor InlineTranslationBridge {
 
     init(configuration: InlineConnectionConfiguration, port: UInt16, readTimeout: Double = 1,
          translationTimeout: Double = 1, wordLookupEngine: WordLookupEngine = WordLookupEngine(),
-         translatorFactory: @escaping TranslatorFactory) {
+         paperHandler: PaperHandler? = nil, translatorFactory: @escaping TranslatorFactory) {
         self.configuration = configuration; self.port = port
         self.wordLookupEngine = wordLookupEngine
+        self.paperHandler = paperHandler
         self.readTimeout = max(0.01, readTimeout); self.translationTimeout = max(0.01, translationTimeout)
         self.translatorFactory = translatorFactory; translator = translatorFactory()
     }
@@ -180,8 +185,9 @@ public actor InlineTranslationBridge {
                 throw InlineBridgeFailure(status: 403, code: "invalid_host", message: "仅接受固定本机地址。")
             }
             let origin = request.headers["origin"]
+            let isPaper = request.path == PaperContext.route
             let allowedOrigin = "chrome-extension://" + configuration.extensionID
-            guard origin == nil || origin == allowedOrigin else {
+            guard origin == nil || (!isPaper && origin == allowedOrigin) else {
                 throw InlineBridgeFailure(status: 403, code: "invalid_origin", message: "请求来源未配对。")
             }
             if origin != nil { cors = ["Access-Control-Allow-Origin": allowedOrigin, "Vary": "Origin"] }
@@ -208,13 +214,23 @@ public actor InlineTranslationBridge {
             if request.method == "GET", request.path == "/v1/inline/health" {
                 return .json(status: 200, headers: cors, object: ["status": "ready", "protocolVersion": 1])
             }
-            guard request.method == "POST", ["/v1/inline/translate", "/v1/inline/lookup"].contains(request.path) else {
+            guard request.method == "POST", isPaper || ["/v1/inline/translate", "/v1/inline/lookup"].contains(request.path) else {
                 throw InlineBridgeFailure(status: 404, code: "not_found", message: "不存在此原位翻译接口。")
             }
             let type = request.headers["content-type"]?.split(separator: ";", maxSplits: 1).first?
                 .trimmingCharacters(in: .whitespaces).lowercased()
             guard type == "application/json" else {
                 throw InlineBridgeFailure(status: 415, code: "unsupported_media_type", message: "请求必须为 JSON。")
+            }
+            if isPaper {
+                let nonce = request.headers["x-askgpt-shortcut"]
+                if let nonce, !ZoteroPaperShortcut.isValidNonce(nonce) { throw InlineBridgeFailure.badRequest }
+                let context = try PaperContext.decodeRequest(request.body)
+                try Task.checkCancellation()
+                guard let paperHandler, await paperHandler(context, nonce) else {
+                    throw InlineBridgeFailure(status: 503, code: "paper_unavailable", message: "Ask GPT 暂时无法打开此论文。")
+                }
+                return .json(status: 200, object: ["ok": true])
             }
             if request.path == "/v1/inline/lookup" {
                 let word = try Self.decodeWord(request.body)
@@ -371,7 +387,9 @@ struct InlineHTTPParser {
     private var buffer = Data()
     private var header: (method: String, path: String, fields: [String: String], start: Int, length: Int)?
     mutating func append(_ data: Data) throws -> InlineHTTPRequest? {
-        guard data.count <= Self.maximumHeaderBytes + Self.maximumBodyBytes + 4 - buffer.count else { throw InlineBridgeFailure.tooLarge }
+        guard data.count <= Self.maximumHeaderBytes + PaperContext.maximumBodyBytes + 4 - buffer.count else {
+            throw InlineBridgeFailure.tooLarge
+        }
         buffer.append(data)
         if header == nil {
             guard let separator = buffer.range(of: Data([13, 10, 13, 10])) else {
@@ -405,8 +423,10 @@ struct InlineHTTPParser {
                 }
                 length = 0
             }
-            guard length <= Self.maximumBodyBytes else { throw InlineBridgeFailure.tooLarge }
-            header = (String(parts[0]), String(parts[1]), fields, separator.upperBound, length)
+            let path = String(parts[1])
+            let bodyLimit = parts[0] == "POST" && path == PaperContext.route ? PaperContext.maximumBodyBytes : Self.maximumBodyBytes
+            guard length <= bodyLimit else { throw InlineBridgeFailure.tooLarge }
+            header = (String(parts[0]), path, fields, separator.upperBound, length)
         }
         guard let header else { return nil }
         let expected = header.start + header.length

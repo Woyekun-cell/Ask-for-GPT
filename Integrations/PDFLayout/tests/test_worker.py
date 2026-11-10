@@ -33,6 +33,16 @@ class NativeHelperProtocolTests(unittest.TestCase):
             self.assertEqual(helper.translate("Test sentence."), "译文")
             self.assertEqual(helper.translate("Another sentence."), "译文")
 
+    def test_batch_helper_uses_its_captured_model_route(self):
+        self.make_helper("import os\n"
+            "for line in sys.stdin:\n"
+            " r=json.loads(line); model=json.loads(os.environ['ASKGPT_PDF_MODEL_ROUTE'])['apiProfile']['model']\n"
+            " print(json.dumps({'id':r['id'],'translations':[{'id':s['id'],'text':model} for s in r['segments']]}),flush=True)\n")
+        route = json.dumps({"apiProfile": {"model": "snapshot-model"}})
+        with worker.NativeHelper(self.path, "en", "zh-Hans", model_route=route) as helper:
+            self.assertEqual(helper.translate_batch([{"id": "p0", "text": "original"}]),
+                             [{"id": "p0", "text": "snapshot-model"}])
+
     def test_wrong_id_and_empty_translation_are_errors(self):
         for response in ["{'id':'wrong','translation':'译文'}", "{'id':r['id'],'translation':''}"]:
             with self.subTest(response=response), self.make_helper("for line in sys.stdin:\n r=json.loads(line); print(json.dumps(" + response + "),flush=True)\n") as helper:

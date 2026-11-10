@@ -7,12 +7,14 @@ import AskGPTCore
 @MainActor final class InlineIntegrationController: ObservableObject {
     @Published private(set) var status = "正在准备页面内翻译…"
     private var bridge: InlineTranslationBridge?
+    var onPaperContext: ((PaperContext, String?) -> Bool)?
     private var startupTask: Task<Void, Never>?
     private var window: NSWindow?
     private var browserDirectory: URL?
     private var zoteroPackage: URL?
     private var shuttingDown = false
     private var configurationURL: URL?
+    private var shortcutConfiguration: InlineConnectionConfiguration?
 
     func start() {
         guard startupTask == nil, !shuttingDown else { return }
@@ -41,7 +43,10 @@ import AskGPTCore
             let xpi = resources.appendingPathComponent("askgpt-inline-zotero.xpi")
             guard files.fileExists(atPath: xpi.path) else { throw InlineSetupError.missingResources }
             zoteroPackage = xpi
-            let bridge = InlineTranslationBridge(configuration: configuration)
+            let bridge = InlineTranslationBridge(configuration: configuration, paperHandler: { [weak self] context, nonce in
+                guard let self, !shuttingDown, !Task.isCancelled else { return false }
+                return onPaperContext?(context, nonce) ?? false
+            })
             self.bridge = bridge
             startupTask = Task { [weak self] in
                 guard let self else { return }
@@ -49,6 +54,7 @@ import AskGPTCore
                 do {
                     try await bridge.start()
                     guard !shuttingDown else { return }
+                    shortcutConfiguration = configuration
                     status = "本机翻译已就绪"
                     // PDF work owns a separate helper process, so full-document
                     // translation does not queue behind or block selection translation.
@@ -61,6 +67,11 @@ import AskGPTCore
         } catch {
             status = "页面内翻译资源未就绪，请重新安装完整应用。"
         }
+    }
+
+    func requestZoteroPaperShortcut(_ nonce: String) async {
+        guard !shuttingDown, let shortcutConfiguration else { return }
+        try? await ZoteroPaperShortcut.send(configuration: shortcutConfiguration, nonce: nonce)
     }
 
     private func startPDFConnection(configurationURL: URL) async {
@@ -146,6 +157,7 @@ import AskGPTCore
 
     func shutdown() async {
         shuttingDown = true
+        shortcutConfiguration = nil
         startupTask?.cancel()
         if let bridge { await bridge.shutdown() }
         await PDFLayoutService.shared.shutdown()
@@ -172,7 +184,7 @@ private struct InlineSetupView: View {
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Zotero PDF").font(.headline)
-                Text("从文件安装插件。在 PDF 标签内按 ⌥⇧X，默认翻译本页，可选择整份；随时切回原 PDF。")
+                Text("从文件安装插件。在 PDF 标签内按 ⌥⇧X 翻译。按 ⌥X 或点击 Ask GPT 可带上当前论文，划词后也可从选择菜单提问。")
                     .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
                 Button("Zotero 插件文件", action: controller.revealZotero)
             }

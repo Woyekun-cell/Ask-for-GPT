@@ -1467,7 +1467,7 @@
     const gestureHandles=new Set();
     function installWheel(candidate){
       const target=candidate._iframeWindow;if(!target?.addEventListener)return;
-      const onKey=event=>{if(!visible||view!==candidate||event.defaultPrevented||event.repeat)return;if(event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey&&event.code==='KeyX'){event.preventDefault();event.stopImmediatePropagation();if(actions.original)actions.original();else showOriginal();}else if(event.key==='Escape'&&!event.ctrlKey&&!event.metaKey){if(readingHandles.some(handle=>handle.clear?.())){event.preventDefault();event.stopImmediatePropagation();return;}event.preventDefault();event.stopImmediatePropagation();actions.exit?.();}};
+      const onKey=event=>{if(!visible||view!==candidate||event.defaultPrevented||event.repeat||actions.askPaperKey?.(event))return;if(event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey&&event.code==='KeyX'){event.preventDefault();event.stopImmediatePropagation();if(actions.original)actions.original();else showOriginal();}else if(event.key==='Escape'&&!event.ctrlKey&&!event.metaKey){if(readingHandles.some(handle=>handle.clear?.())){event.preventDefault();event.stopImmediatePropagation();return;}event.preventDefault();event.stopImmediatePropagation();actions.exit?.();}};
       target.addEventListener('keydown',onKey,true);viewRemovers.push(()=>target.removeEventListener('keydown',onKey,true));
       const nativeListen=(target,type,callback,settings)=>{const listener=readerFunction(callback),options=readerRealm(settings);Reflect.apply(target.addEventListener,target,[type,listener,options]);return ()=>Reflect.apply(target.removeEventListener,target,[type,listener,options]);};
       viewRemovers.push(nativeListen(target,'pointerdown',closePanels,true));
@@ -1563,6 +1563,14 @@
       }catch(error){finishLoad(timing);if(current(generation)){showSource();removeView();}throw error;}
     }
     const result={host,frame:host,doc,body:viewport,header,menu,statusBar,figurePanel,setScrollLinked,jumpFigure,get scrollLinked(){return scrollLinked;},attachToolbar,get visible(){return visible;},get nativeView(){return view;},get figureHandle(){return currentFigureHandle;},get currentSourcePage(){const candidate=mode==='dual'&&activeLane==='source'||!visible?source:view,number=candidate?._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber;return Number.isInteger(number)?candidate===source?number-1:displayedSourcePages[number-1]:sourceState.pageIndex;},setStatus,setProgress,setAlignmentProgress,setAnnotationStatus,
+      get paperSelection(){
+        if(!visible)return null;
+        const translated=selectionLane==='target',annotation=(translated?rawSelectionPopup:rawSourceSelectionPopup)?.annotation;
+        const index=annotation?.position?.pageIndex;
+        if(typeof annotation?.text!=='string'||!Number.isInteger(index))return null;
+        const pageIndex=translated?displayedSourcePages[index]:index;
+        return Number.isInteger(pageIndex)?{text:annotation.text,pageIndex,translated}:null;
+      },
       updateSelectionLinks,
       hasExactSelection(){const popup=selectionLane==='source'?rawSourceSelectionPopup:rawSelectionPopup;return Boolean(popup?.annotation&&linkSelection(popup,selectionLane));},
       retrySelection(options={}){const popup=selectionLane==='source'?rawSourceSelectionPopup:rawSelectionPopup;if(!visible||!popup?.annotation)return false;if(options.retry!==false){const position=popup.annotation.position,physical=selectionLane==='source'?position.pageIndex:displayedSourcePages[position.pageIndex];mapper.invalidateNativePages([physical,...(position.nextPageRects?[physical+1]:[])]);linkedSelection=null;if(linkSelection(popup,selectionLane)){setAnnotationStatus(null);return true;}}requestSelectionAlignment(popup.annotation,selectionLane,{retry:options.retry!==false});return true;},

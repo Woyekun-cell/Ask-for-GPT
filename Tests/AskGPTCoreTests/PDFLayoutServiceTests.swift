@@ -4,6 +4,42 @@ import Testing
 @testable import AskGPTCore
 
 struct PDFLayoutServiceTests {
+    @Test func savedProfilePublishesOnlyActiveModelAndEffortToPDFRoute() throws {
+        let fixture = try PDFLayoutLifecycleFixture()
+        defer { fixture.cleanup() }
+        var profile = APIProviderProfile(kind: .openAI, name: "测试",
+            baseURL: "https://api.openai.com/v1", model: "gpt-6-astra", recentModels: ["old-model"])
+        profile.availableModels = ["gpt-6-astra", "gpt-6-sol"]
+        profile.modelReasoningEfforts = ["gpt-6-astra": "high", "gpt-6-sol": "low"]
+        try PDFLayoutService.publishModelRoute(settings: CodexSettings(apiProfile: profile), in: fixture.directory)
+        let route = fixture.directory.appendingPathComponent("model-route.json")
+        let attributes = try FileManager.default.attributesOfItem(atPath: route.path)
+        #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+
+        let serverDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Integrations/PDFLayout")
+        let parser = Process()
+        parser.executableURL = fixture.python
+        parser.currentDirectoryURL = serverDirectory
+        parser.arguments = ["-B", "-c", """
+            import json, pathlib, sys
+            from server import _model_snapshot, _private_file, MAX_MODEL_ROUTE_BYTES
+            _, raw = _private_file(pathlib.Path(sys.argv[1]), MAX_MODEL_ROUTE_BYTES)
+            snapshot, suffix = _model_snapshot(json.loads(raw))
+            assert suffix.startswith("-backend-")
+            profile = json.loads(snapshot)["apiProfile"]
+            assert profile["model"] == "gpt-6-astra"
+            assert "recentModels" not in profile and "availableModels" not in profile
+            assert profile["modelReasoningEfforts"] == {"gpt-6-astra": "high"}
+            default = json.loads(snapshot)
+            del default["apiProfile"]["modelReasoningEfforts"]
+            assert _model_snapshot(default)[1] != suffix
+            """, route.path]
+        try parser.run()
+        parser.waitUntilExit()
+        #expect(parser.terminationStatus == 0)
+    }
+
     @Test(.enabled(if: PDFLayoutLifecycleFixture.productionRuntimeAvailable))
     func productionServerRecoversWhenRetiringLockOutlivesHealthListener() async throws {
         let fixture = try PDFLayoutLifecycleFixture(realProductionServer: true)
@@ -12,7 +48,7 @@ struct PDFLayoutServiceTests {
         let marker = fixture.directory.appendingPathComponent("lock-held")
         let holder = Process()
         holder.executableURL = fixture.python
-        holder.arguments = ["-c", "import fcntl,pathlib,sys,time; h=open(sys.argv[1],'w'); fcntl.flock(h,fcntl.LOCK_EX); pathlib.Path(sys.argv[2]).write_text('ready'); time.sleep(.7)", lockPath, marker.path]
+        holder.arguments = ["-c", "import fcntl,os,pathlib,sys,time; os.umask(0o077); h=open(sys.argv[1],'w'); fcntl.flock(h,fcntl.LOCK_EX); pathlib.Path(sys.argv[2]).write_text('ready'); time.sleep(.7)", lockPath, marker.path]
         holder.standardOutput = FileHandle.nullDevice; holder.standardError = FileHandle.nullDevice
         try holder.run()
         try await fixture.until { FileManager.default.fileExists(atPath: marker.path) }

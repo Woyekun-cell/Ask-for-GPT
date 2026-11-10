@@ -476,7 +476,9 @@ class SentenceUpgradeService:
         manager=self.manager;foreground=None
         try:
             if not upgrade.background:foreground=self.foreground();foreground.__enter__()
-            factory=lambda:NativeHelper(manager.translator,upgrade.parent.cache_info["source"],upgrade.parent.cache_info["target"])
+            def factory():
+                return NativeHelper(manager.translator, upgrade.parent.cache_info["source"],
+                                    upgrade.parent.cache_info["target"], model_route=upgrade.parent.model_route)
             context=NativeHelperPool(factory,2,global_permit_directory=manager.cache_root/PERMIT_SUBDIRECTORY) if upgrade.background else factory()
             with context as helper:
                 upgrade.helper=helper

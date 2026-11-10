@@ -38,6 +38,8 @@ async function startup(data, reason) {
   loadScript('content/pdf-native-view.js');
   loadScript('content/sidebar.js');
   loadScript('content/connection-security.js');
+  loadScript('content/ask-paper.js');
+  loadScript('content/ask-paper-shortcut.js');
   loadScript('content/inline.js');
   const css = await Zotero.File.getResourceAsync(data.rootURI + 'content/inline.css');
   if (generation !== askGPTInlineGeneration) return;
@@ -58,6 +60,8 @@ async function startup(data, reason) {
     setTimer: setTimeout, clearTimer: clearTimeout };
   scope.pdfConnection = scope.AskGPTPDFConnection.create(dependencies);
   dependencies.ensurePDFReady = scope.pdfConnection.ensure;
+  scope.askConnection = scope.AskGPTPDFConnection.create(dependencies, {inline: true});
+  dependencies.ensureAskReady = scope.askConnection.ensure;
   scope.instance = scope.AskGPTInline.create(dependencies);
   askGPTInlineScope = scope;
   scope.instance.start();
@@ -68,6 +72,7 @@ function onMainWindowUnload({ window }) { askGPTInlineScope?.instance?.detachMai
 function shutdown(data, reason) {
   askGPTInlineGeneration++;
   askGPTInlineScope?.pdfConnection?.dispose();
+  askGPTInlineScope?.askConnection?.dispose();
   askGPTInlineScope?.instance?.shutdown();
   askGPTInlineScope = null;
 }

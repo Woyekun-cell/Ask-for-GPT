@@ -882,7 +882,7 @@
         wheelDelta=Math.max(-2000,Math.min(2000,wheelDelta+delta.y));wheelPoint={x:event.clientX,y:event.clientY};queueRefinement();scheduleWheel();
       }else{const distance=delta.x||delta.y;if(!distance)return;event.preventDefault();if(zoomActive){discardQueuedZoom();queueRefinement();}panBy(distance);}
     },{passive:false});
-    listen(doc,'keydown',event=>{if((event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey&&event.code==='KeyX')||(event.key==='Escape'&&!event.ctrlKey&&!event.metaKey)){event.preventDefault();event.stopImmediatePropagation();actions.exit();}});
+    listen(doc,'keydown',event=>{if(actions.askPaperKey?.(event))return;if((event.altKey&&event.shiftKey&&!event.ctrlKey&&!event.metaKey&&event.code==='KeyX')||(event.key==='Escape'&&!event.ctrlKey&&!event.metaKey)){event.preventDefault();event.stopImmediatePropagation();actions.exit();}});
     return {frame,doc,body,get visible(){return visible;},setStatus,setProgress,restoreOriginal,
       prepareOutput(){generation++;restoreOriginal();cancelRendering();},
       async showOutput(value,sourcePages,mode='mono'){

@@ -1,8 +1,20 @@
 # 选择自己的翻译服务
 
-> 版本范围：macOS 1.1.61 安装包使用 Codex，未包含本文的 API / Claude 可选适配。本文保留历史版本及 Windows 预览版配置参考；不要将这些选项视为 1.1.61 macOS 界面功能。
-
 [返回首页](../README.md) · [macOS 安装指南](INSTALL.macOS.zh-CN.md) · [Zotero 阅读指南](ZOTERO.zh-CN.md)
+
+## macOS 界面添加模型
+
+带 **Add profile** 的版本可在 **Settings…** 内添加连接。选择厂商，粘贴 API Key，选模型，点击 **Save & use**。可用 **Fetch models** 查询服务返回的模型列表，也可以输入模型 ID。**Test connection** 发送一条简短的合成测试消息，并使用该账号的模型额度。
+
+内置 OpenAI、Anthropic、Google Gemini、DeepSeek、Qwen（DashScope）、Kimi、智谱、OpenRouter、Ollama 和 OpenAI 兼容接口。厂商预设填入基础地址。第三方网关选 **OpenAI-compatible**，填写支持 Chat Completions 的 API 基础地址。Ollama 使用本机接口。各厂商账号开通的模型以实际返回为准。
+
+问答窗口底部可选已保存的厂商连接、搜索该账号的模型列表，或手填模型 ID。点 **Fetch models** 可更新并保存列表。同一连接的模型共享 API Key。支持的模型可就地选择 **Reasoning**，按模型记住深度。菜单栏也提供常用模型快切。**Codex (ChatGPT)** 使用原有 CLI 登录，打开模型选择器会读取订阅可用的模型和支持的思考深度。切换连接时会保留当前选段，论文问答会载入该连接对应的本机记录。问答、AI 精译、Zotero 和 PDF 的 AI 翻译跟随所选连接。API 和论文问答使用文本对话，普通 Codex 问答支持网页检索。Word/WPS 审阅使用原有 Codex 路由，本机词典和 Apple 翻译继续在设备端运行。
+
+API Key 保存在当前用户目录的私有文件中，并绑定连接地址。更改地址时，需填写该地址对应的 Key（若服务需要）。编辑模型可复用同一连接的 Key。API 请求把当前任务的文字交给选定服务。PDF 的新任务使用切换后的连接，已有译本按连接和模型分别复用。
+
+## 历史配置参考
+
+以下内容对应历史实验版和 Windows 预览版。macOS 1.1.61 安装包使用 Codex。
 
 Ask for GPT 默认通过 Codex 翻译。设置中的 **翻译配置文件**为其他服务留出了入口：可以填写 DeepSeek 等 Chat Completions API，也可以使用本机已经安装并登录的 Claude Code。把连接信息保存在一个 JSON 文件里，再让应用读取这个文件即可。
 

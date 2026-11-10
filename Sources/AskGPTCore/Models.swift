@@ -16,13 +16,15 @@ public struct CodexSettings: Equatable, Codable, Sendable {
     public var cliPath: String
     public var model: String
     public var reasoningEffort: String
-    public init(cliPath: String = "/opt/homebrew/bin/codex", model: String = "gpt-6.1-sol", reasoningEffort: String = "low") {
-        self.cliPath = cliPath; self.model = model; self.reasoningEffort = reasoningEffort
+    public var apiProfile: APIProviderProfile?
+    public init(cliPath: String = "/opt/homebrew/bin/codex", model: String = "gpt-6.1-sol", reasoningEffort: String = "low",
+                apiProfile: APIProviderProfile? = nil) {
+        self.cliPath = cliPath; self.model = model; self.reasoningEffort = reasoningEffort; self.apiProfile = apiProfile
     }
 }
 
-public struct ChatMessage: Identifiable, Equatable, Sendable {
-    public enum Role: String, Sendable { case user, assistant }
+public struct ChatMessage: Identifiable, Equatable, Codable, Sendable {
+    public enum Role: String, Codable, Sendable { case user, assistant }
     public var id: UUID
     public var role: Role
     public var text: String

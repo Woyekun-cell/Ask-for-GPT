@@ -377,6 +377,50 @@ class CompletedResultCacheTests(unittest.TestCase):
         self.assertNotIn("input.pdf", json.dumps(metadata))
         self.assertNotIn(self.folder.name, json.dumps(metadata))
 
+    @unittest.skipIf(os.name == "nt", "macOS model route uses a protected file")
+    def test_model_switch_preserves_the_submitted_route_and_isolates_pdf_cache(self):
+        route_file = self.root / "model-route.json"
+        first = {"cliPath": "/codex", "model": "codex", "reasoningEffort": "low",
+                 "apiProfile": {"id": "11111111-1111-4111-8111-111111111111",
+                                "kind": "custom", "name": "Provider A",
+                                "baseURL": "https://a.example/v1", "model": "model-a"}}
+        second = {**first, "apiProfile": {**first["apiProfile"], "model": "model-b"}}
+        server_module.atomic_json(route_file, first)
+        manager = self.new_manager(model_route_file=route_file)
+        pending = manager.begin()
+        source = pending.directory / "input.pdf"
+        source.write_bytes(self.pdf)
+        source.chmod(0o600)
+
+        server_module.atomic_json(route_file, second)
+        manager.submit(pending, "all", "en", "zh-Hans")
+        changed = self.completed(manager=manager)
+        for _ in range(100):
+            if pending.state != "running": break
+            time.sleep(.01)
+        self.assertEqual(pending.state, "complete")
+        self.assertNotEqual(changed.id, pending.id)
+        self.assertEqual(json.loads(pending.model_route), first)
+        self.assertEqual(json.loads(changed.model_route), second)
+        self.assertNotEqual(pending.cache_info["cacheKey"], changed.cache_info["cacheKey"])
+
+        manager.shutdown()
+        restarted = self.new_manager(model_route_file=route_file)
+        self.assertEqual(json.loads(restarted.get(pending.id).model_route), first)
+        with patch.object(server_module.subprocess, "Popen", side_effect=AssertionError("cache spawned worker")):
+            self.assertEqual(self.completed(manager=restarted).id, changed.id)
+            server_module.atomic_json(route_file, first)
+            self.assertEqual(self.completed(manager=restarted).id, pending.id)
+
+    @unittest.skipIf(os.name == "nt", "macOS model route uses a protected file")
+    def test_invalid_model_route_refuses_job_without_falling_back_to_codex(self):
+        route_file = self.root / "model-route.json"
+        server_module.atomic_json(route_file, {"apiProfile": "invalid"})
+        manager = self.new_manager(model_route_file=route_file)
+        with self.assertRaisesRegex(server_module.ProtocolFailure, "^gpt_unavailable$"):
+            manager.begin()
+        self.assertFalse(manager.active)
+
     def test_cache_hit_only_hashes_new_source_not_both_verified_output_files(self):
         original = self.completed()
         digest = server_module.hashlib.file_digest

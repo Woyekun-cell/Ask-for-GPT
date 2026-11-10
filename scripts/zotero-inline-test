@@ -2,6 +2,10 @@
 set -euo pipefail
 task_root="$(cd "$(dirname "$0")/.." && pwd)"
 node "$task_root/Integrations/Zotero/tests/inline-tests.cjs"
+node --test "$task_root/Integrations/Zotero/tests/ask-paper-tests.cjs"
+node --test "$task_root/Integrations/Zotero/tests/ask-paper-shortcut-tests.cjs"
+node --check "$task_root/Integrations/Zotero/content/ask-paper.js"
+node --check "$task_root/Integrations/Zotero/content/ask-paper-shortcut.js"
 node "$task_root/Integrations/Zotero/tests/connection-security-tests.cjs"
 node "$task_root/Integrations/Zotero/tests/pdf-bootstrap-diagnostic-tests.cjs"
 node "$task_root/Integrations/Zotero/tests/pdf-local-version-tests.cjs"

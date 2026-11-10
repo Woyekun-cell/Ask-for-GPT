@@ -9,7 +9,9 @@ public struct ConversationLedger: Sendable {
     public private(set) var excerpt: SelectedExcerpt?
     public private(set) var messages: [ChatMessage] = []
     public private(set) var activeTicket: AnswerTicket?
-    public init() {}
+    public init(messages: [ChatMessage] = []) {
+        self.messages = messages
+    }
 
     public mutating func startNewConversation() {
         excerpt = nil

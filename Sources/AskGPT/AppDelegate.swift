@@ -15,6 +15,11 @@ import AskGPTCore
     private var menu: NSMenu!
     private var automaticItem: NSMenuItem!
     private var documentItem: NSMenuItem!
+    private var modelItem: NSMenuItem!
+    private struct ModelChoice {
+        let profile: APIProviderProfile?
+        let model: String?
+    }
     private var registeredTranslationSpec: HotKeySpec?
     private var terminationReplied = false
 
@@ -22,11 +27,17 @@ import AskGPTCore
         installApplicationMenu()
         let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("AskGPTReader", isDirectory: true)
         let integration = EasydictIntegration(backupDirectory: directory.appendingPathComponent("EasydictBackup", isDirectory: true))
-        store = ReaderStore(capture: capture, integration: integration)
+        store = ReaderStore(capture: capture, integration: integration, paperHistory: PaperChatHistory())
         panels = PanelController(store: store, capture: capture)
         nativePDFs = NativePDFTranslationController()
         nativePDFs.start()
         inlinePages = InlineIntegrationController()
+        inlinePages.onPaperContext = { [weak panels] context, nonce in
+            panels?.showPaperQuestion(context, shortcutNonce: nonce) ?? false
+        }
+        panels.onZoteroPaperShortcut = { [weak inlinePages] nonce in
+            await inlinePages?.requestZoteroPaperShortcut(nonce)
+        }
         inlinePages.start()
         writing = WritingIntegrationController(settingsProvider: { [weak store] in
             store?.appliedSettings ?? CodexSettings()
@@ -53,7 +64,10 @@ import AskGPTCore
         menu = NSMenu()
         menu.delegate = self
         addMenu("Translate  \(store.hotKey.displayName)", action: #selector(openTranslation))
-        addMenu("Ask ChatGPT  \(HotKeySpec.questionSpec.displayName)", action: #selector(openReader))
+        addMenu("Ask GPT  \(HotKeySpec.questionSpec.displayName)", action: #selector(openReader))
+        modelItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
+        modelItem.submenu = NSMenu(title: "Model")
+        menu.addItem(modelItem)
         documentItem = addMenu("Page Translation…", action: #selector(openInlinePages))
         let pdfMenuItem = NSMenuItem(title: "PDF · Native Reader", action: nil, keyEquivalent: "")
         pdfMenuItem.submenu = makeNativePDFMenu()
@@ -195,6 +209,7 @@ import AskGPTCore
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        if menu === self.menu { updateModelMenu() }
         guard let nativePDFs else { return }
         for item in menu.items {
             if item.action == #selector(showMonoPDF) { item.state = nativePDFs.selectedMode == .mono ? .on : .off }
@@ -205,6 +220,44 @@ import AskGPTCore
             if item.action == #selector(translatePDFToEnglish) { item.state = nativePDFs.sourceLanguage == "zh-Hans" ? .on : .off }
         }
     }
+    private func updateModelMenu() {
+        guard let choices = modelItem.submenu else { return }
+        modelItem.title = "Model · " + store.activeModelName
+        choices.removeAllItems()
+        let canSwitch = !store.isSending && !store.isTesting
+        choices.autoenablesItems = false
+
+        func addChoice(to menu: NSMenu, title: String, profile: APIProviderProfile?, model: String?, selected: Bool) {
+            let item = menu.addItem(withTitle: title, action: #selector(switchModel(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = ModelChoice(profile: profile, model: model)
+            item.state = selected ? .on : .off
+            item.isEnabled = canSwitch
+        }
+
+        let active = store.appliedSettings.apiProfile
+        addChoice(to: choices, title: "Codex (ChatGPT)", profile: nil, model: nil, selected: active == nil)
+        for profile in store.apiProfiles {
+            let profileItem = NSMenuItem(title: profile.displayName, action: nil, keyEquivalent: "")
+            profileItem.state = active?.id == profile.id ? .on : .off
+            let models = NSMenu(title: profile.displayName)
+            models.autoenablesItems = false
+            for model in profile.selectableModels.prefix(12) {
+                addChoice(to: models, title: model, profile: profile, model: model,
+                          selected: active?.id == profile.id && active?.model == model)
+            }
+            profileItem.submenu = models
+            choices.addItem(profileItem)
+        }
+        choices.addItem(.separator())
+        choices.addItem(withTitle: "Manage models…", action: #selector(openSettings), keyEquivalent: "").target = self
+    }
+
+    @objc private func switchModel(_ item: NSMenuItem) {
+        guard let choice = item.representedObject as? ModelChoice else { return }
+        store.activateProfile(choice.profile, model: choice.model)
+    }
+
     @objc private func openSettings() { panels.showSettings() }
     @objc private func toggleAutomatic() { store.setAutomatic(!store.automaticEnabled) }
     @objc private func openEasydict() { NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Easydict.app")) }

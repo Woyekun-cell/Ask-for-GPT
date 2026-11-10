@@ -90,6 +90,63 @@ struct InlineTranslationBridgeTests {
         await bridge.shutdown()
     }
 
+    @Test @MainActor func paperHandoffIsLocalOnlyAndValidatesBeforePresenting() async throws {
+        var displayed: [PaperContext] = []
+        var nonces: [String?] = []
+        let configuration = try InlineConnectionConfiguration(token: token, extensionID: extensionID)
+        let bridge = InlineTranslationBridge(configuration: configuration, port: 0, paperHandler: { context, nonce in
+            displayed.append(context)
+            nonces.append(nonce)
+            return true
+        }, translatorFactory: { { _, _, _ in
+            Issue.record("Paper handoff must not perform translation")
+            return "unused"
+        } })
+        let paper = PaperContext(attachmentID: "1:TESTKEY1", title: "Synthetic paper",
+            abstract: "Synthetic abstract", doi: "", selection: "A chosen passage", currentPage: 2, pageCount: 2,
+            pages: [.init(number: 1, text: String(repeating: "Synthetic body. ", count: 1_200)),
+                    .init(number: 2, text: "A chosen passage with its context.")], complete: true)
+        let body = try JSONEncoder().encode(paper)
+        let path = "/v1/inline/ask-paper"
+        #expect(body.count > 16_384)
+        for (headers, status) in [(["authorization": "Bearer invalid"], 401),
+                                  (["host": "localhost:0"], 403),
+                                  (["origin": origin], 403),
+                                  (["origin": "https://example.com"], 403)] {
+            #expect(await bridge.handleRequest(request(path: path, headers: headers, body: body)).status == status)
+        }
+        var wrongPage = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        wrongPage["currentPage"] = 3
+        #expect(await bridge.handleRequest(request(path: path, body: try JSONSerialization.data(withJSONObject: wrongPage))).status == 400)
+        wrongPage["currentPage"] = 2
+        wrongPage["filePath"] = "/private/example.pdf"
+        #expect(await bridge.handleRequest(request(path: path, body: try JSONSerialization.data(withJSONObject: wrongPage))).status == 400)
+        for invalid in ["", String(repeating: "A", count: 32), String(repeating: "a", count: 31)] {
+            let invalidRequest = request(path: path, headers: ["x-askgpt-shortcut": invalid], body: body)
+            #expect(await bridge.handleRequest(invalidRequest).status == 400)
+        }
+        #expect(displayed.isEmpty)
+
+        try await bridge.start()
+        let port = try #require(await bridge.listeningPort)
+        var query = socketRequest(port: port)
+        query.url = URL(string: "http://127.0.0.1:\(port)" + path)
+        query.httpBody = body
+        let (responseData, response) = try await URLSession.shared.data(for: query)
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
+        #expect(displayed == [paper])
+        let result = try #require(JSONSerialization.jsonObject(with: responseData) as? [String: Bool])
+        #expect(result == ["ok": true])
+        #expect(nonces == [nil])
+
+        let nonce = String(repeating: "a", count: 32)
+        query.setValue(nonce, forHTTPHeaderField: "X-AskGPT-Shortcut")
+        let (_, shortcutResponse) = try await URLSession.shared.data(for: query)
+        #expect((shortcutResponse as? HTTPURLResponse)?.statusCode == 200)
+        #expect(nonces == [nil, nonce])
+        await bridge.shutdown()
+    }
+
     @Test func lookupValidUnlistedWordReturnsAnEmptyEntryWithoutTranslation() async throws {
         let calls = InlineTestCalls()
         let bridge = try makeBridge { text in await calls.record(text); return "must not translate" }

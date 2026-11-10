@@ -189,7 +189,7 @@ function transportFixture(request) {
   assert.equal(layer.frame.parentNode,null);assert.equal(f.viewer.style.getPropertyValue('visibility'),'visible');assert.equal(f.renders.length,0);assert(f.destroyed.includes('output'));f.restore();
  });
  async function settle(predicate){for(let i=0;i<100;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,2));}assert.fail('PDF fixture did not settle');}
- function controllerFixture(request,{preferences=null,controllerAdapter=adapter,scheduler=null,readText=null,alignmentWork=false,ensurePDFReady=null}={}){
+ function controllerFixture(request,{preferences=null,controllerAdapter=adapter,scheduler=null,readText=null,alignmentWork=false,ensurePDFReady=null,mac=false}={}){
   // Historical controller fixtures predate the layout route. Make their
   // old-service behavior an explicit 404 rather than malformed modern JSON.
   const transport=transportFixture(async(method,url,options)=>{if(url.endsWith('/alignment-work')&&!alignmentWork)return json({error:'not_found'},404);if(!url.endsWith('/alignment-layout.json'))return request(method,url,options);let response;try{response=await request(method,url,options);}catch(error){if(!String(error.message).startsWith('Unexpected'))throw error;return {status:404,responseText:'{"error":"not_found"}'};}let value;try{value=JSON.parse(response.responseText);}catch(_){}return value?.id&&value?.state&&!value.schema?{status:404,responseText:'{"error":"not_found"}'}:response;}),layout=layoutFixture(),main=new DOM.Window(),events=new Map(),readerEvents=new Map(),reads=[],diagnostics=[];
@@ -200,10 +200,16 @@ function transportFixture(request) {
   let unregister=0,observer=null;const alerts=[];
   const deps={...transport.deps,css:'',pluginID:'fixture',reportDiagnostic:(stage,error)=>diagnostics.push({stage,error}),Services:{...transport.deps.Services,prompt:{alert:(...args)=>alerts.push(args)}},Zotero:{...transport.deps.Zotero,getMainWindow:()=>main,getMainWindows:()=>[main],Reader:{_readers:[reader],getByTabID:()=>reader,registerEventListener(type,callback){readerEvents.set(type,callback);},_unregisterEventListenerByPluginID(){unregister++;readerEvents.clear();}},Notifier:{registerObserver(value){observer=value;return 1;},unregisterObserver(){observer=null;}}}};
   if(preferences)deps.Zotero.Prefs=preferences;
+  if(mac){
+   deps.Zotero.isMac=true;deps.Zotero.Server={Endpoints:{}};
+   main.crypto=require('node:crypto').webcrypto;
+   main.document.hasFocus=()=>true;
+   deps.Services.focus={activeWindow:main};
+  }
   if(scheduler){deps.setTimer=scheduler.set;deps.clearTimer=scheduler.clear;}
   if(readText)deps.readText=readText;
   if(ensurePDFReady)deps.ensurePDFReady=ensurePDFReady;
-  const plugin=controllerAdapter.create(deps);return {...layout,transport,plugin,reader,events,readerEvents,reads,pdf,alerts,diagnostics,tabEvent:(event,ids=[reader.tabID])=>observer?.notify(event,'tab',ids),get unregister(){return unregister;}};
+  const plugin=controllerAdapter.create(deps);return {...layout,transport,plugin,reader,events,readerEvents,reads,pdf,alerts,diagnostics,server:deps.Zotero.Server,focus:deps.Services.focus,tabEvent:(event,ids=[reader.tabID])=>observer?.notify(event,'tab',ids),get unregister(){return unregister;}};
  }
  function retainedInputFixture(request,options={}){
   // Observe the real controller's retained graph without a production debug API.
@@ -695,6 +701,132 @@ function transportFixture(request) {
   const f=controllerFixture(async()=>{throw Error('toolbar render must not translate');}),toolbar=toolbarFixture(f);f.plugin.start();
   assert.equal(toolbar.host.children.length,1);toolbar.render();toolbar.render();assert.equal(toolbar.host.children.length,1);
   assert.equal(toolbar.host.children[0].isConnected,true);assert.equal(f.transport.requests.length,0);f.plugin.shutdown();f.restore();
+ });
+ await check('macOS Ask GPT toolbar and native selection popup hand off only on explicit action',async()=>{
+  const f=controllerFixture(async()=>json({ok:true}),{mac:true}),toolbar=toolbarFixture(f);
+  f.reader.itemID=12;
+  f.reader._item={id:12,libraryID:1,key:'ATTACH01',isAttachment:()=>true,getField:name=>name==='title'?'Fixture paper':''};
+  f.pdf.getPageData=async({pageIndex})=>{f.reads.push(pageIndex);return {chars:[{c:'Page '+(pageIndex+1)}]};};
+  f.reader._internalReader._primaryView._selectionRanges=[{text:'Native passage',position:{pageIndex:1}}];
+  try{
+   f.plugin.start();
+   const button=toolbar.host.allNodes().find(node=>node.className.includes('askgpt-paper-action'));
+   assert(button);assert.equal(f.reads.length,0);assert.equal(f.transport.requests.length,0);
+   button.emit('click');await settle(()=>f.transport.requests.length===1&&!button.disabled);
+   assert.equal(JSON.parse(f.transport.requests[0].options.body).selection,'Native passage');
+   assert.equal(f.transport.requests[0].options.headers['X-AskGPT-Shortcut'],undefined);
+   const popup=toolbar.doc.createElementNS('http://www.w3.org/1999/xhtml','div');
+   toolbar.doc.body.appendChild(popup);
+   f.readerEvents.get('renderTextSelectionPopup')({reader:f.reader,doc:toolbar.doc,
+    params:{annotation:{text:'Popup passage',position:{pageIndex:0}}},append:node=>popup.appendChild(node)});
+   assert.equal(f.transport.requests.length,1);assert.equal(popup.children.length,1);
+   popup.children[0].emit('click');await settle(()=>f.transport.requests.length===2&&!button.disabled);
+   const sent=JSON.parse(f.transport.requests[1].options.body);
+   assert.equal(sent.selection,'Popup passage');assert.equal(sent.currentPage,1);
+   assert.equal(f.transport.requests[1].options.headers['X-AskGPT-Shortcut'],undefined);
+   f.reader._internalReader._primaryView._selectionRanges=[];
+   button.emit('click');await settle(()=>f.transport.requests.length===3&&!button.disabled);
+   assert.equal(JSON.parse(f.transport.requests[2].options.body).selection,'');
+   f.plugin.shutdown();assert.equal(popup.children.length,0);
+  }finally{f.plugin.shutdown();f.restore();}
+ });
+ await check('authenticated Option+X only captures the focused live PDF and forwards its one-time nonce',async()=>{
+  const f=controllerFixture(async()=>json({ok:true}),{mac:true});
+  f.reader.itemID=12;
+  f.reader._item={id:12,libraryID:1,key:'ATTACH01',isAttachment:()=>true,getField:name=>name==='title'?'Shortcut paper':''};
+  f.pdf.getPageData=async({pageIndex})=>{f.reads.push(pageIndex);return {chars:[{c:'Page '+(pageIndex+1)}]};};
+  f.reader._internalReader._primaryView._selectionRanges=[{text:'Selected by shortcut',position:{pageIndex:1}}];
+  const route='/askgpt/paper',token='t'.repeat(64),{createHmac}=require('node:crypto');
+  function invoke(nonce,wrong=false){
+   const timestamp=String(Date.now()),proof=createHmac('sha256',wrong?'wrong':token).update('askgpt-paper-v1\n'+timestamp+'\n'+nonce).digest('hex');
+   return new f.server.Endpoints[route]().init({method:'POST',pathname:route,data:{},searchParams:new URLSearchParams(),
+    headers:{host:'127.0.0.1:23119','content-type':'application/json','content-length':'2',
+     'x-askgpt-timestamp':timestamp,'x-askgpt-nonce':nonce,'x-askgpt-proof':proof}});
+  }
+  try{
+   f.plugin.start();
+   assert.equal((await invoke('a'.repeat(32),true))[0],403);
+   f.reader._window.Zotero_Tabs.selectedID='library';
+   assert.equal((await invoke('b'.repeat(32)))[0],404);
+   f.reader._window.Zotero_Tabs.selectedID=f.reader.tabID;
+   f.focus.activeWindow=null;
+   assert.equal((await invoke('c'.repeat(32)))[0],404);
+   f.focus.activeWindow=f.reader._window;
+   assert.equal(f.reads.length,0);
+   assert.equal(f.transport.requests.length,0);
+   const nonce='d'.repeat(32);
+   assert.equal((await invoke(nonce))[0],200);
+   assert.equal((await invoke(nonce))[0],409);
+   assert.equal(f.transport.requests.length,1);
+   const forwarded=f.transport.requests[0];
+   assert.equal(forwarded.options.headers['X-AskGPT-Shortcut'],nonce);
+   assert.equal(JSON.parse(forwarded.options.body).selection,'Selected by shortcut');
+   assert.equal(JSON.parse(forwarded.options.body).currentPage,2);
+   f.pdf.getPageData=async()=>{f.focus.activeWindow=null;return {chars:[{c:'Unbound text'}]};};
+   assert.equal((await invoke('e'.repeat(32)))[0],409);
+   assert.equal(f.transport.requests.length,1);
+   f.plugin.shutdown();assert.equal(f.server.Endpoints[route],undefined);
+  }finally{f.plugin.shutdown();f.restore();}
+ });
+ await check('Zotero PDF receives Option+X directly and does not change the translation chord',async()=>{
+  const f=controllerFixture(async()=>json({ok:true}),{mac:true});
+  f.reader.itemID=12;
+  f.reader._item={id:12,libraryID:1,key:'ATTACH01',isAttachment:()=>true,getField:name=>name==='title'?'Keyboard paper':''};
+  f.pdf.getPageData=async({pageIndex})=>({chars:[{c:'Page '+(pageIndex+1)}]});
+  f.reader._internalReader._primaryView._selectionRanges=[{text:'Keyboard passage',position:{pageIndex:1}}];
+  const chord={code:'KeyX',altKey:true,shiftKey:false,ctrlKey:false,metaKey:false};
+  try{
+   f.plugin.start();
+   assert.equal(f.win.emit('keydown',{...chord,repeat:true}).defaultPrevented,undefined);
+   assert.equal(f.reader._window.emit('keydown',{...chord,metaKey:true}).defaultPrevented,undefined);
+   const event=f.win.emit('keydown',chord);
+   assert.equal(event.defaultPrevented,true);
+   await settle(()=>f.transport.requests.length===1);
+   assert.equal(JSON.parse(f.transport.requests[0].options.body).selection,'Keyboard passage');
+   assert.equal(f.transport.requests[0].options.headers['X-AskGPT-Shortcut'],undefined);
+  }finally{f.plugin.shutdown();f.restore();}
+ });
+ await check('simultaneous Zotero and app Option+X deliveries share one matching paper handoff',async()=>{
+  const {createHmac}=require('node:crypto'),nonce='7'.repeat(32);
+  const chord={code:'KeyX',altKey:true,shiftKey:false,ctrlKey:false,metaKey:false};
+  for(const first of ['zotero','app']){
+   const f=controllerFixture(async()=>json({ok:true}),{mac:true,scheduler:{set:setTimeout,clear:clearTimeout}});
+   const started=deferred(),resume=deferred(),verified=deferred();
+   f.reader.itemID=12;
+   f.reader._item={id:12,libraryID:1,key:'ATTACH01',isAttachment:()=>true,getField:name=>name==='title'?'One paper':''};
+   f.pdf.getPageData=async({pageIndex})=>{
+    f.reads.push(pageIndex);started.resolve();await resume.promise;
+    return {chars:[{c:'Page '+(pageIndex+1)}]};
+   };
+   f.reader._internalReader._primaryView._selectionRanges=[{text:'One passage',position:{pageIndex:1}}];
+   const subtle=f.reader._window.crypto.subtle;
+   f.reader._window.crypto={subtle:{
+    importKey:(...args)=>subtle.importKey(...args),
+    async verify(...args){const value=await subtle.verify(...args);verified.resolve();return value;}
+   }};
+   const invoke=()=>{
+    const timestamp=String(Date.now()),proof=createHmac('sha256','t'.repeat(64)).update('askgpt-paper-v1\n'+timestamp+'\n'+nonce).digest('hex');
+    return new f.server.Endpoints['/askgpt/paper']().init({method:'POST',pathname:'/askgpt/paper',data:{},searchParams:new URLSearchParams(),
+     headers:{host:'127.0.0.1:23119','content-type':'application/json','content-length':'2',
+      'x-askgpt-timestamp':timestamp,'x-askgpt-nonce':nonce,'x-askgpt-proof':proof}});
+   };
+   try{
+    f.plugin.start();
+    if(first==='zotero')assert.equal(f.win.emit('keydown',chord).defaultPrevented,true);
+    const response=invoke();
+    await started.promise;
+    if(first==='app')assert.equal(f.reader._window.emit('keydown',chord).defaultPrevented,true);
+    await verified.promise;
+    await Promise.resolve();
+    resume.resolve();
+    assert.equal((await response)[0],200);
+    assert.deepEqual(f.reads,[1,0,2]);
+    assert.equal(f.transport.requests.length,1);
+    const handoff=f.transport.requests[0].options;
+    assert.equal(handoff.headers['X-AskGPT-Shortcut'],first==='app'?nonce:undefined);
+    assert.equal(JSON.parse(handoff.body).selection,'One passage');
+   }finally{resume.resolve();f.plugin.shutdown();f.restore();}
+  }
  });
  await check('a replaced toolbar subtree reconnects the same owned slot without duplicating controls',()=>{
   const f=controllerFixture(async()=>{throw Error('toolbar render must not translate');}),toolbar=toolbarFixture(f);f.plugin.start();const first=toolbar.host.children[0];

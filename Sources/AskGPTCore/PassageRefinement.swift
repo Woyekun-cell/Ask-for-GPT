@@ -40,7 +40,7 @@ public extension PassageRefining {
     }
 }
 
-protocol PassageRefinementBackend: Sendable {
+public protocol PassageRefinementBackend: Sendable {
     func startSession(instructions: String) async throws -> String
     func send(threadID: String, text: String, onDelta: @escaping @Sendable (String) -> Void) async throws -> BackendTurnResult
     func sendStructured(threadID: String, text: String, schema: RPCObject,
@@ -49,14 +49,12 @@ protocol PassageRefinementBackend: Sendable {
     func shutdown() async
 }
 
-extension PassageRefinementBackend {
+public extension PassageRefinementBackend {
     func sendStructured(threadID: String, text: String, schema: RPCObject,
                         onDelta: @escaping @Sendable (String) -> Void) async throws -> BackendTurnResult {
         try await send(threadID: threadID, text: text, onDelta: onDelta)
     }
 }
-
-extension CodexBackend: PassageRefinementBackend {}
 
 /// Created only for an explicit refinement request. Selection watching never
 /// creates this client or sends source text to a remote model.
@@ -65,7 +63,7 @@ public actor GPTPassageRefiner: PassageRefining {
     private var activeRequest: UUID?
     private var shutDown = false
 
-    public init(settings: CodexSettings) { backend = CodexBackend(settings: settings) }
+    public init(settings: CodexSettings) { backend = ModelBackendFactory.make(settings: settings) }
     init(backend: any PassageRefinementBackend) { self.backend = backend }
 
     public func refine(_ text: String, mode: PassageRefinementMode,

@@ -32,7 +32,7 @@ public actor PDFSelectionAlignmentTranslator {
     private var claimed: PreparedSession?
     public private(set) var lastValidationReason: PDFSelectionAlignmentValidationReason?
 
-    public init(settings: CodexSettings) { backend = CodexBackend(settings: PDFSelectionAlignmentConfiguration.settings(from: settings)) }
+    public init(settings: CodexSettings) { backend = ModelBackendFactory.make(settings: PDFSelectionAlignmentConfiguration.settings(from: settings)) }
     init(backend: any PassageRefinementBackend) { self.backend = backend }
 
     /// Opens only an empty isolated session. No document text or model turn is

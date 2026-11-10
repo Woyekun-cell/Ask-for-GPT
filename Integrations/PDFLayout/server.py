@@ -52,6 +52,7 @@ MAX_ALIGNMENT_SNAPSHOT_JOBS = 2
 MAX_ALIGNMENT_SNAPSHOT_BYTES = 32 * 1024 * 1024
 MAX_ALIGNMENT_PROJECTION_BYTES = 16 * 1024 * 1024
 MAX_ALIGNMENT_PROJECTIONS = 6
+MAX_MODEL_ROUTE_BYTES = 8 * 1024
 
 
 def _finish_owned_group(process, *, grace=PROCESS_GROUP_GRACE):
@@ -64,6 +65,36 @@ def _cache_key(source_sha, pages, page_count, source, target, revision):
     value = [CACHE_SCHEMA, BABELDOC_VERSION, revision, source_sha,
              page_count, pages, source, target]
     return hashlib.sha256(json.dumps(value, separators=(",", ":")).encode()).hexdigest()
+
+
+def _model_snapshot(value):
+    fields = {"cliPath", "model", "reasoningEffort"}
+    if (not isinstance(value, dict) or not fields <= set(value) <= fields | {"apiProfile"}
+            or any(not isinstance(value[key], str) or "\x00" in value[key] for key in fields)):
+        raise ValueError("invalid_model_route")
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    if len(encoded) > MAX_MODEL_ROUTE_BYTES:
+        raise ValueError("invalid_model_route")
+    profile = value.get("apiProfile")
+    if profile is None:
+        return encoded, ""
+    route_fields = ("id", "kind", "baseURL", "model")
+    required = {*route_fields, "name"}
+    if (not isinstance(profile, dict) or not required <= set(profile) <= required | {"modelReasoningEfforts"}
+            or any(not isinstance(profile[key], str) or "\x00" in profile[key] for key in required)
+            or any(not profile[key] for key in route_fields)):
+        raise ValueError("invalid_model_route")
+    identity_fields = [profile[key] for key in route_fields]
+    if "modelReasoningEfforts" in profile:
+        efforts = profile["modelReasoningEfforts"]
+        if not isinstance(efforts, dict) or set(efforts) != {profile["model"]}:
+            raise ValueError("invalid_model_route")
+        effort = efforts[profile["model"]]
+        if not isinstance(effort, str) or not re.fullmatch(r"[a-z0-9_-]{1,24}", effort):
+            raise ValueError("invalid_model_route")
+        identity_fields.append(effort)
+    identity = json.dumps(identity_fields, separators=(",", ":"))
+    return encoded, "-backend-" + hashlib.sha256(identity.encode()).hexdigest()
 
 
 def _signature(info):
@@ -185,6 +216,8 @@ class Job:
     error_detail: str | None = None
     failed_page: int | None = None
     reused_legacy: bool = False
+    model_route: str | None = None
+    model_revision: str | None = None
 
     def public(self):
         result = {"id": self.id, "state": self.state,
@@ -206,7 +239,8 @@ class Job:
 
 class JobManager:
     def __init__(self, cache_root: Path, translator: Path, *, worker_script: Path | None = None,
-                 ready_override: bool | None = None, translation_revision: str = TRANSLATION_REVISION):
+                 ready_override: bool | None = None, translation_revision: str = TRANSLATION_REVISION,
+                 model_route_file: Path | None = None):
         self.cache_root = private_directory(cache_root)
         self.jobs_root = private_directory(self.cache_root / "jobs")
         self.translator = Path(translator)
@@ -214,6 +248,7 @@ class JobManager:
         self.alignment_required = worker_script is None
         self.ready_override = ready_override
         self.translation_revision = translation_revision
+        self.model_route_file = model_route_file
         self.lock = threading.RLock()
         self.upload_slots = threading.BoundedSemaphore(MAX_CONCURRENT_UPLOADS)
         self.jobs: dict[str, Job] = {}
@@ -235,51 +270,19 @@ class JobManager:
         self.prune()
         self.sentence_upgrades.resume_work()
 
-    def _reusable_revisions(self):
+    def _reusable_revisions(self, revision=None):
         # Backend identity is part of translation semantics, not a version to
         # drop during migration. Unknown/custom generations stay exact-only.
-        suffix = self.translation_revision.removeprefix(TRANSLATION_REVISION)
-        if self.translation_revision != TRANSLATION_REVISION and not re.fullmatch(r"-backend-[0-9a-f]{64}", suffix):
-            return (self.translation_revision,)
-        return (self.translation_revision, *(revision + suffix for revision in LEGACY_OUTPUT_REVISIONS))
+        revision = revision or self.translation_revision
+        suffix = revision.removeprefix(TRANSLATION_REVISION)
+        if revision != TRANSLATION_REVISION and not re.fullmatch(r"-backend-[0-9a-f]{64}", suffix):
+            return (revision,)
+        return (revision, *(legacy + suffix for legacy in LEGACY_OUTPUT_REVISIONS))
 
     @staticmethod
     def _validate_legacy_outputs(directory, pages, signatures, alignment):
         """Check real PDF pages through verified descriptors, without text reads."""
         import pymupdf
-        from alignment import _geometry
-        for kind in ("mono", "dual"):
-            path = directory / (kind + ".pdf")
-            descriptor = platform.secure_open(path, os.O_RDONLY)
-            with os.fdopen(descriptor, "rb") as handle:
-                expected = signatures[kind]
-                if _signature(os.fstat(handle.fileno())) != expected: raise ValueError("changed_cache_file")
-                try:
-                    with _open_pdf_descriptor(handle) as document:
-                        if document.needs_pass or not document.is_pdf or len(document) != len(pages):
-                            raise ValueError("invalid_cached_page_mapping")
-                        if alignment is not None:
-                            for index, page in enumerate(document):
-                                if _geometry(page) != {name: alignment["pages"][index][kind][name]
-                                        for name in ("mediaBox", "cropBox", "rotation")}:
-                                    raise ValueError("invalid_cached_page_geometry")
-                except Exception:
-                    # Malformed historical PDFs must not prevent service startup.
-                    raise ValueError("invalid_cached_pdf") from None
-                if _signature(os.fstat(handle.fileno())) != expected or _output_signature(path) != expected:
-                    raise ValueError("changed_cache_file")
-
-    def _reusable_revisions(self):
-        # Backend identity is part of translation semantics, not a version to
-        # drop during migration. Unknown/custom generations stay exact-only.
-        suffix = self.translation_revision.removeprefix(TRANSLATION_REVISION)
-        if self.translation_revision != TRANSLATION_REVISION and not re.fullmatch(r"-backend-[0-9a-f]{64}", suffix):
-            return (self.translation_revision,)
-        return (self.translation_revision, *(revision + suffix for revision in LEGACY_OUTPUT_REVISIONS))
-
-    @staticmethod
-    def _validate_legacy_outputs(directory, pages, signatures, alignment):
-        """Check real PDF pages through verified descriptors, without text reads."""
         from alignment import _geometry
         for kind in ("mono", "dual"):
             path = directory / (kind + ".pdf")
@@ -311,8 +314,16 @@ class JobManager:
                 _, raw = _private_file(directory / "cache.json", 64 * 1024)
                 value = json.loads(raw)
                 pages, count = value["sourcePages"], value["pageCount"]
+                model_route, expected_revision = None, self.translation_revision
+                reusable = (*self._reusable_revisions(), "pdf-layout-gpt-v3")
+                if "modelRoute" in value:
+                    if self.model_route_file is None: continue
+                    model_route, suffix = _model_snapshot(json.loads(value["modelRoute"]))
+                    if not suffix: continue
+                    expected_revision += suffix
+                    reusable = self._reusable_revisions(expected_revision)
                 if (value.get("schema") != CACHE_SCHEMA or value.get("state") != "complete"
-                        or value.get("revision") not in (*self._reusable_revisions(),"pdf-layout-gpt-v3")
+                        or value.get("revision") not in reusable
                         or value.get("babeldoc") != BABELDOC_VERSION
                         or type(count) is not int or not 1 <= count <= 2000
                         or not isinstance(pages, list) or not pages
@@ -349,10 +360,11 @@ class JobManager:
                     from sentence_alignment import filter_unsafe_numeric_sentence_links
                     alignment_raw = (json.dumps(alignment,ensure_ascii=False,separators=(",",":")).encode()
                         if filter_unsafe_numeric_sentence_links(alignment) else raw)
-                legacy = value["revision"] != self.translation_revision
+                legacy = value["revision"] != expected_revision
                 if legacy: self._validate_legacy_outputs(directory, pages, signatures, alignment)
                 job = Job(directory.name, directory, state="complete", source_pages=pages,
-                          page_count=count, cache_info=value, output_signatures=signatures, reused_legacy=legacy)
+                          page_count=count, cache_info=value, output_signatures=signatures, reused_legacy=legacy,
+                          model_route=model_route, model_revision=expected_revision)
                 self.jobs[job.id] = job
                 self.completed[key] = job.id
                 self.permanent.add(job.id)
@@ -691,7 +703,8 @@ class JobManager:
 
     def _derive_completed_range(self, job, revision=None):
         original_info = job.cache_info
-        revision = revision or self.translation_revision
+        current_revision = job.model_revision or self.translation_revision
+        revision = revision or current_revision
         info = {**original_info, "revision": revision}
         info["cacheKey"] = _cache_key(info["sourceSHA256"], job.source_pages, job.page_count,
             info["source"], info["target"], revision)
@@ -702,11 +715,12 @@ class JobManager:
         whole = self._cached_job(key)
         if whole is None: return False
         expected = {**info, "cacheKey": key, "sourcePages": all_pages}
+        expected.pop("modelRoute", None)  # The revision already binds the routing fields.
         if (whole.state != "complete" or whole.page_count != job.page_count or whole.source_pages != all_pages
                 or not whole.cache_info or any(whole.cache_info.get(name) != value for name, value in expected.items())):
             return False
         job.cache_info = info
-        job.reused_legacy = revision != self.translation_revision
+        job.reused_legacy = revision != current_revision
         try:
             self._extract_cached_pages(whole, job, job.source_pages)
             self._store_completed(job)
@@ -791,12 +805,20 @@ class JobManager:
         except (OSError, ValueError, TypeError, KeyError, importlib.metadata.PackageNotFoundError):
             return False
 
-    def begin(self) -> Job:
+    def begin(self, *, snapshot_model_route=True) -> Job:
         with self.lock:
             if self.stopping: raise ProtocolFailure("service_stopping")
+            model_route, suffix = None, ""
+            if self.model_route_file is not None and snapshot_model_route:
+                try:
+                    _, raw = _private_file(self.model_route_file, MAX_MODEL_ROUTE_BYTES)
+                    model_route, suffix = _model_snapshot(json.loads(raw))
+                except (OSError, ValueError, TypeError):
+                    raise ProtocolFailure("gpt_unavailable") from None
             self.prune()
             identity = uuid.uuid4().hex
-            job = Job(identity, private_directory(self.jobs_root / identity))
+            job = Job(identity, private_directory(self.jobs_root / identity),
+                      model_route=model_route, model_revision=self.translation_revision + suffix)
             self.jobs[identity] = job
             self.active.add(identity)
             return job
@@ -837,17 +859,20 @@ class JobManager:
                     raise ProtocolFailure("service_stopping")
                 job.page_count, job.source_pages = page_count, selected
                 _, source_sha = _private_file(job.directory / "input.pdf", MAX_PDF_BYTES, checksum=True)
-                key = _cache_key(source_sha, selected, page_count, source, target, self.translation_revision)
-                cached = self._matching_completed(source_sha, selected, page_count, source, target, self.translation_revision)
+                current_revision = job.model_revision or self.translation_revision
+                key = _cache_key(source_sha, selected, page_count, source, target, current_revision)
+                cached = self._matching_completed(source_sha, selected, page_count, source, target, current_revision)
                 if cached is not None:
                     self._discard_placeholder(job)
                     os.utime(cached.directory, None)
                     return cached.public()
                 job.cache_info = {"cacheKey": key, "sourceSHA256": source_sha,
                     "sourcePages": selected, "pageCount": page_count, "source": source,
-                    "target": target, "revision": self.translation_revision, "babeldoc": BABELDOC_VERSION}
+                    "target": target, "revision": current_revision, "babeldoc": BABELDOC_VERSION}
+                if current_revision != self.translation_revision and job.model_route is not None:
+                    job.cache_info["modelRoute"] = job.model_route
                 if self._derive_completed_range(job): return job.public()
-                for revision in self._reusable_revisions()[1:]:
+                for revision in self._reusable_revisions(current_revision)[1:]:
                     cached = self._matching_completed(source_sha, selected, page_count, source, target, revision)
                     if cached is not None:
                         self._discard_placeholder(job)
@@ -874,9 +899,10 @@ class JobManager:
                 if sum(other.process is not None and other.process.poll() is None
                         for other in self.jobs.values()) >= MAX_RUNNING_JOBS:
                     raise ProtocolFailure("job_conflict")
-                atomic_json(job.directory / "request.json", {"sourcePages": selected,
-                    "pageCount": page_count, "source": source, "target": target,
-                    "batchCacheKey": _cache_key(source_sha,list(range(page_count)),page_count,source,target,self.translation_revision)})
+                request = {"sourcePages": selected, "pageCount": page_count, "source": source, "target": target,
+                    "batchCacheKey": _cache_key(source_sha,list(range(page_count)),page_count,source,target,current_revision)}
+                if job.model_route is not None: request["modelRoute"] = job.model_route
+                atomic_json(job.directory / "request.json", request)
                 job.process = platform.spawn_owned([sys.executable, str(self.worker_script),
                     "--job-dir", str(job.directory), "--cache-root", str(self.cache_root),
                     "--translator", str(self.translator)], popen=subprocess.Popen, stdin=subprocess.PIPE,
@@ -1155,7 +1181,8 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
             except ProtocolFailure as error:
                 if job: manager.abandon(job)
                 code = str(error)
-                return self.reply(409 if code == "job_conflict" else 400, {"error": code})
+                status = {"job_conflict": 409, "gpt_unavailable": 503}.get(code, 400)
+                return self.reply(status, {"error": code})
             except (OSError, TimeoutError):
                 if job: manager.abandon(job)
                 return self.reply(400, {"error": "incomplete_upload"})
@@ -1320,7 +1347,7 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
             if not manager.upload_slots.acquire(blocking=False): return self.reply(409,{"error":"alignment_conflict"})
             temporary=None
             try:
-                temporary=manager.begin()
+                temporary=manager.begin(snapshot_model_route=False)
                 descriptor=platform.secure_open(temporary.directory/"input.pdf",os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
                 with os.fdopen(descriptor,"wb") as output:
                     remaining=length
@@ -1385,6 +1412,7 @@ def main():
     parser.add_argument("--config", required=True, type=Path)
     parser.add_argument("--translator", required=True, type=Path)
     parser.add_argument("--cache-root", required=True, type=Path)
+    parser.add_argument("--model-route", type=Path)
     args = parser.parse_args()
     os.umask(0o077)
     try:
@@ -1398,7 +1426,8 @@ def main():
         if backend_identity and not re.fullmatch(r"[0-9a-f]{64}", backend_identity):
             raise ValueError("invalid_translation_backend_identity")
         revision = TRANSLATION_REVISION + ("-backend-" + backend_identity if backend_identity else "")
-        manager = JobManager(args.cache_root, args.translator, translation_revision=revision)
+        manager = JobManager(args.cache_root, args.translator, translation_revision=revision,
+                             model_route_file=args.model_route)
         token, extension_origin = load_connection(args.config)
         service = create_server(manager, token, extension_origin=extension_origin)
     except Exception:
