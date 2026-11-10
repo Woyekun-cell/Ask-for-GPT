@@ -38,6 +38,10 @@ These paper chat and model-switching features are included in **macOS 1.1.67** w
 
 *An earlier live Zotero capture using Liao et al., [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x) (Nature, 2023; [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). The Chinese text is a machine translation.*
 
+![Selection translation panel](docs/images/translation.png)
+
+*Translation panel shown in an earlier interface capture. The current model controls are described below.*
+
 [Set up macOS](docs/INSTALL.macOS.zh-CN.md) · [Choose a model connection](#model-connections-and-switching) · [Ask about a PDF](#ask-summarize-and-resume-a-chat-with-the-current-pdf)
 
 ## Full feature walkthrough
@@ -172,8 +176,6 @@ Select text in an app that exposes its selection and press **`⌥D`** to open th
 | **Explain** | The selected passage's terminology, reasoning, and qualifications |
 
 **GPT** and **Explain** start a model request when you click them. Use **Stop / Retry** to control a request.
-
-![Translation panel](docs/images/translation.png)
 
 Choose **EN → 中** or **中 → EN** for the language direction. **Auto** detects the source language and translates into Chinese. Expand the original to compare wording, select result text and copy it with the system shortcut, or adjust the text color. You can also paste text into **Paste text** and click **Translate**. Enable automatic selection translation for continuous reading, or use the shortcut when needed.
 
