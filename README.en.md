@@ -1,12 +1,12 @@
 <div align="center">
 
-**[中文](README.md) · English**
+**English · [中文](README.zh-CN.md)**
 
 <img src="Resources/AppIcon.png" width="96" alt="Ask for GPT icon">
 
 # 📖 Ask for GPT
 
-**Read the paper. Switch fewer windows.**
+**Read, ask, and write with fewer interruptions.**
 
 Look up words, ask about a passage, and read web pages and PDFs in two languages. Keep your reading notes in Zotero, then refine your wording as you write.
 
@@ -25,7 +25,24 @@ Ask for GPT comes in Windows and macOS versions, bringing word lookup, passage-b
 
 The app works with your Zotero attachment and annotations, the page open in Chrome, or a manuscript in Word. English word lookup uses a local dictionary.
 
-**macOS 1.1.67** bundles **Zotero add-on 0.3.98** and adds paper chat, one-click summaries, per-paper conversation history, and model switching.
+## Read, ask, and choose your model
+
+- **Ask about the paper:** In Zotero, select text and press **⌥X** to bring the current PDF and selection into Ask GPT. Choose nearby pages or the extracted text of the whole paper, then ask a question or request a summary.
+- **Continue where you left off:** Completed conversations are stored on your Mac by PDF, scope, and connection.
+- **Choose the model:** Switch between your Codex (ChatGPT) connection and saved API providers, select a model, and adjust its supported reasoning level.
+- **Read and write:** Look up words, compare translations in Zotero or Chrome, and use Word/WPS writing assistance on macOS.
+
+These paper chat and model-switching features are included in **macOS 1.1.67** with **Zotero add-on 0.3.98**. The Windows preview is a separate build.
+
+![Zotero bilingual PDF reading with the original and translated text side by side](docs/images/zotero/live-bilingual.jpg)
+
+*An earlier live Zotero capture using Liao et al., [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x) (Nature, 2023; [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). The Chinese text is a machine translation.*
+
+![Selection translation panel](docs/images/translation.png)
+
+*Translation panel shown in an earlier interface capture. The current model controls are described below.*
+
+[Set up macOS](docs/INSTALL.macOS.zh-CN.md) · [Choose a model connection](#model-connections-and-switching) · [Ask about a PDF](#ask-summarize-and-resume-a-chat-with-the-current-pdf)
 
 ## Full feature walkthrough
 
@@ -33,7 +50,7 @@ The app works with your Zotero attachment and annotations, the page open in Chro
 
 **[▶ Watch the full video · English narration · about 3 minutes](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4)**
 
-Follow the complete workflow: word lookup, passage translation and contextual questions, Chrome translation, Zotero bilingual reading, phrase correspondence, native annotations, linked or independent scrolling, figure previews, and writing suggestions. Real captures and recordings are combined with clearly labeled native interface previews. [Transcript and capture details](docs/GALLERY.md#feature-overview).
+Recorded for version 1.1.55, this walkthrough covers word lookup, passage translation and contextual questions, Chrome translation, Zotero bilingual reading, phrase correspondence, native annotations, linked or independent scrolling, figure previews, and writing suggestions. Real captures and recordings are combined with clearly labeled native interface previews. [Transcript and capture details](docs/GALLERY.md#feature-overview).
 
 ## Download and install
 
@@ -85,10 +102,6 @@ Completed conversations stay on your Mac, separated by PDF attachment, scope, an
 ### Start with one page, then translate the document
 
 Open a PDF in Zotero. The **PDF 翻译** sidebar offers scope, view, and language direction. Start with **当前页** (current page), **中英对照** (side by side), and **EN → 中** to read an abstract or key result. When the paper is relevant, choose **整篇** (whole document) to continue. **中 → EN** is also available for Chinese documents.
-
-![Zotero bilingual reading with the English original and Chinese translation side by side](docs/images/zotero/live-bilingual.jpg)
-
-*Zotero bilingual reading · Liao et al., [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x) (Nature, 2023; [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). Ask for GPT generated and typeset the Chinese machine translation on the right.*
 
 The translation appears in the existing attachment tab. Progress stays visible in the sidebar and toolbar while you read the original or switch to another paper. Each document has its own task; up to two can run at once and can be stopped separately.
 
@@ -164,8 +177,6 @@ Select text in an app that exposes its selection and press **`⌥D`** to open th
 
 **GPT** and **Explain** start a model request when you click them. Use **Stop / Retry** to control a request.
 
-![Translation panel](docs/images/translation.png)
-
 Choose **EN → 中** or **中 → EN** for the language direction. **Auto** detects the source language and translates into Chinese. Expand the original to compare wording, select result text and copy it with the system shortcut, or adjust the text color. You can also paste text into **Paste text** and click **Translate**. Enable automatic selection translation for continuous reading, or use the shortcut when needed.
 
 ## Ask a specific question with the passage attached
@@ -192,9 +203,7 @@ Reading and writing share the same app settings, making it easy to move from und
 
 ## Settings and shortcuts
 
-The current macOS interface uses English labels. The screenshot below is from an earlier version. For model setup, see [Model connections and switching](#model-connections-and-switching).
-
-![Settings for CLI connection, translation, questions, and shortcuts](docs/images/settings.png)
+For model setup, see [Model connections and switching](#model-connections-and-switching).
 
 | Default shortcut | Action |
 | --- | --- |
