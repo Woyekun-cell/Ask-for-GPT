@@ -10,12 +10,12 @@
 
 划词查词、随手提问、网页和 PDF 双语阅读；阅读笔记留在 Zotero，写作时再把表达打磨顺一点。
 
-[![下载 macOS DMG](https://img.shields.io/badge/下载_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.61/Ask-for-GPT-1.1.61-macOS-arm64.dmg)
-[![下载 ZIP](https://img.shields.io/badge/下载-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.61/Ask-for-GPT-1.1.61-macOS-arm64.zip)
+[![下载 macOS DMG](https://img.shields.io/badge/下载_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.dmg)
+[![下载 ZIP](https://img.shields.io/badge/下载-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.zip)
 
 [![下载 Windows](https://img.shields.io/badge/下载_Windows-x64-0078D4?style=for-the-badge&logo=windows)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe)
 
-**macOS v1.1.61 · Apple Silicon · macOS 15+ | Windows x64 v0.1.0-preview.1**
+**macOS v1.1.67 · Apple Silicon · macOS 15+ | Windows x64 v0.1.0-preview.1**
 
 [macOS 安装](docs/INSTALL.macOS.zh-CN.md) · [Windows 安装](docs/INSTALL.Windows.zh-CN.md) · [Zotero 阅读指南](docs/ZOTERO.zh-CN.md) · [翻译后端配置](docs/TRANSLATION-BACKENDS.zh-CN.md) · [界面图廊](docs/GALLERY.md) · [发行记录](https://github.com/Woyekun-cell/Ask-for-GPT/releases) · [反馈问题](https://github.com/Woyekun-cell/Ask-for-GPT/issues)
 
@@ -25,7 +25,7 @@ Ask for GPT 提供 Windows 和 macOS 两个版本，把划词查词、带着选�
 
 它保留你熟悉的工作环境，包括 Zotero 的文献标签和标注、Chrome 正在阅读的网页，以及 Word 中的稿件。英文单词优先查本地词典。
 
-上方 macOS 安装包为 v1.1.61。下文的 Zotero 论文问答、一键总结、逐篇续聊和模型切换对应 **macOS 1.1.67 源码和 Zotero 0.3.98 插件**。使用新版可按手册[从源码构建与安装](docs/HANDBOOK.zh-CN.md#2-从源码构建与安装)。
+**macOS 1.1.67** 随附 **Zotero 0.3.98** 插件，新增论文问答、一键总结、逐篇续聊和模型切换。
 
 ## 全功能视频介绍
 
@@ -39,20 +39,18 @@ Ask for GPT 提供 Windows 和 macOS 两个版本，把划词查词、带着选�
 
 **Windows版（x64）：** [Windows 安装包与便携版](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38) · [安装与配置](docs/INSTALL.Windows.zh-CN.md)。提供划词、离线词典、段落翻译与提问、Chrome/Zotero 阅读集成、PDF 对照及可配置翻译后端。[构建与检查记录](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml)见工作流。下方界面展示使用 macOS版。
 
-macOS 1.1.61 将划词翻译、Ask for GPT 问答和设置界面改为英文，修复窗口整层透明造成的标题栏透字与边界不清，并保留 Zotero 9/10 双版本插件、划词对应及响应优化。Word/WPS 写作功能本轮未改。Windows 包沿用独立验证的 `0.1.0-preview.1` 构建（源码 `05348ad`），上述 macOS 改动不代表已同步进入该预览包。
-
-macOS版可直接下载上方安装包。应用本体约 **48 MB**，包含约 40 万条英文词条、Chrome/Zotero 插件和写作集成资源。
+Windows 预览版为独立验证的 `0.1.0-preview.1` 构建（源码 `05348ad`）。macOS 安装包包含约 40 万条英文词条、Chrome/Zotero 插件和写作集成资源。
 
 | 下载 | 适合怎样安装 |
 | --- | --- |
-| [DMG 安装包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.61/Ask-for-GPT-1.1.61-macOS-arm64.dmg) | 推荐。打开磁盘映像，将应用拖入“应用程序”，按随包指引完成首次设置 |
-| [ZIP 压缩包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.61/Ask-for-GPT-1.1.61-macOS-arm64.zip) | 解压后安装；包含相同应用和准备脚本 |
+| [DMG 安装包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.dmg) | 推荐。打开磁盘映像，将应用拖入“应用程序”，按随包指引完成首次设置 |
+| [ZIP 压缩包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.zip) | 解压后安装；包含相同应用和准备脚本 |
 | [源码](https://github.com/Woyekun-cell/Ask-for-GPT/archive/refs/heads/main.zip) | 自行构建、阅读实现或修改集成；开发步骤见[源码手册](docs/HANDBOOK.zh-CN.md) |
 
 macOS 首次设置分四步：
 
 1. **安装应用。** 将 Ask for GPT 放入“应用程序”并打开。当前版本未经 Apple 公证；若 macOS 阻止首次打开，在“系统设置 → 隐私与安全性”中按系统提示确认。
-2. **配置模型连接。** 默认运行随包的 `01-登录ChatGPT.command`。脚本解压并校验官方 Codex CLI 0.163.0，由你在浏览器完成登录。把提供的 CLI 路径复制到设置，点击 **Save and connect**。这个过程无需安装 npm 或 Homebrew。
+2. **配置模型连接。** 通过 Codex 连接时，运行随包的 `01-登录ChatGPT.command`，在浏览器登录 ChatGPT。把提供的 CLI 路径复制到设置，点击 **Save & use**。也可在 **Add profile** 中添加 API 服务。
 3. **按需准备 PDF 翻译。** 运行 `02-准备PDF翻译.command`，自动准备固定版本的 uv、Python 3.12.15、预编译依赖，以及排版需要的公开字体和模型。首次需要联网，完成后本地占用约 1 GB；准备过程无需编译。日常 PDF 翻译仍需联网调用模型。
 4. **连接阅读软件。** 在应用菜单栏打开 **Page Translation…**，安装 Zotero 插件或加载 Chrome 扩展。之后即可在原来的阅读页面使用。
 
@@ -60,18 +58,16 @@ macOS 首次设置分四步：
 
 ### 模型连接与切换
 
-macOS **1.1.61 安装包使用 Codex**。在设置的 **CLI path** 中填写已登录的 Codex CLI，点击 **Save and connect**。
+点击问答窗口底部的模型名称，可切换连接、选择模型，并在模型支持时调整 **Reasoning**。
 
-新版 macOS 源码支持两种连接。点击问答窗口底部的模型名称即可切换。支持推理强度设置的模型可在同一处选择 **Reasoning**。
-
-- **Codex (ChatGPT)** 沿用已登录的 Codex CLI，自动读取当前订阅可用的模型。选好模型及其支持的 **Reasoning** 档位后，点击 **Use model**。
+- **Codex (ChatGPT)** 沿用已登录的 Codex CLI，自动读取当前订阅可用的模型。选好后点击 **Use model**。
 - **API 连接**可在 **Settings… → Add profile** 中添加。选厂商、填入 API Key 后点击 **Save & use**。同一连接内的多个模型共用一个 Key。用 **Fetch models** 获取服务返回的列表，也可手动输入模型 ID。
 
 厂商预设、自定义接口和 Windows 预览版的配置见[模型与翻译后端指南](docs/TRANSLATION-BACKENDS.zh-CN.md)。
 
 ## 在 Zotero 中精读一篇论文
 
-### 带着当前 PDF 提问、总结和续聊（新版源码）
+### 带着当前 PDF 提问、总结和续聊
 
 在 Zotero PDF 里划选文字后按 **⌥X**，Ask GPT 会带入当前附件和选段。也可以从 PDF 工具栏或选区浮层打开 **Ask GPT**。
 
@@ -180,14 +176,14 @@ Word 写作集成提供拼写检查和 GPT 表达建议。建议卡把原文与�
 
 ## 设置与快捷键
 
-macOS 1.1.61 在设置中填写 **CLI path**、提问模型与推理强度，点击 **Save and connect**。下方截图来自历史版本；当前安装包使用英文界面，截图中的可选翻译配置也不适用于这个 Mac 安装包。
+macOS 当前使用英文界面。下方设置截图来自历史版本，模型配置以本页的[模型连接与切换](#模型连接与切换)为准。
 
 ![设置：Codex 路径、翻译配置、自动划词和快捷键](docs/images/settings.png)
 
 | 默认快捷键 | 操作 |
 | --- | --- |
 | `⌥D` | 翻译选中文字，可在设置中修改 |
-| `⌥X` | 围绕选段提问。新版 macOS 源码在 Zotero 中同时带入当前 PDF |
+| `⌥X` | 围绕选段提问，在 Zotero 中同时带入当前 PDF |
 | `⌥⇧X` | Chrome / Zotero 页面翻译或恢复 |
 | `⌘,` | 打开设置 |
 | `Enter` / `Shift+Enter` | 问答中发送 / 换行 |
@@ -199,13 +195,13 @@ macOS 1.1.61 在设置中填写 **CLI path**、提问模型与推理强度，点
 | macOS版 | Apple Silicon Mac；完整 PDF 环境要求 macOS 15+；当前未经 Apple 公证 |
 | Windows版 | Windows x64；提供划词、翻译、提问及 Chrome/Zotero PDF 对照；安装与平台范围见[Windows 指南](docs/INSTALL.Windows.zh-CN.md) |
 | Apple 本机短段翻译 | macOS 26+，需安装相应语言包 |
-| AI 连接 | macOS 1.1.61 通过 Codex CLI 使用个人 ChatGPT 登录；Windows 预览版选项见独立指南 |
+| AI 连接（macOS） | Codex CLI 的个人 ChatGPT 登录或 API 服务。Word/WPS 写作审阅使用 Codex |
 | Zotero | Zotero 9.x 或 10.0.x（9.0.6 已验证启用；10.0.6、10.0.7 已验证 PDF 翻译）；PDF 翻译需要准备随包 PDF 环境 |
 | Chrome | Chrome 106+；本机 PDF 需文件网址访问权限 |
 | PDF 内容 | 面向有文字层的 PDF；扫描件需先 OCR，图片内文字保留原样；复杂竖排图内文字可能缺少精确词语对应 |
 | Word / WPS（macOS） | Word 提供文内建议；WPS 当前为侧栏主动检查，文内彩色下划线不可用，替换与撤销仍需目标版本实测 |
 
-本地词典和 Apple 本机翻译在设备上处理。macOS 1.1.61 的 AI 翻译、句词映射、问答与写作会通过个人 Codex 连接提交相关文字和必要上下文。Windows 预览版的连接选项见独立指南。PDF 提取与排版在本机完成。请使用有权交由相应服务处理的内容。
+词典查询、Apple 本机翻译、PDF 提取与排版在设备上处理。AI 翻译、句词映射和问答会把任务需要的文字和上下文发给所选服务。写作审阅将相应文字提交给 Codex。请使用有权交由相应服务处理的内容。
 
 原 PDF 文件不被覆盖；手动保存的 Zotero 标注写入原附件的标注记录。完成译本长期保留，未完成任务的临时文件另行清理。使用译文撰写或引用前，应核对术语、数字、公式与原意。物理修饰键滚轮手势、实际显示帧率和全新 Mac 的完整安装仍需进一步实机检查。
 

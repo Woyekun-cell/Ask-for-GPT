@@ -1106,13 +1106,13 @@
     },
     {
       "path": "README.en.md",
-      "bytes": 22453,
-      "sha256": "50cbb761e2c5b0679dc202986fb07a0253a69cc057139e7c78540f96cc4fe2e0"
+      "bytes": 21289,
+      "sha256": "868ffa7843cb25033fefa654b5accb4a75fe2d9f9ed8a7b0c31f8779adc87632"
     },
     {
       "path": "README.md",
-      "bytes": 19360,
-      "sha256": "72342c78963ea870b3e80e7f80ce8cc03ee00bcdf239c9cca8d4077b10076f4c"
+      "bytes": 18400,
+      "sha256": "b7b962026bef35b5101e0de865c490410084ca62934575a7f2e248df171bde55"
     },
     {
       "path": "Resources/AppIcon.icns",
@@ -1731,8 +1731,8 @@
     },
     {
       "path": "docs/INSTALL.macOS.zh-CN.md",
-      "bytes": 10213,
-      "sha256": "8d8cc0380cdd255a982f1639f7ade478b3a482b4419ff1db3e43af0d23992681"
+      "bytes": 10502,
+      "sha256": "27568a7d716d602b519b4e556a71f0d1bf04b4b21e6557d68d129c8d658651f1"
     },
     {
       "path": "docs/TRANSLATION-BACKENDS.zh-CN.md",
@@ -1741,8 +1741,8 @@
     },
     {
       "path": "docs/ZOTERO.zh-CN.md",
-      "bytes": 19024,
-      "sha256": "cb9cd5ff617883d932b0282fcaf08febe205ca29ecc96dd6e92893059ef4745f"
+      "bytes": 18798,
+      "sha256": "1a257c2f83df1bc147da26823d7d8387bd48935a250def23948db3e9a9a98904"
     },
     {
       "path": "docs/demo-source/READMEPreviews.swift",
