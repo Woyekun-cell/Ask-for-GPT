@@ -1,227 +1,250 @@
 <div align="center">
 
-**中文 · [English](README.en.md)**
+**English · [中文](README.zh-CN.md)**
 
-<img src="Resources/AppIcon.png" width="96" alt="Ask for GPT 图标">
+<img src="Resources/AppIcon.png" width="96" alt="Ask for GPT icon">
 
 # 📖 Ask for GPT
 
-**读论文时，少切几个窗口。**
+**Read, ask, and write with fewer interruptions.**
 
-划词查词、随手提问、网页和 PDF 双语阅读；阅读笔记留在 Zotero，写作时再把表达打磨顺一点。
+Look up words, ask about a passage, and read web pages and PDFs in two languages. Keep your reading notes in Zotero, then refine your wording as you write.
 
-[![下载 macOS DMG](https://img.shields.io/badge/下载_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.dmg)
-[![下载 ZIP](https://img.shields.io/badge/下载-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.zip)
+[![Download macOS DMG](https://img.shields.io/badge/Download_macOS-DMG-28527A?style=for-the-badge&logo=apple)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.dmg)
+[![Download ZIP](https://img.shields.io/badge/Download-ZIP-4F8F8A?style=for-the-badge)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.zip)
 
-[![下载 Windows](https://img.shields.io/badge/下载_Windows-x64-0078D4?style=for-the-badge&logo=windows)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe)
+[![Download Windows](https://img.shields.io/badge/Download_Windows-x64-0078D4?style=for-the-badge&logo=windows)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.38/Ask-for-GPT-0.1.0-preview.1-Windows-x64-Setup.exe)
 
 **macOS v1.1.67 · Apple Silicon · macOS 15+ | Windows x64 v0.1.0-preview.1**
 
-[macOS 安装](docs/INSTALL.macOS.zh-CN.md) · [Windows 安装](docs/INSTALL.Windows.zh-CN.md) · [Zotero 阅读指南](docs/ZOTERO.zh-CN.md) · [翻译后端配置](docs/TRANSLATION-BACKENDS.zh-CN.md) · [界面图廊](docs/GALLERY.md) · [发行记录](https://github.com/Woyekun-cell/Ask-for-GPT/releases) · [反馈问题](https://github.com/Woyekun-cell/Ask-for-GPT/issues)
+[macOS setup (中文)](docs/INSTALL.macOS.zh-CN.md) · [Windows setup (中文)](docs/INSTALL.Windows.zh-CN.md) · [Zotero guide (中文)](docs/ZOTERO.zh-CN.md) · [Translation backends (中文)](docs/TRANSLATION-BACKENDS.zh-CN.md) · [Interface gallery](docs/GALLERY.md) · [Releases](https://github.com/Woyekun-cell/Ask-for-GPT/releases) · [Issues](https://github.com/Woyekun-cell/Ask-for-GPT/issues)
 
 </div>
 
-Ask for GPT 提供 Windows 和 macOS 两个版本，把划词查词、带着选段提问、网页和 PDF 对照阅读接在一起，标注和笔记留在 Zotero。macOS版还提供 Word/WPS 写作辅助。项目还在持续更新，我也会沿着读文献和写作中的实际需求继续完善。
+Ask for GPT comes in Windows and macOS versions, bringing word lookup, passage-based questions, and bilingual web and PDF reading together while keeping annotations and notes in Zotero. The macOS version also provides Word/WPS writing assistance. I continue to develop it around the practical needs of reading and academic writing.
 
-它保留你熟悉的工作环境，包括 Zotero 的文献标签和标注、Chrome 正在阅读的网页，以及 Word 中的稿件。英文单词优先查本地词典。
+The app works with your Zotero attachment and annotations, the page open in Chrome, or a manuscript in Word. English word lookup uses a local dictionary.
 
-**macOS 1.1.67** 随附 **Zotero 0.3.98** 插件，新增论文问答、一键总结、逐篇续聊和模型切换。
+## Read, ask, and choose your model
 
-## 全功能视频介绍
+- **Ask about the paper:** In Zotero, select text and press **⌥X** to bring the current PDF and selection into Ask GPT. Choose nearby pages or the extracted text of the whole paper, then ask a question or request a summary.
+- **Continue where you left off:** Completed conversations are stored on your Mac by PDF, scope, and connection.
+- **Choose the model:** Switch between your Codex (ChatGPT) connection and saved API providers, select a model, and adjust its supported reasoning level.
+- **Read and write:** Look up words, compare translations in Zotero or Chrome, and use Word/WPS writing assistance on macOS.
 
-[![Ask for GPT 全功能介绍：查词、翻译、提问、网页与 PDF 阅读、标注、图表和写作辅助](docs/images/feature-overview-cover.png)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4)
+These paper chat and model-switching features are included in **macOS 1.1.67** with **Zotero add-on 0.3.98**. The Windows preview is a separate build.
 
-**[▶ 点击观看完整视频 · 英文旁白 · 约 3 分钟](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4)**
+![Zotero bilingual PDF reading with the original and translated text side by side](docs/images/zotero/live-bilingual.jpg)
 
-从查一个词开始，了解段落翻译与上下文提问、Chrome 网页翻译、Zotero 双语阅读、词组对应、原生标注、联动/独立滚动、图表预览与写作建议。视频结合实机截图、录屏和明确标注的原生界面预览，按完整使用流程介绍产品。[英文稿与素材说明](docs/GALLERY.md#feature-overview)。
+*An earlier live Zotero capture using Liao et al., [A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x) (Nature, 2023; [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). The Chinese text is a machine translation.*
 
-## 下载与安装
+[Set up macOS](docs/INSTALL.macOS.zh-CN.md) · [Choose a model connection](#model-connections-and-switching) · [Ask about a PDF](#ask-summarize-and-resume-a-chat-with-the-current-pdf)
 
-**Windows版（x64）：** [Windows 安装包与便携版](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38) · [安装与配置](docs/INSTALL.Windows.zh-CN.md)。提供划词、离线词典、段落翻译与提问、Chrome/Zotero 阅读集成、PDF 对照及可配置翻译后端。[构建与检查记录](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml)见工作流。下方界面展示使用 macOS版。
+## Full feature walkthrough
 
-Windows 预览版为独立验证的 `0.1.0-preview.1` 构建（源码 `05348ad`）。macOS 安装包包含约 40 万条英文词条、Chrome/Zotero 插件和写作集成资源。
+[![Ask for GPT full feature walkthrough: lookup, translation, questions, web and PDF reading, annotations, figures and writing](docs/images/feature-overview-cover.png)](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4)
 
-| 下载 | 适合怎样安装 |
+**[▶ Watch the full video · English narration · about 3 minutes](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.55/Ask-for-GPT-feature-overview-en.mp4)**
+
+Recorded for version 1.1.55, this walkthrough covers word lookup, passage translation and contextual questions, Chrome translation, Zotero bilingual reading, phrase correspondence, native annotations, linked or independent scrolling, figure previews, and writing suggestions. Real captures and recordings are combined with clearly labeled native interface previews. [Transcript and capture details](docs/GALLERY.md#feature-overview).
+
+## Download and install
+
+The Windows preview is a separately validated `0.1.0-preview.1` build (source `05348ad`).
+
+**Windows version (x64):** [Windows installer and portable ZIP](https://github.com/Woyekun-cell/Ask-for-GPT/releases/tag/v1.1.38) · [Setup guide (中文)](docs/INSTALL.Windows.zh-CN.md). Provides selection lookup, an offline dictionary, passage translation and questions, Chrome/Zotero reading integration, bilingual PDFs, and configurable translation backends. [Build and check records](https://github.com/Woyekun-cell/Ask-for-GPT/actions/workflows/windows-preview.yml) are available in the workflow. The interface examples below use the macOS version.
+
+The macOS installer includes roughly 400,000 English dictionary entries, the Chrome and Zotero integrations, and writing integration resources.
+
+| Download | How to use it |
 | --- | --- |
-| [DMG 安装包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.dmg) | 推荐。打开磁盘映像，将应用拖入“应用程序”，按随包指引完成首次设置 |
-| [ZIP 压缩包](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.zip) | 解压后安装；包含相同应用和准备脚本 |
-| [源码](https://github.com/Woyekun-cell/Ask-for-GPT/archive/refs/heads/main.zip) | 自行构建、阅读实现或修改集成；开发步骤见[源码手册](docs/HANDBOOK.zh-CN.md) |
+| [DMG installer](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.dmg) | Recommended. Open the disk image, drag the app to Applications, and follow the included setup instructions |
+| [ZIP archive](https://github.com/Woyekun-cell/Ask-for-GPT/releases/download/v1.1.67/Ask-for-GPT-1.1.67-macOS-arm64.zip) | Extract and install; contains the same app and setup scripts |
+| [Source code](https://github.com/Woyekun-cell/Ask-for-GPT/archive/refs/heads/main.zip) | Build the app, inspect the implementation, or adapt an integration; see the [developer handbook](docs/HANDBOOK.zh-CN.md) |
 
-macOS 首次设置分四步：
+First setup on macOS takes four steps:
 
-1. **安装应用。** 将 Ask for GPT 放入“应用程序”并打开。当前版本未经 Apple 公证；若 macOS 阻止首次打开，在“系统设置 → 隐私与安全性”中按系统提示确认。
-2. **配置模型连接。** 通过 Codex 连接时，运行随包的 `01-登录ChatGPT.command`，在浏览器登录 ChatGPT。把提供的 CLI 路径复制到设置，点击 **Save & use**。也可在 **Add profile** 中添加 API 服务。
-3. **按需准备 PDF 翻译。** 运行 `02-准备PDF翻译.command`，自动准备固定版本的 uv、Python 3.12.15、预编译依赖，以及排版需要的公开字体和模型。首次需要联网，完成后本地占用约 1 GB；准备过程无需编译。日常 PDF 翻译仍需联网调用模型。
-4. **连接阅读软件。** 在应用菜单栏打开 **Page Translation…**，安装 Zotero 插件或加载 Chrome 扩展。之后即可在原来的阅读页面使用。
+1. **Install the app.** Move Ask for GPT into Applications and open it. This release is not notarized by Apple. If macOS blocks the first launch, follow its confirmation in System Settings → Privacy & Security.
+2. **Configure the model connection.** To use Codex, run the included **`01-登录ChatGPT.command`** and sign in to ChatGPT in your browser. Copy its CLI path into Settings and click **Save & use**. You can also add an API service under **Add profile**.
+3. **Prepare PDF translation when needed.** Run **`02-准备PDF翻译.command`** to download pinned uv, Python 3.12.15, prebuilt dependencies, and the public fonts and models used for layout. This one-time preparation needs internet access and about 1 GB of local storage, with no compilation. Everyday PDF translation still needs a network connection for model requests.
+4. **Connect your reader.** Open **Page Translation…** from the app's menu bar to install the Zotero add-on or load the Chrome extension.
 
-每一步的界面、权限与常见问题见[macOS 安装指南](docs/INSTALL.macOS.zh-CN.md)。只查英文单词时，本地词典可以离线使用。
+The [macOS installation guide](docs/INSTALL.macOS.zh-CN.md) covers these steps, permissions, and common problems. The local English dictionary works offline.
 
-### 模型连接与切换
+### Model connections and switching
 
-点击问答窗口底部的模型名称，可切换连接、选择模型，并在模型支持时调整 **Reasoning**。
+Click the model name at the bottom of the chat window to switch connections and models. You can also set **Reasoning** there for models that support it.
 
-- **Codex (ChatGPT)** 沿用已登录的 Codex CLI，自动读取当前订阅可用的模型。选好后点击 **Use model**。
-- **API 连接**可在 **Settings… → Add profile** 中添加。选厂商、填入 API Key 后点击 **Save & use**。同一连接内的多个模型共用一个 Key。用 **Fetch models** 获取服务返回的列表，也可手动输入模型 ID。
+- **Codex (ChatGPT)** uses your existing Codex CLI login and lists the models available through your subscription. Choose a model, then select **Use model**.
+- **API connections** can be added under **Settings… → Add profile**. Choose a provider, enter its API key, and select **Save & use**. Models in the same connection share a key. Use **Fetch models** to get the provider’s list or enter a model ID manually.
 
-厂商预设、自定义接口和 Windows 预览版的配置见[模型与翻译后端指南](docs/TRANSLATION-BACKENDS.zh-CN.md)。
+See the [model and translation backend guide](docs/TRANSLATION-BACKENDS.zh-CN.md) for provider presets, custom endpoints, and Windows preview configuration.
 
-## 在 Zotero 中精读一篇论文
+## Read a paper closely in Zotero
 
-### 带着当前 PDF 提问、总结和续聊
+### Ask, summarize, and resume a chat with the current PDF
 
-在 Zotero PDF 里划选文字后按 **⌥X**，Ask GPT 会带入当前附件和选段。也可以从 PDF 工具栏或选区浮层打开 **Ask GPT**。
+Select text in a Zotero PDF and press **⌥X** to open Ask GPT with the current attachment and selection. You can also open **Ask GPT** from the PDF toolbar or selection popup.
 
-| 范围 | 问答和总结使用的正文 |
+| Scope | Text used for questions and summaries |
 | --- | --- |
-| **Nearby** | 当前页或选段所在页，以及前后各一页 |
-| **Whole paper** | 已从整篇 PDF 提取到的正文。悬停范围控件可查看覆盖页数 |
+| **Nearby** | The current page or the page containing the selection, plus one page on each side |
+| **Whole paper** | Text extracted from the PDF. Hover over the scope control to see how many pages were read |
 
-选好范围后，点击 **Summarize** 即可提交总结请求。也可以自己输入问题，再点击 **Send**。提交时，当前范围的可用材料和续聊所需的上下文会发送到所选模型。
+Choose a scope and click **Summarize** to submit a summary request. For a custom question, type it and click **Send**. Either action sends the available material for the selected scope and the context needed for the conversation to your chosen model.
 
-已完成的问答按 PDF 附件、范围和模型连接分别保存在这台 Mac。回到同一篇 PDF 并按 **⌥X**，可以在同一连接下继续上次的对话。
+Completed conversations stay on your Mac, separated by PDF attachment, scope, and model connection. Return to the same PDF and press **⌥X** to resume its conversation under the same connection.
 
-### 先翻一页，再决定是否读完整篇
+### Start with one page, then translate the document
 
-在 Zotero 打开 PDF，右侧 **PDF 翻译**面板提供 **范围、显示、方向**三个选择。先用 **当前页 + 中英对照 + EN → 中**阅读摘要或关键结果，确认文章相关，再把范围改为 **整篇**继续处理。中文文献也可以选 **中 → EN**。
+Open a PDF in Zotero. The **PDF 翻译** sidebar offers scope, view, and language direction. Start with **当前页** (current page), **中英对照** (side by side), and **EN → 中** to read an abstract or key result. When the paper is relevant, choose **整篇** (whole document) to continue. **中 → EN** is also available for Chinese documents.
 
-![Zotero 双语阅读：英文原文与中文译文并排显示](docs/images/zotero/live-bilingual.jpg)
+The translation appears in the existing attachment tab. Progress stays visible in the sidebar and toolbar while you read the original or switch to another paper. Each document has its own task; up to two can run at once and can be stopped separately.
 
-*Zotero 双语阅读 · Liao 等，[A draft human pangenome reference](https://doi.org/10.1038/s41586-023-05896-x)（Nature, 2023；[CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)）。右侧为 Ask for GPT 生成的中文机器译文与排版。*
+### Switch between the original, translation, and side-by-side views
 
-翻译就在当前文献标签里显示。页数进度会留在侧栏和顶部工具栏，你可以继续看原文，或者切换到另一篇论文。各篇任务独立，最多同时处理两篇文档，并可分别停止。
+The toolbar offers **原文 / 译文 / 对照**: original, translated, and side by side. Translated text is laid out within the PDF pages, preserving the relationship between text, figures, and tables. Side-by-side mode uses two native PDF panes, with the original on the left and the translation on the right.
 
-### 原文、译文、对照，按阅读节奏切换
+![Translated PDF view: the completed first page](docs/images/zotero/live-translated.jpg)
 
-顶部的 **原文 / 译文 / 对照**适合三种阅读方式：看原句、连贯读译文，或左右核对。译文重新排入 PDF 页面，保留图表与正文的布局关系；对照视图左侧原文、右侧译文，使用两个原生 PDF 阅读窗格。
+Use the translated view to follow a section, then switch to side by side for a term, equation, or important conclusion. View changes reuse completed results. The original attachment keeps its identity and reading progress.
 
-![Zotero 译文视图：已完成的第一页](docs/images/zotero/live-translated.jpg)
+### Select a phrase and find its counterpart
 
-读一节内容时可以先用译文，遇到术语、公式或关键结论再切回对照。切换显示方式会复用完成结果；原 PDF、文献身份和阅读进度继续沿用原附件。
+Select words in either pane to see an established counterpart in the other language. You can move from English to Chinese or use the translation to find the original wording. This helps with terminology, verb choices, and modifiers in context.
 
-### 选中词组，查看另一侧的对应表达
+![Real pangenome selection and Chinese counterpart with the native eight-color palette](docs/images/zotero/live-word-palette.jpg)
 
-在对照视图任意一侧划选词语，另一侧会显示已经建立的对应选区。可以从英文查看中文意思，也可以从中文回看英文用词。专业术语、动词搭配和句中修饰关系，都能放在上下文中核对。
+*Live capture: “pangenome” and “泛基因组” are selected in their respective panes, with Zotero’s native color palette open. This is a temporary selection; no annotation was saved for the capture.*
 
-![真实论文双向划词与 Zotero 原生八色面板](docs/images/zotero/live-word-palette.jpg)
+Phrase mapping accounts for differences in word length and order. Where a reliable link exists, part of a Chinese selection can correspond to a complete English word while retaining the Chinese range you actually selected. Ordinary text selection does not automatically create an annotation, so you can look up or copy a phrase as you read.
 
-*真实操作：英文 “pangenome” 与中文“泛基因组”显示对应选区，原生八色面板同时打开；此图展示临时选区，尚未保存标注。*
+Enable **悬停释义** (hover gloss) in the sidebar for quick word lookup while reading. For a longer passage, select it and press **`⌥D`** to open the reading panel.
 
-词语对应会处理两种语言的词长与顺序差异。有可靠对应时，中文的部分选区可以关联到完整英文词，同时保留你实际选中的中文范围。只想查词或复制文本时，选中后继续操作即可；普通划选不会自动创建标注。
+### Keep reading notes with Zotero's eight native colors
 
-### 用原生八色标注留下自己的阅读记录
+After selecting text, use Zotero's native eight-color popup to save a highlight or underline. A mark made on the translated side is associated with the corresponding original PDF text and retains the translated excerpt. You can continue adding comments, changing colors, and navigating from Zotero's annotation list.
 
-选择正文后，使用 Zotero 原生八色浮层手动保存高亮或下划线。译文侧保存的标注会关联到原 PDF 的相应文字位置，并保留译文摘录。之后仍可在 Zotero 标注列表中添加评论、改色和定位。
+Saved marks are projected again when you return to the original or reopen the side-by-side view. Organize questions, methods, evidence, and conclusions using your own color scheme.
 
-再次切回原文或重开对照视图，已有标注会按对应关系重新显示。你可以把颜色留给自己的阅读习惯：疑问、方法、证据、结论，由你决定如何整理。
+### Scroll together or keep one pane in place
 
-### 一起滚动，或把一侧留在当前段落
+**联动** (linked) scrolling follows your reading position from either pane. Switch to **独立** (independent) to leave one pane on the results while checking a method or definition in the other. Turn linked scrolling back on to align from the side you are reading.
 
-**联动**适合顺着文章连续读：在任意一侧滚动，另一侧跟随。点击后切为 **独立**，就能把一侧停在结果段，另一侧向前查方法或术语。准备继续时，再恢复联动，以当前阅读侧重新对齐。
+![Live independent view: original Fig. 1 and the translated first page](docs/images/zotero/live-independent.jpg)
 
-![实机独立滚动：原文 Fig. 1 与中文第一页](docs/images/zotero/live-independent.jpg)
+*The original Fig. 1 remains on the left; the completed Chinese first page stays on the right. Paper attribution as above.*
 
-*左侧查看原文 Fig. 1，右侧保留已完成的中文第一页。论文来源同上。*
+![Linked and independent scrolling, with Match pane zoom in the More menu](docs/images/zotero/live-reading-tools.jpg)
 
-![联动与独立滚动，以及更多菜单中的同步大小](docs/images/zotero/live-reading-tools.jpg)
+Use **⋯ → 同步大小** (match pane zoom) when the panes have different scales. The More menu also provides current-page and whole-document translation, stop, retry, zoom, and fit width. You can keep reading while phrase correspondence is being prepared; with a completed translation, retry prioritizes missing correspondence information.
 
-两侧大小不一致时，用 **⋯ → 同步大小**把另一侧缩放比例调整到当前侧。更多菜单还提供 **本页 / 整份**、停止、重试、缩小、适合宽度和放大；按住 **Option** 单击段落，可以聚焦正在读的部分。若词语对应仍在准备，页面可以继续阅读；已有译本时，重试会优先补齐需要的对应信息。
+**Option-click** a paragraph to focus on the passage you are reading.
 
-### 图表跳到一侧，结果段留在另一侧
+### Open a figure in one pane and keep the results in the other
 
-点击 **图表**打开图表索引，按编号、页次和标题摘录查找。选择 **左侧**或 **右侧**后再点击条目，所选窗格跳到图表，另一侧保留当前位置。读到“见 Fig. 3”时，可以一边看图，一边保留结果段。
+The **图表** (figures and tables) button opens an index with labels, page numbers, and caption excerpts. Choose the left or right pane, then select an entry. That pane jumps to the figure while the other stays where it was—useful when a results paragraph refers to Fig. 3.
 
-![图表索引选择跳转侧，保留另一侧阅读位置](docs/images/zotero/live-navigation.jpg)
+![Figure and table index with a choice of target pane](docs/images/zotero/live-navigation.jpg)
 
-图表跳转会切为独立滚动。查看结束后，恢复联动即可继续精读。单击论文图片，或悬停后按 **空格**，可以打开独立预览窗口，缩放、适合窗口或导出 PNG。
+A figure jump switches scrolling to independent mode. Restore linked scrolling when you are ready to continue. The caption index is reused within the current PDF session. Completed translations are stored locally for longer-term reuse, matched by document content, page range, language direction, translation revision, and a backend configuration digest. A completed whole-document result can also supply an individual page.
 
-![真实 Fig. 1 独立预览与 PNG 导出成功状态](docs/images/zotero/live-figure-export.jpg)
+Click a figure, or hover over it and press **Space**, to open an independent preview. Zoom in to inspect labels, fit the image to the window, or export it as a PNG.
 
-*同一论文 Fig. 1 的独立窗口实拍：可放大、缩小、适合窗口及导出 PNG；图中 “PNG exported” 为本次实际导出完成状态。[放大前后示例](docs/GALLERY.md#独立放大图片并导出-png)。*
+![Real Fig. 1 in its native Preview window after successful PNG export](docs/images/zotero/live-figure-export.jpg)
 
-侧栏可分别开启 **悬停释义**和 **重开时提示阅读位置**：快速查一个词，或下次打开时接着读。完成译本长期保存在本机，按文献内容、范围、方向和后端配置匹配复用；已有整篇结果也能取用相应的本页。与源文献匹配的完整本地译本，还可以作为普通 PDF 附件管理。图表索引在当前 PDF 会话内复用。
+*Live Fig. 1 preview from the same paper. Zoom, Fit and Export PNG were exercised; “PNG exported” is the actual success status. [Preview and zoom examples](docs/GALLERY.md#独立放大图片并导出-png).*
 
-完整按钮说明、后台任务和标注操作见 **[Zotero 阅读指南](docs/ZOTERO.zh-CN.md)**。
+### Return to your reading position
 
-## 遇到一个生词，随手查清
+Enable **重开时提示阅读位置** in the PDF translation sidebar to receive a reading-position prompt when you reopen the paper. A completed local whole-document translation can be matched to its source and reused, or imported as a regular PDF attachment for separate reading.
 
-在可读取选区的应用里选中文字，按 `⌥D`打开翻译浮窗。单个英文词优先查本地词典，显示音标、词性、释义和词形；段落可在 **Local / GPT / Explain** 三种方式中继续阅读。
+See the **[Zotero reading guide](docs/ZOTERO.zh-CN.md)** for detailed controls, background tasks, and annotations.
 
-![划词翻译浮窗](docs/images/translation.png)
+## Look up a word without leaving your reading
 
-**Local** 使用 macOS 的 Apple 本机翻译；主动点击 **GPT** 时精译当前选段，点击 **Explain** 时解释选段中的术语、逻辑和限定条件。展开原文核对，结果支持选中后使用系统复制；任务进行中可停止，再用重试继续。
+Select text in an app that exposes its selection and press **`⌥D`** to open the translation panel. Single words use the local dictionary first, with pronunciation, parts of speech, meanings, and inflections. The macOS panel offers three ways to read a passage:
 
-方向可选 **EN→中 / 中→EN / Auto**；Auto 自动识别源语言后译成中文。没有选区时，可以在 **Paste text** 中粘贴并点击 **Translate**。文字颜色、自动划词和 **Ask GPT** 提问入口也在小窗中，便于顺着当前选段继续阅读。
-
-## 带着选段提问，把问题问具体
-
-选中难懂的句子，按 `⌥X`进入提问。选段会作为上下文，你可以问“这里的条件指什么”“这个术语与前文有什么关系”，也可以要求解释句子结构。回答逐步显示，之后继续追问，无需反复复制原句。
-
-需要补充外部资料时，Codex 的普通问答支持网页检索与来源链接。输入框中 **Enter** 发送，**Shift+Enter** 换行。
-
-## 在网页原来的位置读翻译
-
-Chrome 扩展把译文逐段放回网页，原文在上、译文在下。它优先处理当前视口附近的段落，随着向下阅读继续翻译；底部可以切换方向和文字颜色、暂停、继续或恢复原文。
-
-Chrome PDF 在当前标签中保版阅读，提供 **Page / Document** 范围、原文/译文/对照视图、页码与进度，以及翻译和 **Cancel** 操作。默认快捷键 `⌥⇧X`用于页面翻译或恢复；本机 PDF 需要在扩展设置中允许访问文件网址。插件安装步骤放在[安装指南](docs/INSTALL.macOS.zh-CN.md)中。
-
-macOS 上在 Preview 或 WPS 阅读 PDF 时，可从菜单 **PDF · 原阅读器** 选择本页或整份、只看译文或原文＋译文，以及 **EN→中 / 中→EN**。译本会交回原应用打开；菜单也提供最近译文、恢复原文和取消翻译，原 PDF 保留。
-
-## 写作时，先看清建议，再决定修改
-
-Word 写作集成提供拼写检查和 GPT 表达建议。建议卡把原文与修改放在一起，你可以选择替换、忽略或加入词典；润色可按最小修改或更清晰表达处理，并设置英式或美式拼写偏好。
-
-![写作建议卡：查看原文与修改，再选择替换](docs/images/writing.png)
-
-阅读和写作使用同一应用设置，便于从理解文献切换到整理自己的表达。Word/WPS 加载项需要额外准备本机连接与 HTTPS，具体步骤见[源码手册的写作集成部分](docs/HANDBOOK.zh-CN.md#5-word--wps-写作加载项)。WPS 提供侧栏主动检查，适用范围见下方兼容性说明。
-
-## 设置与快捷键
-
-macOS 当前使用英文界面。下方设置截图来自历史版本，模型配置以本页的[模型连接与切换](#模型连接与切换)为准。
-
-![设置：Codex 路径、翻译配置、自动划词和快捷键](docs/images/settings.png)
-
-| 默认快捷键 | 操作 |
+| Tab | Use it for |
 | --- | --- |
-| `⌥D` | 翻译选中文字，可在设置中修改 |
-| `⌥X` | 围绕选段提问，在 Zotero 中同时带入当前 PDF |
-| `⌥⇧X` | Chrome / Zotero 页面翻译或恢复 |
-| `⌘,` | 打开设置 |
-| `Enter` / `Shift+Enter` | 问答中发送 / 换行 |
+| **Local** | Apple on-device translation of the selected text |
+| **GPT** | A closer translation of the selected passage |
+| **Explain** | The selected passage's terminology, reasoning, and qualifications |
 
-## 兼容性与数据处理
+**GPT** and **Explain** start a model request when you click them. Use **Stop / Retry** to control a request.
 
-| 项目 | 当前范围 |
+![Translation panel](docs/images/translation.png)
+
+Choose **EN → 中** or **中 → EN** for the language direction. **Auto** detects the source language and translates into Chinese. Expand the original to compare wording, select result text and copy it with the system shortcut, or adjust the text color. You can also paste text into **Paste text** and click **Translate**. Enable automatic selection translation for continuous reading, or use the shortcut when needed.
+
+## Ask a specific question with the passage attached
+
+Choose **Ask GPT** in the reading panel, or select a difficult sentence and press **`⌥X`**. The passage becomes context for your question. Ask what a condition refers to, how a term relates to the previous paragraph, or how the sentence is structured. Replies stream into the panel, and you can follow up without copying the passage again.
+
+General Codex chat supports web search and source links when you need supporting material. Press **Enter** to send and **Shift+Enter** for a new line.
+
+## Follow translations on the original web page
+
+Use the Chrome extension button or **`⌥⇧X`** to insert translations paragraph by paragraph, with the original above and translation below. Translation starts near the current viewport and continues as you scroll. The reading controls provide language direction, text color, **Pause translation / Resume translation**, and **Restore original**.
+
+Chrome PDFs use a layout-preserving reader in the current tab, with **Page / Document** range and **Translation / Original + Translation / Original** display options. The toolbar keeps page numbers, language direction, progress, **Translate**, and **Cancel** together. Local PDFs require file URL access in the extension settings; see the [installation guide](docs/INSTALL.macOS.zh-CN.md).
+
+On macOS, the **PDF · 原阅读器** menu supports PDFs open in Preview or WPS. Choose current-page or whole-document translation, translation-only or bilingual output, and either language direction. The generated PDF opens in the original reader; the menu also offers the most recent translation, a return to the original PDF, and cancellation.
+
+## Review writing suggestions before applying them
+
+The Word integration provides spelling checks and GPT writing suggestions. The suggestion card shows the original and revision together, with actions to replace, ignore, or add to the dictionary. Choose minimal edits or clearer expression, and set US or UK spelling preferences.
+
+![Writing suggestion with the original, revision, and user-controlled replacement](docs/images/writing.png)
+
+Reading and writing share the same app settings, making it easy to move from understanding a paper to expressing your own ideas. Word/WPS add-ins require additional local connection and HTTPS setup, covered in the [developer handbook](docs/HANDBOOK.zh-CN.md#5-word--wps-写作加载项). WPS offers explicit checking in a sidebar; its current scope is listed below.
+
+## Settings and shortcuts
+
+For model setup, see [Model connections and switching](#model-connections-and-switching).
+
+| Default shortcut | Action |
 | --- | --- |
-| macOS版 | Apple Silicon Mac；完整 PDF 环境要求 macOS 15+；当前未经 Apple 公证 |
-| Windows版 | Windows x64；提供划词、翻译、提问及 Chrome/Zotero PDF 对照；安装与平台范围见[Windows 指南](docs/INSTALL.Windows.zh-CN.md) |
-| Apple 本机短段翻译 | macOS 26+，需安装相应语言包 |
-| AI 连接（macOS） | Codex CLI 的个人 ChatGPT 登录或 API 服务。Word/WPS 写作审阅使用 Codex |
-| Zotero | Zotero 9.x 或 10.0.x（9.0.6 已验证启用；10.0.6、10.0.7 已验证 PDF 翻译）；PDF 翻译需要准备随包 PDF 环境 |
-| Chrome | Chrome 106+；本机 PDF 需文件网址访问权限 |
-| PDF 内容 | 面向有文字层的 PDF；扫描件需先 OCR，图片内文字保留原样；复杂竖排图内文字可能缺少精确词语对应 |
-| Word / WPS（macOS） | Word 提供文内建议；WPS 当前为侧栏主动检查，文内彩色下划线不可用，替换与撤销仍需目标版本实测 |
+| `⌥D` | Translate selected text; configurable |
+| `⌥X` | Ask about selected text. In Zotero, this also attaches the open PDF |
+| `⌥⇧X` | Translate or restore a page in Chrome / Zotero |
+| `⌘,` | Open settings |
+| `Enter` / `Shift+Enter` | Send / new line in questions |
 
-词典查询、Apple 本机翻译、PDF 提取与排版在设备上处理。AI 翻译、句词映射和问答会把任务需要的文字和上下文发给所选服务。写作审阅将相应文字提交给 Codex。请使用有权交由相应服务处理的内容。
+## Compatibility and data handling
 
-原 PDF 文件不被覆盖；手动保存的 Zotero 标注写入原附件的标注记录。完成译本长期保留，未完成任务的临时文件另行清理。使用译文撰写或引用前，应核对术语、数字、公式与原意。物理修饰键滚轮手势、实际显示帧率和全新 Mac 的完整安装仍需进一步实机检查。
+| Component | Current scope |
+| --- | --- |
+| macOS version | Apple Silicon Mac; the full PDF environment requires macOS 15+; this release is not Apple-notarized |
+| Windows version | Windows x64; selection lookup, translation, questions, and Chrome/Zotero bilingual PDFs; see the [Windows guide (中文)](docs/INSTALL.Windows.zh-CN.md) for setup and platform scope |
+| Apple on-device passage translation | macOS 26+ with the relevant language packs |
+| AI connections (macOS) | Codex CLI with ChatGPT sign-in or an API service. Word/WPS writing review uses Codex |
+| Zotero | Zotero 9.x or 10.0.x (add-on activation verified on 9.0.6; PDF translation verified on 10.0.6 and 10.0.7); PDF translation requires the included PDF setup step |
+| Chrome | Chrome 106+; local PDFs require file URL permission |
+| PDF content | Requires a text layer; scans need OCR first, and image text stays unchanged; complex vertical figure text may lack exact phrase correspondence |
+| Word / WPS (macOS) | Word offers inline suggestions; WPS currently uses explicit sidebar checks without inline colored underlines, and replacement and undo need testing in the target host version |
 
-阅读界面与功能演示的图片来源见[界面图廊](docs/GALLERY.md)。
+Dictionary lookup, Apple translation, PDF extraction, and layout run on your device. AI translation, sentence and phrase mapping, and chat send the relevant text and context to the selected service. Writing review sends the relevant text to Codex. Use content you have permission to submit to the selected service.
 
-## 源码与开发
+Original PDFs are preserved. Manually saved Zotero annotations belong to the original attachment. Completed translations remain stored locally, while unfinished working files have separate cleanup rules. Check terminology, numbers, equations, and meaning before quoting a translation. Physical modifier-wheel gestures, displayed frame rates, and a complete fresh-Mac installation still need further live testing.
 
-主程序使用 Swift、AppKit 和 SwiftUI；阅读、写作集成和 PDF 引擎源码一并提供。
+Sources for the reading interface and feature demonstrations are linked in the [interface gallery](docs/GALLERY.md).
+
+## Source and development
+
+The app uses Swift, AppKit, and SwiftUI. Sources for the reading integrations, writing integrations, and PDF engine are included.
 
 ```text
-Sources/       macOS 应用与核心逻辑
-Integrations/  Chrome、Zotero、Word/WPS 与 PDF 引擎
-Resources/     图标、本地词典与写作规则
-Tests/         Swift 核心测试
-scripts/       构建、安装、打包与检查
-docs/          使用指南、界面来源与发行清单
+Sources/       macOS app and core logic
+Integrations/  Chrome, Zotero, Word/WPS, and the PDF engine
+Resources/     Icons, local dictionary, and writing rules
+Tests/         Swift core tests
+scripts/       Build, install, package, and check tools
+docs/          Guides, interface sources, and release manifest
 ```
 
-自行构建、运行测试和配置开发环境见[源码手册](docs/HANDBOOK.zh-CN.md)。公开文件的校验值见[发行清单](docs/release-manifest.json)。
+See the [developer handbook](docs/HANDBOOK.zh-CN.md) to build the app, run tests, or configure a development environment. Public file checksums are listed in the [release manifest](docs/release-manifest.json).
 
-本地词典来自 [ECDICT](https://github.com/skywind3000/ECDICT)，PDF 排版集成使用 [BabelDOC](https://github.com/funstory-ai/BabelDOC)。各组件的许可证、固定版本与来源声明见 [NOTICE](NOTICE.md)。
+The local dictionary comes from [ECDICT](https://github.com/skywind3000/ECDICT); PDF layout integration uses [BabelDOC](https://github.com/funstory-ai/BabelDOC). Component licenses, pinned versions, and source notices are retained in [NOTICE](NOTICE.md).
 
-欢迎提交 [Issue](https://github.com/Woyekun-cell/Ask-for-GPT/issues)。附上系统、宿主与插件版本、复现步骤，以及不含私人内容的截图，会更方便定位问题。
+Please report problems through [Issues](https://github.com/Woyekun-cell/Ask-for-GPT/issues), with your system, host and extension versions, reproduction steps, and screenshots without private content.
