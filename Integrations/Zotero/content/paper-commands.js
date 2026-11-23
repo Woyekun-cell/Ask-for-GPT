@@ -163,16 +163,41 @@
       return matches[0];
     }
 
-    async function locateAnswerQuotes(operation, context, document) {
+    async function titleBookmarkPage(quote, document) {
+      const {pdf} = document;
+      try {
+        const outline = await pdf.getOutline?.();
+        if (!Array.isArray(outline)) return null;
+        const entries = outline.filter(entry => comparable(entry?.title) === quote);
+        if (entries.length !== 1) return null;
+        const {dest} = entries[0];
+        const destination = typeof dest === 'string' ? await pdf.getDestination?.(dest) : dest;
+        if (!Array.isArray(destination)) return null;
+        const reference = destination[0];
+        let index = reference;
+        if (Number.isInteger(reference?.num) && Number.isInteger(reference?.gen)) {
+          index = await pdf.getPageIndex?.(reference);
+        }
+        return Number.isInteger(index) && index >= 0 && index < pdf.numPages ? index : null;
+      } catch (_) {
+        return null;
+      } finally {
+        document.current();
+      }
+    }
+
+    async function locateAnswerQuotes(operation, context, document, exactPageIndex = null) {
       if (!Array.isArray(operation.quotes) || !operation.quotes.length || operation.quotes.length > 12
           || operation.quotes.some(quote => !plain(quote) || quote.length > 6000)) throw failure('missing');
       const quotes = [...new Set(operation.quotes.map(quote => plain(quote).replace(/\s+/gu, ' ')))];
       const found = quotes.map(() => null);
-      const pageCount = document.pdf.numPages;
+      const first = exactPageIndex ?? 0;
+      const end = exactPageIndex === null ? document.pdf.numPages : exactPageIndex + 1;
+      const pageCount = end - first;
       let pagesScanned = 0;
-      for (let start = 0; start < pageCount; start += 4) {
+      for (let start = first; start < end; start += 4) {
         document.current();
-        const count = Math.min(4, pageCount - start);
+        const count = Math.min(4, end - start);
         const pages = await Promise.all(Array.from({length: count}, async (_, offset) => {
           const index = start + offset;
           const chars = await Reading.pageChars({...document, index, Components, setTimer, clearTimer});
@@ -193,10 +218,10 @@
             };
           });
         });
-        context.onProgress?.(start + count, pageCount);
+        context.onProgress?.(start + count - first, pageCount);
       }
       document.current();
-      // A failed page read cannot establish that the match is unique in the PDF.
+      // A failed page read cannot establish uniqueness in the search range.
       const matches = pagesScanned === pageCount ? found.filter(Boolean) : [];
       return {matches, report: {matched: matches.length, unresolvedMatches: quotes.length - matches.length,
         pagesScanned, pageCount}};
@@ -314,6 +339,7 @@
         if (!resolved.length) return response;
       } else if (answerQuotes || paperText) {
         let target = answerQuotes;
+        let titlePageIndex = null;
         const abstract = paperText?.type === 'paperAbstract';
         const missingText = abstract ? 'paper-abstract-missing' : 'paper-title-missing';
         const style = annotationStyle(paperText || answerQuotes);
@@ -322,8 +348,11 @@
           const quote = comparable(metadata.getField?.(abstract ? 'abstractNote' : 'title'));
           if (!quote || quote.length > 6000) throw failure(missingText);
           target = {quotes: [quote]};
+          // The title bookmark identifies the article page when the cover
+          // repeats the same title. Its glyphs must still match exactly.
+          if (!abstract) titlePageIndex = await titleBookmarkPage(quote, document);
         }
-        const {matches, report} = await locateAnswerQuotes(target, context, document);
+        const {matches, report} = await locateAnswerQuotes(target, context, document, titlePageIndex);
         if (paperText && !matches.length)
           throw failure(report.pagesScanned < report.pageCount ? 'paper-text-unread' : missingText);
         if (!paperText) response.answerQuotesScan = report;
