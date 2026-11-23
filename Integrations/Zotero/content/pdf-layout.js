@@ -82,7 +82,7 @@
       || new Set(value.sourcePages).size !== value.sourcePages.length) throw new PDFError('response');
     if (selection === 'all' && (value.sourcePages.length !== value.pageCount || value.sourcePages.some((x,i) => x !== i))) throw new PDFError('response');
     if (selection && selection !== 'all' && (value.sourcePages.length !== 1 || value.sourcePages[0] !== Number(selection)-1)) throw new PDFError('response');
-    const legacy=value.state==='complete'&&value.reusedLegacy===true&&typeof value.translationRevision==='string'&&value.translationRevision.length<=256&&/^pdf-layout-gpt-(?:v4-aligned|v5-aligned-visual|v6-paragraph-isolated)(?:-backend-[0-9a-f]{64})?$/.test(value.translationRevision);
+    const legacy=value.state==='complete'&&value.reusedLegacy===true&&typeof value.translationRevision==='string'&&value.translationRevision.length<=256&&/^pdf-layout-gpt-(?:v4-aligned|v5-aligned-visual|v6-paragraph-isolated|v7-context-paragraph)(?:-backend-[0-9a-f]{64})?$/.test(value.translationRevision);
     return { id: value.id, state: value.state, sourcePages: value.sourcePages.slice(), pageCount: value.pageCount,
       ...(legacy?{reusedLegacy:true,translationRevision:value.translationRevision}:{}),
       error: typeof value.error === 'string' && knownErrors.has(value.error) ? value.error : 'translation_failed',

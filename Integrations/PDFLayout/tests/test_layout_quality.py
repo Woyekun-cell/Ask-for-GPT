@@ -160,6 +160,41 @@ class LayoutQualityTests(unittest.TestCase):
         protected=quality.protect_source_page(page([p,email,body]))
         self.assertEqual(protected,{id(p),id(email)})
 
+    def test_iscience_running_brand_preserves_original_glyphs_on_mirrored_pages(self):
+        for journal_x, badge_x in ((57, 480), (480, 57)):
+            with self.subTest(journal_x=journal_x):
+                journal = paragraph('iScience Research Article', journal_x, 720)
+                badge = paragraph('ll OPEN ACCESS', badge_x, 726, size=9)
+                title = paragraph('A study of open access at Cell Press', 57, 680, 'title', size=19)
+                original = copy.deepcopy([journal, badge, title])
+                pg = page([journal, badge, title], number=3)
+                self.assertEqual(quality.protect_source_page(pg), {id(journal), id(badge)})
+                self.assertEqual(pg.pdf_paragraph, original)
+
+    def test_cell_press_open_access_labels_are_protected_only_in_the_publication_margin(self):
+        press = paragraph('Cell Press', 480, 745)
+        access = paragraph('OPEN ACCESS', 480, 730)
+        fragment = paragraph('ll', 497, 745, size=13)
+        journal = paragraph('iScience', 57, 738, size=15)
+        article_type = paragraph('Article', 57, 721)
+        unrelated = paragraph('Article', 240, 721)
+        exact_in_body = paragraph('Open Access', 57, 500, 'title')
+        mention = paragraph('Cell Press open access publishing', 57, 730, 'title')
+        pg = page([press, access, fragment, journal, article_type, unrelated, exact_in_body, mention])
+        self.assertEqual(quality.protect_source_page(pg),
+                         {id(press), id(access), id(fragment), id(journal), id(article_type)})
+
+    def test_footer_imprint_and_page_number_remain_original_but_nearby_notes_translate(self):
+        imprint = paragraph('2 iScience 26, 107309, August 18, 2023', 57, 20)
+        number = paragraph('2', 57, 20, size=7)
+        license_line = paragraph('This is an open access article under the CC BY-NC-ND license.',
+                                 164, 11, size=7)
+        caption = paragraph('Open access use by cohort', 57, 34, 'figure_caption')
+        ordinary = paragraph('This is an open access article under the CC BY-NC-ND license.',
+                             164, 120, size=7)
+        pg = page([imprint, number, license_line, caption, ordinary], number=2)
+        self.assertEqual(quality.protect_source_page(pg), {id(imprint), id(number), id(license_line)})
+
     def test_caption_word_tail_is_rejoined_without_discarding_source_glyph(self):
         p=paragraph('length and platform',x=100,y=300,label='table_caption')
         end=p.pdf_paragraph_composition[0].pdf_character.box.x2
@@ -169,6 +204,34 @@ class LayoutQualityTests(unittest.TestCase):
         self.assertEqual(p.unicode,'length and platforms')
         self.assertEqual(pg.pdf_paragraph,[p])
         self.assertIs(p.pdf_paragraph_composition[-1].pdf_character,g)
+
+    def test_title_rejoins_both_midword_fragments_before_translation(self):
+        leading = paragraph('Zebrafish o', 58, 486)
+        heading = paragraph('xytocin neuron-glial pituicytes axo-glial interac', leading.box.x2, 486, 'title')
+        heading.layout_id = 10
+        trailing = paragraph('tome', heading.box.x2, 486)
+        body = paragraph('The next prose paragraph.', 58, 473, 'plain text')
+        pg = page([leading, heading, trailing, body], number=8)
+        original = [composition.pdf_character for part in (leading, heading, trailing)
+                    for composition in part.pdf_paragraph_composition]
+        self.assertEqual(quality.protect_source_page(pg), set())
+        self.assertEqual(pg.pdf_paragraph, [leading, body])
+        self.assertEqual(leading.unicode, 'Zebrafish oxytocin neuron-glial pituicytes axo-glial interactome')
+        self.assertEqual(leading.layout_label, 'title')
+        self.assertEqual(leading.layout_id, 10)
+        self.assertEqual(leading.box.x2, trailing.box.x2)
+        self.assertEqual([id(c.pdf_character) for c in leading.pdf_paragraph_composition], list(map(id, original)))
+
+    def test_title_leaves_distinct_color_spacing_and_baseline_separate(self):
+        for offset_x, offset_y, color in ((0, 0, 'black'), (3, 0, 'red'), (0, 2, 'red')):
+            with self.subTest(offset_x=offset_x, offset_y=offset_y, color=color):
+                p = paragraph('An independent title', 58, 480, 'title')
+                p.pdf_style.graphic_state = 'red'
+                adjacent = paragraph('other text', p.box.x2 + offset_x, 480 + offset_y)
+                adjacent.pdf_style.graphic_state = color
+                pg = page([p, adjacent])
+                self.assertEqual(quality.protect_source_page(pg), set())
+                self.assertEqual(pg.pdf_paragraph, [p, adjacent])
 
     def test_caption_superscript_does_not_join_word(self):
         p=paragraph('A table result',x=100,y=300,label='table_caption')

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ask for GPT Inline",
-  "version": "1.1.2",
+  "version": "1.1.6",
   "minimum_chrome_version": "106",
   "description": "Translate web pages and preserve PDF layout in the current tab, using Ask for GPT.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlPMZHrzjROQwSlkAN9dwh38F3QETtHQ989g66IgVXfPaZTW59PGW+gArX/F/HutzunVn0DcKnQ+SV6GiblJnr18ewmHGYfUdSewGfoxdlwTV0nbArK2EFDvRPlQ4D1y/sJFIBJbPTbVwGYpsamdXrh/lmSjtdxdXFxUigYhSLZW/YCtRdXrAlyyubl7Dfl/4O9zhe5OmB4d4fkM2DevW9DpVezukPkxzWgbqrTzRHniAaXMSSf/5GbZBmefbTZr9TgK6liFIhPaV0Zes0w9LSriRj7TopgtIoRjx4unbCBKj30p75D9b1wszQQTOFDunumRu/XsxjYd+Fu4zo2Fz+QIDAQAB",

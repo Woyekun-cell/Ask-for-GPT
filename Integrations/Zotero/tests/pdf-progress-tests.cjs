@@ -29,7 +29,7 @@ async function check(name, run) { await run(); checks++; console.log('PASS ' + n
   await check('legacy cache provenance is complete, bounded and never inferred from an untrusted flag',()=>{
     const base={id:'fixture',state:'complete',pageCount:2,sourcePages:[0,1]},revision='pdf-layout-gpt-v5-aligned-visual-backend-'+'a'.repeat(64);
     const safe=PDF.validateStatus({...base,reusedLegacy:true,translationRevision:revision});assert.equal(safe.reusedLegacy,true);assert.equal(safe.translationRevision,revision);
-    for(const fields of [{reusedLegacy:true},{reusedLegacy:true,translationRevision:'private'},{reusedLegacy:true,translationRevision:'pdf-layout-gpt-v7-context-paragraph'},{reusedLegacy:'true',translationRevision:revision},{reusedLegacy:true,translationRevision:revision,state:'running'}]){const value=PDF.validateStatus({...base,...fields});assert.equal(value.reusedLegacy,undefined);assert.equal(value.translationRevision,undefined);}
+    for(const fields of [{reusedLegacy:true},{reusedLegacy:true,translationRevision:'private'},{reusedLegacy:true,translationRevision:'pdf-layout-gpt-v8-source-styles'},{reusedLegacy:'true',translationRevision:revision},{reusedLegacy:true,translationRevision:revision,state:'running'}]){const value=PDF.validateStatus({...base,...fields});assert.equal(value.reusedLegacy,undefined);assert.equal(value.translationRevision,undefined);}
   });
   await check('figure input and detection timings retain fixed bounded numbers only',()=>{
     const value=PDF.diagnostic('figureInputTiming',{figureNumbers:{waitMilliseconds:17,cacheReady:1,inputKind:2,detectionMilliseconds:40,modelMilliseconds:30,operatorsMilliseconds:8,geometryMilliseconds:2,width:900,height:450,text:'PRIVATE'}});

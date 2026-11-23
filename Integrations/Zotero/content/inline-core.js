@@ -39,7 +39,7 @@
     return { left: Math.min(rect[0], rect[2]), right: Math.max(rect[0], rect[2]),
       bottom: Math.min(rect[1], rect[3]), top: Math.max(rect[1], rect[3]), height: Math.max(1, Math.abs(rect[3] - rect[1])) };
   }
-  function paragraphsFromChars(chars) {
+  function paragraphsFromChars(chars, {preserveVerticalGaps = false} = {}) {
     if (!Array.isArray(chars) || chars.length > 300000) throw new InlineError('text');
     const paragraphs = []; let text = '', characters = 0, previous = null;
     const flush = () => { if (text.trim()) paragraphs.push(text.trim()); text = ''; };
@@ -54,9 +54,12 @@
       if (rect && before && ![90, 270].includes(char.rotation) && ![90, 270].includes(previous.char.rotation)) {
         const height = Math.max(rect.height, before.height);
         const sameLine = Math.abs(rect.bottom - before.bottom) <= height * 0.65;
+        // Paper citations keep large blank gaps when the native stream omits
+        // paragraph markers. The order and ordinary soft wraps stay intact.
+        const blankGap = preserveVerticalGaps && before.bottom - rect.bottom > height * 1.8;
         // Missing break markers must not glue separate columns or a return
         // from the bottom of one column to the top of the next into one block.
-        if ((sameLine && rect.left - before.right > height * 2.5)
+        if (blankGap || (sameLine && rect.left - before.right > height * 2.5)
           || (previous.char.lineBreakAfter && rect.bottom > before.bottom + height)
           || (rect.bottom > before.bottom + height * 1.8 && Math.abs(rect.left - before.left) > height * 2.5)) flush();
       }

@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Ask for GPT Inline",
-  "version": "0.3.98",
-  "description": "Layout-preserving PDF translation and paper questions in the current Zotero reader, using local Ask for GPT.",
+  "version": "0.3.126",
+  "description": "Bilingual PDF reading, per-tab paper chat, linked evidence, reading cards, and supplementary files in Zotero.",
   "author": "Ask for GPT",
   "applications": {
     "zotero": {

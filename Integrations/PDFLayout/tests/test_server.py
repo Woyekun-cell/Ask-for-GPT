@@ -413,6 +413,26 @@ class CompletedResultCacheTests(unittest.TestCase):
             self.assertEqual(self.completed(manager=restarted).id, pending.id)
 
     @unittest.skipIf(os.name == "nt", "macOS model route uses a protected file")
+    def test_codex_model_and_reasoning_each_key_the_current_pdf_renderer(self):
+        route_file = self.root / "model-route.json"
+        first = {"cliPath": "/codex", "model": "gpt-6.2-sol", "reasoningEffort": "medium"}
+        server_module.atomic_json(route_file, first)
+        manager = self.new_manager(model_route_file=route_file)
+        initial = self.completed(manager=manager)
+        server_module.atomic_json(route_file, {**first, "reasoningEffort": "high"})
+        deeper = self.completed(manager=manager)
+        server_module.atomic_json(route_file, {**first, "model": "gpt-6.2-astra"})
+        changed = self.completed(manager=manager)
+
+        self.assertEqual(json.loads(initial.model_route), first)
+        self.assertEqual(len({job.cache_info["cacheKey"] for job in (initial, deeper, changed)}), 3)
+        manager.shutdown()
+        restarted = self.new_manager(model_route_file=route_file)
+        self.assertEqual(json.loads(restarted.get(initial.id).model_route), first)
+        with patch.object(server_module.subprocess, "Popen", side_effect=AssertionError("same route spawned worker")):
+            self.assertEqual(self.completed(manager=restarted).id, changed.id)
+
+    @unittest.skipIf(os.name == "nt", "macOS model route uses a protected file")
     def test_invalid_model_route_refuses_job_without_falling_back_to_codex(self):
         route_file = self.root / "model-route.json"
         server_module.atomic_json(route_file, {"apiProfile": "invalid"})

@@ -666,7 +666,7 @@ def translate_job(job_dir: Path, cache_root: Path, helper_path: Path):
             no_dual=True, no_mono=False, only_include_translated_page=True,
             watermark_output_mode=WatermarkOutputMode.NoWatermark,
             auto_extract_glossary=False, save_auto_extracted_glossary=False,
-            disable_rich_text_translate=True, use_alternating_pages_dual=False,
+            disable_rich_text_translate=False, use_alternating_pages_dual=False,
             qps=100, pool_max_workers=1, use_rich_pbar=False,
             skip_clean=False, enhance_compatibility=False,
             skip_scanned_detection=False, ocr_workaround=False,

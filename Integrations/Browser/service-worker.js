@@ -6,6 +6,7 @@ importScripts('pdf-core.js', 'pdf-worker.js');
 // headers, response bodies, or native errors to the content script.
 const BASE = 'http://127.0.0.1:43792';
 const PREFIX = 'askgpt.inline.';
+const ACTION_TITLE = chrome.runtime.getManifest().action.default_title;
 const flights = new Map();
 const tabTransactions = new Map();
 let configuration;
@@ -62,12 +63,14 @@ function abortSession(id) {
 }
 async function revoke(tabId, notify = true) {
   const current = await session(tabId);
-  if (!current) return;
-  abortSession(current.id);
-  await chrome.storage.session.remove(PREFIX + tabId);
-  if (notify) await chrome.tabs.sendMessage(tabId, { type: 'INLINE_RESTORE', sessionId: current.id },
-    { documentId: current.documentId }).catch(() => {});
+  if (current) {
+    abortSession(current.id);
+    await chrome.storage.session.remove(PREFIX + tabId);
+    if (notify) await chrome.tabs.sendMessage(tabId, { type: 'INLINE_RESTORE', sessionId: current.id },
+      { documentId: current.documentId }).catch(() => {});
+  }
   await chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
+  await chrome.action.setTitle({ tabId, title: ACTION_TITLE }).catch(() => {});
 }
 async function validated(sender, message, requireRunning = true) {
   if (sender.id !== chrome.runtime.id || !sender.tab || !Number.isInteger(sender.tab.id) || sender.frameId !== 0 ||
@@ -174,7 +177,14 @@ async function toggle(tab, fileGrant) {
   if (!authorized?.active || urlKey(authorized.url) !== urlKey(tab.url)) throw new Error('INACTIVE');
   const existing = await session(tab.id);
   if (existing) { await revoke(tab.id); return; }
-  if (!webURL(tab.url)) throw new Error('Open a web page or a PDF.');
+  if (!webURL(tab.url)) {
+    const title = tab.url?.startsWith('file:')
+      ? '本地 HTML · 论文阅读版请用右上角「中文／EN／对照」切换'
+      : '打开普通网页或 PDF 后再使用翻译';
+    await chrome.action.setBadgeText({ tabId: tab.id, text: '' }).catch(() => {});
+    await chrome.action.setTitle({ tabId: tab.id, title }).catch(() => {});
+    return;
+  }
   let result;
   try { result = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] },
     world: 'ISOLATED', files: ['content.js'] }); }
@@ -189,7 +199,8 @@ async function toggle(tab, fileGrant) {
     const response = await chrome.tabs.sendMessage(tab.id, { type: 'INLINE_START', sessionId: current.id }, { documentId });
     if (!response?.ok) throw new Error('Inline translation could not start.');
     if (response.supported === false) { await revoke(tab.id); await pdf.open(tab); return; }
-    await chrome.action.setBadgeText({ tabId: tab.id, text: response.supported === false ? 'PDF' : 'ON' });
+    await chrome.action.setBadgeText({ tabId: tab.id, text: 'ON' });
+    await chrome.action.setTitle({ tabId: tab.id, title: ACTION_TITLE }).catch(() => {});
   } catch (error) { await revoke(tab.id); throw error; }
 }
 function invoke(tab, requestFile = true) {

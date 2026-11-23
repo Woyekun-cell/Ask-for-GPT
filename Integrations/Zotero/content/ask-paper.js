@@ -55,7 +55,7 @@
         const options = Components?.utils?.cloneInto?.({pageIndex: index}, pdf.win) ?? {pageIndex: index};
         const value = unwrap(await pdf.pdfDocument.getPageData(options));
         if (!current()) throw failure('stopped');
-        if (Array.isArray(value?.chars)) return Core.paragraphsFromChars(value.chars).join('\n\n');
+        if (Array.isArray(value?.chars)) return Core.paragraphsFromChars(value.chars, {preserveVerticalGaps: true}).join('\n\n');
       } catch (_) {
         if (!current()) throw failure('stopped');
       }
@@ -74,16 +74,18 @@
     if (Array.isArray(ranges)) {
       const selected = ranges.slice(0, 2).filter(range => !range?.collapsed && typeof range?.text === 'string');
       if (selected.length) return {text: selected.map(range => range.text).join(' '),
-        pageIndex: selected[0].position?.pageIndex ?? selected[0].pageIndex};
+        pageIndex: selected[0].position?.pageIndex ?? selected[0].pageIndex,
+        ...(selected.length === 1 && selected[0].position?.rects ? {position: selected[0].position} : {})};
       return null;
     }
     const key = native?._lastViewPrimary === false ? 'secondaryViewSelectionPopup' : 'primaryViewSelectionPopup';
     const annotation = native?._state?.[key]?.annotation;
     return typeof annotation?.text === 'string'
-      ? {text: annotation.text, pageIndex: annotation.position?.pageIndex} : null;
+      ? {text: annotation.text, pageIndex: annotation.position?.pageIndex,
+        ...(annotation.position?.rects ? {position: annotation.position} : {})} : null;
   }
-  function create({Zotero, Components, readConnection, ensureReady, setTimer, clearTimer}) {
-    return async (reader, {isActive, selection, currentPage, shortcut} = {}) => {
+  function createExtractor({Zotero, Components, setTimer, clearTimer}) {
+    return async (reader, {isActive, selection, currentPage, beforeExtract} = {}) => {
       if (!isActive?.()) throw failure('stopped');
       const pdf = Core.resolvePDFContext(reader);
       if (pdf.pageCount > 2000) throw failure('limit');
@@ -96,9 +98,7 @@
         } catch (_) { return false; }
       };
       const check = () => { if (!current()) throw failure('stopped'); };
-      const connection = shortcut?.connection ?? await readConnection();
-      check();
-      if (!shortcut) await ensureReady?.(connection, current);
+      if (beforeExtract) await beforeExtract(current);
       check();
       const parent = attachment.item.parentID ? Zotero.Items?.get?.(attachment.item.parentID) : null;
       const page = [selection?.pageIndex, currentPage, pdf.pageIndex]
@@ -148,6 +148,20 @@
       const body = JSON.stringify(payload);
       if (bytes(body) > MAX_BODY_BYTES) throw failure('limit');
       check();
+      return {payload, body, current};
+    };
+  }
+  function create({Zotero, Components, readConnection, ensureReady, setTimer, clearTimer}) {
+    const extract = createExtractor({Zotero, Components, setTimer, clearTimer});
+    return async (reader, options = {}) => {
+      const {shortcut} = options;
+      let connection;
+      const {body, current} = await extract(reader, {...options, async beforeExtract(isCurrent) {
+        connection = shortcut?.connection ?? await readConnection();
+        if (!isCurrent()) throw failure('stopped');
+        if (!shortcut) await ensureReady?.(connection, isCurrent);
+      }});
+      if (!current()) throw failure('stopped');
       let response;
       try {
         const headers = {'Content-Type': 'application/json', Authorization: 'Bearer ' + connection.token};
@@ -169,7 +183,7 @@
       if (response.status !== 200 || value?.ok !== true || Object.keys(value).length !== 1) throw failure('response');
     };
   }
-  const api = {create, sourceSelection, errorMessage};
+  const api = {create, createExtractor, sourceSelection, errorMessage};
   root.AskGPTPaper = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(this);

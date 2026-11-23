@@ -208,6 +208,9 @@ test('two PDF tabs retain independent background jobs and cancelling one leaves 
 });
 test('optional file grant starts synchronously before any await and never runs for a web source', async () => {
   const h = harness(); assert.equal(h.worker.prepare({ ...h.tab }), null); assert.equal(h.permissionRequests.length, 0);
+  h.tab.url = 'file:///private/bilingual-paper.html';
+  assert.equal(h.worker.prepare({ ...h.tab }), null);
+  assert.equal(h.permissionRequests.length, 0);
   h.tab.url = 'file:///private/fixture.pdf';
   const prepared = h.worker.prepare({ ...h.tab });
   assert.equal(h.permissionRequests.length, 1, 'permission request must run in the action event turn');

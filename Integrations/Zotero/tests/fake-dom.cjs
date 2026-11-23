@@ -30,7 +30,17 @@ class Element extends Target {
   getAttribute(name) { return this.attributes.get(name); }
   removeAttribute(name) { this.attributes.delete(name); }
   appendChild(node) { return this.insertBefore(node, null); }
-  append(...nodes) { for (const node of nodes) this.appendChild(node); }
+  append(...nodes) {
+    for (const node of nodes) {
+      if (typeof node === 'string') {
+        const text = new Element(this.ownerDocument, '#text');
+        text.textContent = node;
+        this.appendChild(text);
+      } else if (node.tagName === '#document-fragment') this.append(...node.children);
+      else this.appendChild(node);
+    }
+  }
+  replaceChildren(...nodes) { this.textContent = ''; this.append(...nodes); }
   insertBefore(node, next) {
     node.remove(); const index = next ? this.children.indexOf(next) : this.children.length;
     this.children.splice(index, 0, node); node.parentNode = this;
@@ -47,6 +57,7 @@ class Element extends Target {
 class Document extends Target {
   constructor() { super(); this.head = new Element(this, 'head'); this.body = new Element(this, 'body'); this.ids = new Map(); this.iframeNavigation = 'auto'; this.URL = 'about:blank'; this.readyState = 'loading'; }
   createElementNS(namespace, name) { const node = new Element(this, name); node.namespaceURI = namespace; return node; }
+  createDocumentFragment() { return new Element(this, '#document-fragment'); }
   getElementById(id) { return this.ids.get(id) || null; }
 }
 class Window extends Target {

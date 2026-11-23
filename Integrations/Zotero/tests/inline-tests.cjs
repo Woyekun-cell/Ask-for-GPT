@@ -702,8 +702,25 @@ function transportFixture(request) {
   assert.equal(toolbar.host.children.length,1);toolbar.render();toolbar.render();assert.equal(toolbar.host.children.length,1);
   assert.equal(toolbar.host.children[0].isConnected,true);assert.equal(f.transport.requests.length,0);f.plugin.shutdown();f.restore();
  });
- await check('macOS Ask GPT toolbar and native selection popup hand off only on explicit action',async()=>{
-  const f=controllerFixture(async()=>json({ok:true}),{mac:true}),toolbar=toolbarFixture(f);
+ function dockFixtureReply(){
+  let context;
+  return async(_method,url,options)=>{
+   if(url.endsWith('/ask-paper'))return json({ok:true});
+   assert(url.endsWith('/v1/inline/paper-chat'));
+   const request=JSON.parse(options.body);
+   context=request.context||context;
+   return json({title:context.title,attachmentID:context.attachmentID,scope:'nearby',model:'Fixture',
+    messages:[],isSending:false});
+  };
+ }
+ await check('left-click and Option+X both open the current paper dock with the selected passage',async()=>{
+  const moduleFile=path.join(__dirname,'../content/inline.js');
+  let menu;
+  const sandbox={module:{exports:{}},require:require('node:module').createRequire(moduleFile),
+   AskGPTPaperSupplements:{create:()=>({})},
+   AskGPTPaperSupplementPanel:{create:()=>({render(options){menu=options;},dispose(){},shutdown(){}})}};
+  require('node:vm').runInNewContext(fs.readFileSync(moduleFile,'utf8'),sandbox,{filename:moduleFile});
+  const f=controllerFixture(dockFixtureReply(),{mac:true,controllerAdapter:sandbox.module.exports}),toolbar=toolbarFixture(f);
   f.reader.itemID=12;
   f.reader._item={id:12,libraryID:1,key:'ATTACH01',isAttachment:()=>true,getField:name=>name==='title'?'Fixture paper':''};
   f.pdf.getPageData=async({pageIndex})=>{f.reads.push(pageIndex);return {chars:[{c:'Page '+(pageIndex+1)}]};};
@@ -711,27 +728,39 @@ function transportFixture(request) {
   try{
    f.plugin.start();
    const button=toolbar.host.allNodes().find(node=>node.className.includes('askgpt-paper-action'));
-   assert(button);assert.equal(f.reads.length,0);assert.equal(f.transport.requests.length,0);
-   button.emit('click');await settle(()=>f.transport.requests.length===1&&!button.disabled);
-   assert.equal(JSON.parse(f.transport.requests[0].options.body).selection,'Native passage');
-   assert.equal(f.transport.requests[0].options.headers['X-AskGPT-Shortcut'],undefined);
-   const popup=toolbar.doc.createElementNS('http://www.w3.org/1999/xhtml','div');
-   toolbar.doc.body.appendChild(popup);
-   f.readerEvents.get('renderTextSelectionPopup')({reader:f.reader,doc:toolbar.doc,
-    params:{annotation:{text:'Popup passage',position:{pageIndex:0}}},append:node=>popup.appendChild(node)});
-   assert.equal(f.transport.requests.length,1);assert.equal(popup.children.length,1);
-   popup.children[0].emit('click');await settle(()=>f.transport.requests.length===2&&!button.disabled);
-   const sent=JSON.parse(f.transport.requests[1].options.body);
-   assert.equal(sent.selection,'Popup passage');assert.equal(sent.currentPage,1);
-   assert.equal(f.transport.requests[1].options.headers['X-AskGPT-Shortcut'],undefined);
+   assert(button);assert.equal(menu.trigger,button);assert.equal(f.reads.length,0);assert.equal(f.transport.requests.length,0);
+   assert.equal(menu.primaryMenu,false);assert.equal(menu.captureAsk,undefined);
+   assert.equal(button.getAttribute('aria-label'),'Ask GPT');
+   assert.equal(button.getAttribute('aria-haspopup'),undefined);
+   assert(!f.readerEvents.has('renderTextSelectionPopup'));
+   const nodes=()=>toolbar.doc.body.allNodes();
+   const chord={code:'KeyX',altKey:true};
+   button.emit('contextmenu',{button:2});button.emit('click',{button:2});button.emit('click',{button:0,ctrlKey:true});
+   assert(!nodes().some(node=>node.className==='askgpt-paper-chat'));
+   assert.equal(button.emit('pointerdown',{button:0}).defaultPrevented,true);
+   button.emit('click',{button:0});
    f.reader._internalReader._primaryView._selectionRanges=[];
-   button.emit('click');await settle(()=>f.transport.requests.length===3&&!button.disabled);
-   assert.equal(JSON.parse(f.transport.requests[2].options.body).selection,'');
-   f.plugin.shutdown();assert.equal(popup.children.length,0);
+   const dock=nodes().find(node=>node.className==='askgpt-paper-chat');
+   assert(dock);assert.equal(dock.ownerDocument,toolbar.doc);assert.equal(dock.hidden,false);
+   const send=nodes().find(node=>node.className==='askgpt-chat-send');
+   const input=nodes().find(node=>node.tagName==='textarea'),form=nodes().find(node=>node.tagName==='form');
+   await settle(()=>f.transport.requests.length===1&&dock.textContent.includes('Fixture'));
+   const opened=JSON.parse(f.transport.requests[0].options.body);
+   assert.equal(opened.action,'open');assert.equal(opened.context.selection,'Native passage');
+   assert.equal(f.transport.requests[0].options.headers['X-AskGPT-Shortcut'],undefined);
+   f.reader._internalReader._primaryView._selectionRanges=[{text:'Second passage',position:{pageIndex:0}}];
+   assert.equal(f.win.emit('keydown',chord).defaultPrevented,true);
+   f.reader._internalReader._primaryView._selectionRanges=[];
+   await settle(()=>f.transport.requests.length===2);
+   input.value='What does this say?';input.emit('input');assert.equal(send.disabled,false);
+   form.emit('submit');await settle(()=>f.transport.requests.length===3&&input.value==='');
+   const sent=JSON.parse(f.transport.requests[2].options.body);
+   assert.equal(sent.action,'send');assert.equal(sent.context.selection,'Second passage');assert.equal(sent.context.currentPage,1);
+   assert.equal(sent.clientID,opened.clientID);assert.equal(nodes().filter(node=>node.className==='askgpt-paper-chat').length,1);
   }finally{f.plugin.shutdown();f.restore();}
  });
- await check('authenticated Option+X only captures the focused live PDF and forwards its one-time nonce',async()=>{
-  const f=controllerFixture(async()=>json({ok:true}),{mac:true});
+ await check('authenticated Option+X routes the focused live PDF into its dock without opening the helper window',async()=>{
+  const f=controllerFixture(dockFixtureReply(),{mac:true});
   f.reader.itemID=12;
   f.reader._item={id:12,libraryID:1,key:'ATTACH01',isAttachment:()=>true,getField:name=>name==='title'?'Shortcut paper':''};
   f.pdf.getPageData=async({pageIndex})=>{f.reads.push(pageIndex);return {chars:[{c:'Page '+(pageIndex+1)}]};};
@@ -757,19 +786,20 @@ function transportFixture(request) {
    const nonce='d'.repeat(32);
    assert.equal((await invoke(nonce))[0],200);
    assert.equal((await invoke(nonce))[0],409);
+   await settle(()=>f.transport.requests.length===1);
    assert.equal(f.transport.requests.length,1);
    const forwarded=f.transport.requests[0];
-   assert.equal(forwarded.options.headers['X-AskGPT-Shortcut'],nonce);
-   assert.equal(JSON.parse(forwarded.options.body).selection,'Selected by shortcut');
-   assert.equal(JSON.parse(forwarded.options.body).currentPage,2);
-   f.pdf.getPageData=async()=>{f.focus.activeWindow=null;return {chars:[{c:'Unbound text'}]};};
-   assert.equal((await invoke('e'.repeat(32)))[0],409);
+   assert.equal(forwarded.options.headers['X-AskGPT-Shortcut'],undefined);
+   assert.equal(JSON.parse(forwarded.options.body).context.selection,'Selected by shortcut');
+   assert.equal(JSON.parse(forwarded.options.body).context.currentPage,2);
+   f.focus.activeWindow=null;
+   assert.equal((await invoke('e'.repeat(32)))[0],404);
    assert.equal(f.transport.requests.length,1);
    f.plugin.shutdown();assert.equal(f.server.Endpoints[route],undefined);
   }finally{f.plugin.shutdown();f.restore();}
  });
  await check('Zotero PDF receives Option+X directly and does not change the translation chord',async()=>{
-  const f=controllerFixture(async()=>json({ok:true}),{mac:true});
+  const f=controllerFixture(dockFixtureReply(),{mac:true});
   f.reader.itemID=12;
   f.reader._item={id:12,libraryID:1,key:'ATTACH01',isAttachment:()=>true,getField:name=>name==='title'?'Keyboard paper':''};
   f.pdf.getPageData=async({pageIndex})=>({chars:[{c:'Page '+(pageIndex+1)}]});
@@ -782,15 +812,15 @@ function transportFixture(request) {
    const event=f.win.emit('keydown',chord);
    assert.equal(event.defaultPrevented,true);
    await settle(()=>f.transport.requests.length===1);
-   assert.equal(JSON.parse(f.transport.requests[0].options.body).selection,'Keyboard passage');
+   assert.equal(JSON.parse(f.transport.requests[0].options.body).context.selection,'Keyboard passage');
    assert.equal(f.transport.requests[0].options.headers['X-AskGPT-Shortcut'],undefined);
   }finally{f.plugin.shutdown();f.restore();}
  });
- await check('simultaneous Zotero and app Option+X deliveries share one matching paper handoff',async()=>{
+ await check('simultaneous Zotero and app Option+X deliveries acknowledge before extraction and share one in-reader panel',async()=>{
   const {createHmac}=require('node:crypto'),nonce='7'.repeat(32);
   const chord={code:'KeyX',altKey:true,shiftKey:false,ctrlKey:false,metaKey:false};
   for(const first of ['zotero','app']){
-   const f=controllerFixture(async()=>json({ok:true}),{mac:true,scheduler:{set:setTimeout,clear:clearTimeout}});
+   const f=controllerFixture(dockFixtureReply(),{mac:true,scheduler:{set:setTimeout,clear:clearTimeout}});
    const started=deferred(),resume=deferred(),verified=deferred();
    f.reader.itemID=12;
    f.reader._item={id:12,libraryID:1,key:'ATTACH01',isAttachment:()=>true,getField:name=>name==='title'?'One paper':''};
@@ -800,7 +830,7 @@ function transportFixture(request) {
    };
    f.reader._internalReader._primaryView._selectionRanges=[{text:'One passage',position:{pageIndex:1}}];
    const subtle=f.reader._window.crypto.subtle;
-   f.reader._window.crypto={subtle:{
+   f.reader._window.crypto={randomUUID:require('node:crypto').randomUUID,subtle:{
     importKey:(...args)=>subtle.importKey(...args),
     async verify(...args){const value=await subtle.verify(...args);verified.resolve();return value;}
    }};
@@ -817,14 +847,14 @@ function transportFixture(request) {
     await started.promise;
     if(first==='app')assert.equal(f.reader._window.emit('keydown',chord).defaultPrevented,true);
     await verified.promise;
-    await Promise.resolve();
-    resume.resolve();
     assert.equal((await response)[0],200);
+    assert.equal(f.transport.requests.length,0);
+    resume.resolve();await settle(()=>f.transport.requests.length===1);
     assert.deepEqual(f.reads,[1,0,2]);
     assert.equal(f.transport.requests.length,1);
     const handoff=f.transport.requests[0].options;
-    assert.equal(handoff.headers['X-AskGPT-Shortcut'],first==='app'?nonce:undefined);
-    assert.equal(JSON.parse(handoff.body).selection,'One passage');
+    assert.equal(handoff.headers['X-AskGPT-Shortcut'],undefined);
+    assert.equal(JSON.parse(handoff.body).context.selection,'One passage');
    }finally{resume.resolve();f.plugin.shutdown();f.restore();}
   }
  });

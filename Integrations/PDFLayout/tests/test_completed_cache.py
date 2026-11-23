@@ -92,6 +92,16 @@ class WholeDocumentRangeCacheTests(unittest.TestCase):
             self.assertEqual((whole.directory / "mono.pdf").read_bytes(), translated)
             self.assertIsNotNone(manager._cached_job(whole.cache_info["cacheKey"]))
 
+    def test_pre_style_output_stays_downloadable_but_is_not_reused_for_a_new_translation(self):
+        whole = self.install_whole(revision=server.PRE_STYLE_OUTPUT_REVISION)
+        manager = server.JobManager(self.root / "cache", Path(sys.executable),
+            worker_script=self.worker, ready_override=True)
+        self.managers.append(manager)
+        self.assertTrue(manager.get(whole.id).reused_legacy)
+        placeholder, result = self.submit("all", manager=manager)
+        self.assertEqual(result["id"], placeholder.id)
+        self.assertNotEqual(result["id"], whole.id)
+
     def test_export_guard_allows_reverse_translation_and_rejects_changed_cache_proof(self):
         whole = self.install_whole(alignment=True)
         translated = (whole.directory / "mono.pdf").read_bytes()

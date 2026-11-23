@@ -7,8 +7,8 @@
   "licenseSource": "https://raw.githubusercontent.com/funstory-ai/BabelDOC/v0.6.4/LICENSE",
   "directInternalAPI": true,
   "offlineWorker": true,
-  "translationProvider": "Page-batched GPT via the existing ChatGPT-signed-in Codex CLI and dedicated native JSONL helper",
-  "translationRevision": "pdf-layout-gpt-v5-context-paragraph",
+  "translationProvider": "Page-batched translation via the active Ask for GPT model route and dedicated native JSONL helper",
+  "translationRevision": "pdf-layout-gpt-v8-source-styles",
   "compatibilityPins": {
     "bitstring": "4.3.1"
   },

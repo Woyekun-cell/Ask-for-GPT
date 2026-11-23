@@ -5,6 +5,8 @@ from collections import Counter
 from collections.abc import Mapping
 from contextlib import contextmanager, nullcontext
 from copy import copy
+from dataclasses import replace
+from functools import lru_cache
 import ast
 import importlib.metadata
 import json
@@ -12,15 +14,16 @@ import re
 import threading
 from types import MappingProxyType
 
-from layout_common import BABELDOC_VERSION, ProtocolFailure, placeholders
+from layout_common import BABELDOC_VERSION, PLACEHOLDER, ProtocolFailure, placeholders
 
-ADAPTER_REVISION = "pdf-layout-gpt-v5-context-paragraph"
+ADAPTER_REVISION = "pdf-layout-gpt-v8-source-styles"
 MAX_SEGMENTS = 256
 MAX_SCALARS = 60_000
 MAX_MESSAGE_BYTES = 256 * 1024
 SEGMENT_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 ERROR_DETAILS = frozenset({"jsonObject", "count", "rowShape", "id", "empty", "formula", "content"})
 MAX_CONTEXT_SIDE_SCALARS = 2_000
+MAX_NUMERIC_PAGE_RETRIES = 2
 
 
 def validate_context(value):
@@ -101,6 +104,29 @@ def validate_segments(value):
     return value
 
 
+def _rich_text_structure(text):
+    """Count whole style spans and formula ownership without fixing word order."""
+    stack, spans, formulas = [], Counter(), Counter()
+    for match in PLACEHOLDER.finditer(text):
+        token = match.group()
+        if token.startswith("{v"):
+            formulas[(token, tuple(start[0] for start in stack))] += 1
+        elif not token.startswith("</"):
+            stack.append((token, match.end()))
+        else:
+            if not stack:
+                return None
+            start, content_start = stack.pop()
+            expected_end = "</style>" if start.startswith("<style") else "</" + start[1:]
+            if token != expected_end:
+                return None
+            # A matched but empty tag would silently move visible emphasis onto
+            # nothing. Whitespace-only source runs remain legal.
+            visible = bool(PLACEHOLDER.sub("", text[content_start:match.start()]).strip())
+            spans[(tuple(parent[0] for parent in stack), start, visible)] += 1
+    return None if stack else (spans, formulas)
+
+
 def validate_translations(value, segments):
     validate_segments(segments)
     if not isinstance(value, list) or len(value) != len(segments):
@@ -112,8 +138,13 @@ def validate_translations(value, segments):
                 or not isinstance(item["id"], str) or item["id"] not in expected
                 or item["id"] in outputs or not _text(item["text"])):
             raise ProtocolFailure("batch_invalid")
-        if Counter(placeholders(item["text"])) != Counter(placeholders(expected[item["id"]])):
+        source = expected[item["id"]]
+        if Counter(placeholders(item["text"])) != Counter(placeholders(source)):
             raise ProtocolFailure("formula_placeholder_mismatch")
+        if "<b" in source or "<style" in source:
+            structure = _rich_text_structure(source)
+            if structure is not None and structure != _rich_text_structure(item["text"]):
+                raise ProtocolFailure("formula_placeholder_mismatch")
         outputs[item["id"]] = item["text"]
     if len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()) > MAX_MESSAGE_BYTES - 512:
         raise ProtocolFailure("batch_limit")
@@ -179,6 +210,12 @@ def page_translator_class():
     from babeldoc.format.pdf.document_il.midend.il_translator import ILTranslator
 
     class PageBatchILTranslator(ILTranslator):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            # High-level BabelDOC must keep choosing its per-page adapter.
+            # Only this adapter's preprocessing needs the rich-text capability.
+            self.support_llm_translate = True
+
         def translate(self, document):
             self.source_context_by_page = snapshot_page_context(document, self.translate_engine)
             return super().translate(document)
@@ -227,8 +264,17 @@ def page_translator_class():
                 page_started = getattr(self.translate_engine, "page_started", None)
                 if page_started: page_started()
                 context = getattr(self, "source_context_by_page", {}).get(getattr(page, "page_number", None))
-                raw = (self.translate_engine.batch_translate(segments, context=context) if context is not None
-                       else self.translate_engine.batch_translate(segments))
+                for attempt in range(1 + MAX_NUMERIC_PAGE_RETRIES):
+                    self.translation_config.raise_if_cancelled()
+                    try:
+                        raw = (self.translate_engine.batch_translate(segments, context=context) if context is not None
+                               else self.translate_engine.batch_translate(segments))
+                        break
+                    except ProtocolFailure as error:
+                        # Keep the page in flight while the helper regenerates it.
+                        if (attempt == MAX_NUMERIC_PAGE_RETRIES or str(error) != "batch_invalid"
+                                or getattr(error, "error_detail", None) != "content"):
+                            raise
                 outputs = validate_translations(raw, segments)
                 self.translation_config.raise_if_cancelled()
                 for (paragraph, paragraph_tracker, translation_input), segment, output in zip(prepared, segments, outputs):
@@ -259,6 +305,84 @@ def page_translator_class():
     return PageBatchILTranslator
 
 
+_FACE_EMPHASIS = re.compile(
+    r"[-_, ](?:(?P<weight>(?:(?:extra|ultra|semi|demi)[ -]?)?bold|heavy|black|demi)[ -]?)?"
+    r"(?P<slant>italic|oblique|ital)?(?:ps|mt)*$", re.I,
+)
+
+
+@lru_cache(maxsize=512)
+def _named_font_emphasis(name):
+    suffix = _FACE_EMPHASIS.search(name)
+    return (bool(suffix["weight"]), bool(suffix["slant"])) if suffix else (False, False)
+
+
+def _source_font_emphasis(font):
+    # Base-14 and other unembedded face names can carry style even when the
+    # parser's font flags are unset or zero.
+    bold, italic = _named_font_emphasis(getattr(font, "name", "") or "")
+    return bold or bool(getattr(font, "bold", False)), italic or bool(getattr(font, "italic", False))
+
+
+@contextmanager
+def _preserve_italic_fallback():
+    """Keep translated CJK glyphs slanted when the installed family has no italic."""
+    from babeldoc.format.pdf.document_il.backend import pdf_creater
+    from babeldoc.format.pdf.document_il.il_version_1 import GraphicState, PdfFont
+    from babeldoc.format.pdf.document_il.midend.typesetting import TypesettingUnit
+    from babeldoc.format.pdf.document_il.utils.fontmap import FontMapper
+
+    original_map = FontMapper.map
+    original_render = TypesettingUnit.render
+    original_draw = pdf_creater.CharacterRenderUnit.render
+    italic_glyphs = {}
+
+    def map_font(mapper, source, char):
+        if not isinstance(source, PdfFont):
+            return original_map(mapper, source, char)
+        bold, italic = _source_font_emphasis(source)
+        if not italic:
+            if bold and not source.bold:
+                source = replace(source, bold=True)
+            return original_map(mapper, source, char)
+        for font in mapper.script_fonts:
+            if (font.is_italic and bool(font.is_bold) == bold
+                    and ("serif" in font.font_id.lower()) == bool(source.serif)
+                    and font.has_glyph(ord(char))):
+                return font
+        return original_map(mapper, replace(source, bold=bold, italic=False), char)
+
+    def render(unit):
+        chars, curves, forms = original_render(unit)
+        if (unit.unicode and unit.font is not None
+                and not unit.font.is_italic and _source_font_emphasis(unit.original_font)[1]):
+            italic_glyphs.update((id(char), char) for char in chars)
+        return chars, curves, forms
+
+    def draw(unit, output, context):
+        char = unit.char
+        if italic_glyphs.get(id(char)) is not char:
+            return original_draw(unit, output, context)
+        # The writer brackets each glyph in q/Q. Compute against its final
+        # baseline, after any table fitting or other relocation.
+        existing = getattr(char.pdf_style.graphic_state, "passthrough_per_char_instruction", "") or ""
+        shear = .18
+        state = GraphicState(passthrough_per_char_instruction=f"{existing} 1 0 {shear} 1 {-shear * char.box.y:.6f} 0 cm")
+        styled = replace(char, pdf_style=replace(char.pdf_style, graphic_state=state))
+        replacement = pdf_creater.CharacterRenderUnit(styled, unit.render_order, unit.sub_render_order)
+        return original_draw(replacement, output, context)
+
+    FontMapper.map = map_font
+    TypesettingUnit.render = render
+    pdf_creater.CharacterRenderUnit.render = draw
+    try:
+        yield
+    finally:
+        FontMapper.map = original_map
+        TypesettingUnit.render = original_render
+        pdf_creater.CharacterRenderUnit.render = original_draw
+
+
 @contextmanager
 def patched_page_translator(high_level):
     if importlib.metadata.version("BabelDOC") != BABELDOC_VERSION:
@@ -266,6 +390,7 @@ def patched_page_translator(high_level):
     original = high_level.ILTranslator
     high_level.ILTranslator = page_translator_class()
     try:
-        yield
+        with _preserve_italic_fallback():
+            yield
     finally:
         high_level.ILTranslator = original

@@ -40,6 +40,16 @@ async function startup(data, reason) {
   loadScript('content/connection-security.js');
   loadScript('content/ask-paper.js');
   loadScript('content/ask-paper-shortcut.js');
+  loadScript('content/paper-reading-actions.js');
+  loadScript('content/paper-command-parser.js');
+  loadScript('content/paper-topic.js');
+  loadScript('content/paper-commands.js');
+  loadScript('content/paper-chat-panel.js');
+  loadScript('content/paper-supplements.js');
+  loadScript('content/paper-html-version.js');
+  loadScript('content/paper-html-appearance.js');
+  loadScript('content/paper-native-menu.js');
+  loadScript('content/paper-supplement-panel.js');
   loadScript('content/inline.js');
   const css = await Zotero.File.getResourceAsync(data.rootURI + 'content/inline.css');
   if (generation !== askGPTInlineGeneration) return;
@@ -65,14 +75,23 @@ async function startup(data, reason) {
   scope.instance = scope.AskGPTInline.create(dependencies);
   askGPTInlineScope = scope;
   scope.instance.start();
+  scope.paperHTMLAppearance = scope.AskGPTPaperHTMLAppearance.create(dependencies);
+  scope.paperHTMLAppearance?.start();
 }
 
-function onMainWindowLoad({ window }) { askGPTInlineScope?.instance?.attachMainWindow(window); }
-function onMainWindowUnload({ window }) { askGPTInlineScope?.instance?.detachMainWindow(window); }
+function onMainWindowLoad({ window }) {
+  askGPTInlineScope?.instance?.attachMainWindow(window);
+  askGPTInlineScope?.paperHTMLAppearance?.attachMainWindow(window);
+}
+function onMainWindowUnload({ window }) {
+  askGPTInlineScope?.paperHTMLAppearance?.detachMainWindow(window);
+  askGPTInlineScope?.instance?.detachMainWindow(window);
+}
 function shutdown(data, reason) {
   askGPTInlineGeneration++;
   askGPTInlineScope?.pdfConnection?.dispose();
   askGPTInlineScope?.askConnection?.dispose();
+  askGPTInlineScope?.paperHTMLAppearance?.shutdown();
   askGPTInlineScope?.instance?.shutdown();
   askGPTInlineScope = null;
 }

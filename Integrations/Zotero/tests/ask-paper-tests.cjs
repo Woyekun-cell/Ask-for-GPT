@@ -11,7 +11,7 @@ function fixture({pageCount = 3, currentPage = 2, readPage = index => 'Paper pag
   const pdfDocument = {async getPageData({pageIndex}) {
     reads.push(pageIndex);
     const text = await readPage(pageIndex);
-    return {chars: [{c: text}]};
+    return {chars: Array.isArray(text) ? text : [{c: text}]};
   }};
   const app = {pdfDocument, pdfViewer: {currentPageNumber: currentPage, pagesCount: pageCount}};
   const reader = {type: 'pdf', itemID: item.id, _item: item,
@@ -120,4 +120,17 @@ test('old bridge and malformed acknowledgements produce fixed errors without ret
   const malformed = fixture({reply: {status: 200, responseText: '{"ok":true,"secret":"private"}'}});
   await assert.rejects(malformed.open(), {code: 'response'});
   assert.equal(malformed.requests.length, 1);
+});
+
+
+test('paper citations keep wide vertical gaps when the native PDF has no paragraph break markers', async () => {
+  const f = fixture({pageCount: 1, currentPage: 1, readPage: () => [
+    {c: 'First result', rect: [52, 720, 124, 732], lineBreakAfter: true},
+    {c: 'Continues on the next line.', rect: [52, 706, 184, 718], lineBreakAfter: true},
+    {c: 'Second result.', rect: [52, 650, 128, 662], lineBreakAfter: true}
+  ]});
+  await f.open();
+  const [request] = f.requests;
+  assert.equal(JSON.parse(request.options.body).pages[0].text,
+    'First result Continues on the next line.\n\nSecond result.');
 });

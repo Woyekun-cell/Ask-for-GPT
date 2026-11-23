@@ -27,8 +27,10 @@ import platform_ops as platform
 from layout_common import (BABELDOC_VERSION, MAX_OUTPUT_BYTES, MAX_PDF_BYTES, PORT,
     ProtocolFailure, atomic_json, load_connection, parse_pages, private_directory)
 from gpt_batch import ERROR_DETAILS
+from paper_html_jobs import MAX_PAPER_HTML_PDF_BYTES, PAPER_HTML_UPLOAD, PaperHTMLJobs
 from alignment import MAX_ALIGNMENT_BYTES, subset_alignment, validate_alignment
 
+PAPER_HTML_ROUTE = re.compile(PAPER_HTML_UPLOAD + r"/([0-9a-f]{32})(/output)?")
 JOB_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})(?:/(mono\.pdf|dual\.pdf|alignment\.json|alignment-layout\.json))?")
 ALIGNMENT_WORK_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/alignment-work")
 ALIGNMENT_UPGRADE_ROUTE = re.compile(r"/v1/pdf/jobs/([0-9a-f]{32})/alignment-upgrade")
@@ -42,8 +44,9 @@ MAX_JOB_AGE = 7 * 24 * 60 * 60
 # Completed translations are permanent local results, not disposable cache.
 # Old PDFs remain their original translation generation. Reopening one must
 # neither run translation again nor claim the newer paragraph/context quality.
-TRANSLATION_REVISION = "pdf-layout-gpt-v7-context-paragraph"
+TRANSLATION_REVISION = "pdf-layout-gpt-v8-source-styles"
 LEGACY_OUTPUT_REVISIONS = ("pdf-layout-gpt-v6-paragraph-isolated", "pdf-layout-gpt-v5-aligned-visual", "pdf-layout-gpt-v4-aligned")
+PRE_STYLE_OUTPUT_REVISION = "pdf-layout-gpt-v7-context-paragraph"
 CACHE_SCHEMA = 1
 PROCESS_GROUP_GRACE = 3.5
 MAX_RUNNING_JOBS = 2
@@ -77,7 +80,9 @@ def _model_snapshot(value):
         raise ValueError("invalid_model_route")
     profile = value.get("apiProfile")
     if profile is None:
-        return encoded, ""
+        identity = json.dumps(["codex", *(value[key] for key in ("cliPath", "model", "reasoningEffort"))],
+                              separators=(",", ":"))
+        return encoded, "-backend-" + hashlib.sha256(identity.encode()).hexdigest()
     route_fields = ("id", "kind", "baseURL", "model")
     required = {*route_fields, "name"}
     if (not isinstance(profile, dict) or not required <= set(profile) <= required | {"modelReasoningEfforts"}
@@ -249,6 +254,7 @@ class JobManager:
         self.ready_override = ready_override
         self.translation_revision = translation_revision
         self.model_route_file = model_route_file
+        self.paper_html_jobs = PaperHTMLJobs(self.cache_root, self.translator, self.paper_html_model_snapshot)
         self.lock = threading.RLock()
         self.upload_slots = threading.BoundedSemaphore(MAX_CONCURRENT_UPLOADS)
         self.jobs: dict[str, Job] = {}
@@ -315,15 +321,15 @@ class JobManager:
                 value = json.loads(raw)
                 pages, count = value["sourcePages"], value["pageCount"]
                 model_route, expected_revision = None, self.translation_revision
-                reusable = (*self._reusable_revisions(), "pdf-layout-gpt-v3")
+                readable = (*self._reusable_revisions(), PRE_STYLE_OUTPUT_REVISION, "pdf-layout-gpt-v3")
                 if "modelRoute" in value:
                     if self.model_route_file is None: continue
                     model_route, suffix = _model_snapshot(json.loads(value["modelRoute"]))
                     if not suffix: continue
                     expected_revision += suffix
-                    reusable = self._reusable_revisions(expected_revision)
+                    readable = (*self._reusable_revisions(expected_revision), PRE_STYLE_OUTPUT_REVISION + suffix)
                 if (value.get("schema") != CACHE_SCHEMA or value.get("state") != "complete"
-                        or value.get("revision") not in reusable
+                        or value.get("revision") not in readable
                         or value.get("babeldoc") != BABELDOC_VERSION
                         or type(count) is not int or not 1 <= count <= 2000
                         or not isinstance(pages, list) or not pages
@@ -805,14 +811,25 @@ class JobManager:
         except (OSError, ValueError, TypeError, KeyError, importlib.metadata.PackageNotFoundError):
             return False
 
+    def _read_model_snapshot(self):
+        if self.model_route_file is None:
+            return None, ""
+        _, raw = _private_file(self.model_route_file, MAX_MODEL_ROUTE_BYTES)
+        return _model_snapshot(json.loads(raw))
+
+    def paper_html_model_snapshot(self):
+        try:
+            return self._read_model_snapshot()[0]
+        except (OSError, ValueError, TypeError):
+            raise ProtocolFailure("html_model_unavailable") from None
+
     def begin(self, *, snapshot_model_route=True) -> Job:
         with self.lock:
             if self.stopping: raise ProtocolFailure("service_stopping")
             model_route, suffix = None, ""
             if self.model_route_file is not None and snapshot_model_route:
                 try:
-                    _, raw = _private_file(self.model_route_file, MAX_MODEL_ROUTE_BYTES)
-                    model_route, suffix = _model_snapshot(json.loads(raw))
+                    model_route, suffix = self._read_model_snapshot()
                 except (OSError, ValueError, TypeError):
                     raise ProtocolFailure("gpt_unavailable") from None
             self.prune()
@@ -872,7 +889,9 @@ class JobManager:
                 if current_revision != self.translation_revision and job.model_route is not None:
                     job.cache_info["modelRoute"] = job.model_route
                 if self._derive_completed_range(job): return job.public()
-                for revision in self._reusable_revisions(current_revision)[1:]:
+                # A submitted model route requests the current renderer and that specific backend.
+                older = self._reusable_revisions(current_revision)[1:] if job.model_route is None else ()
+                for revision in older:
                     cached = self._matching_completed(source_sha, selected, page_count, source, target, revision)
                     if cached is not None:
                         self._discard_placeholder(job)
@@ -1002,6 +1021,7 @@ class JobManager:
     def shutdown(self):
         with self.lock:
             self.stopping = True
+        self.paper_html_jobs.shutdown()
         self.sentence_upgrades.shutdown()
         self.selection_alignments.shutdown()
         self.figure_regions.shutdown()
@@ -1036,6 +1056,8 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
 
         def valid_host_origin(self, *, require_origin=False):
             origins = self.headers.get_all("Origin") or []
+            if origins and (self.path == PAPER_HTML_UPLOAD or PAPER_HTML_ROUTE.fullmatch(self.path)):
+                return False
             return (self.headers.get_all("Host") == [f"127.0.0.1:{self.server.server_address[1]}"]
                     and ((not origins and not require_origin)
                          or (extension_origin is not None and origins == [extension_origin])))
@@ -1053,10 +1075,18 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
             self.end_headers()
             return True
 
-        def reply(self, status, value=None, *, pdf=None):
-            data = pdf if pdf is not None else json.dumps(value or {}, separators=(",", ":")).encode()
+        def reply(self, status, value=None, *, pdf=None, html=None):
+            if html is not None:
+                data, media_type = html, "text/html; charset=utf-8"
+            elif pdf is not None:
+                data, media_type = pdf, "application/pdf"
+            else:
+                data, media_type = json.dumps(value or {}, separators=(",", ":")).encode(), "application/json"
             self.send_response(status)
-            self.send_header("Content-Type", "application/pdf" if pdf is not None else "application/json")
+            self.send_header("Content-Type", media_type)
+            if html is not None:
+                self.send_header("Content-Security-Policy", "sandbox; default-src 'none'")
+                self.send_header("Content-Disposition", 'attachment; filename="paper.html"')
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -1077,6 +1107,15 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
 
         def do_GET(self):
             if not self.authorize(): return
+            paper = PAPER_HTML_ROUTE.fullmatch(self.path)
+            if paper:
+                try:
+                    if paper[2]:
+                        return self.reply(200, html=manager.paper_html_jobs.output(paper[1]))
+                    return self.reply(200, manager.paper_html_jobs.status(paper[1]))
+                except ProtocolFailure as error:
+                    code = str(error)
+                    return self.reply(409 if code == "job_not_complete" else 404, {"error": code})
             if self.path == "/v1/pdf/health":
                 return self.reply(200, {"status": "ready" if manager.ready() else "runtime_missing",
                                        "protocolVersion": 1})
@@ -1138,6 +1177,7 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
 
         def do_POST(self):
             if not self.authorize(): return
+            if self.path == PAPER_HTML_UPLOAD: return self.post_paper_html()
             if self.path == '/v1/pdf/figure-regions': return self.post_figure_regions()
             work=ALIGNMENT_WORK_ROUTE.fullmatch(self.path)
             if work:return self.post_alignment_work(work[1])
@@ -1188,6 +1228,30 @@ def create_server(manager: JobManager, token: str, *, port: int = PORT, extensio
                 return self.reply(400, {"error": "incomplete_upload"})
             finally:
                 manager.upload_slots.release()
+
+        def post_paper_html(self):
+            if self.headers.get_all("Transfer-Encoding"):
+                return self.reply(400, {"error": "unsupported_transfer_encoding"})
+            lengths = self.headers.get_all("Content-Length") or []
+            if len(lengths) != 1 or not re.fullmatch(r"[0-9]{1,10}", lengths[0]):
+                return self.reply(411, {"error": "content_length_required"})
+            length = int(lengths[0])
+            if length > MAX_PAPER_HTML_PDF_BYTES:
+                return self.reply(413, {"error": "pdf_too_large"})
+            if length < 5:
+                return self.reply(400, {"error": "invalid_pdf"})
+            types = self.headers.get_all("Content-Type") or []
+            if len(types) != 1 or types[0].split(";", 1)[0].strip().lower() != "application/pdf":
+                return self.reply(415, {"error": "pdf_content_type_required"})
+            try:
+                state = manager.paper_html_jobs.start(self.rfile, length)
+            except ProtocolFailure as error:
+                code = str(error)
+                status = {"job_conflict": 409, "html_model_unavailable": 503, "service_stopping": 503}.get(code, 400)
+                return self.reply(status, {"error": code})
+            except OSError:
+                return self.reply(400, {"error": "incomplete_upload"})
+            return self.reply(202, state)
 
         def post_figure_regions(self):
             from figure_regions import MAX_PNG_BYTES, png_size

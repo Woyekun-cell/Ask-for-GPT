@@ -47,7 +47,7 @@
     // Must run synchronously in action/onCommand, before a transaction or await
     // loses Chrome's transient permission-request user gesture.
     function prepare(tab) {
-      if (core.sourceURL(tab?.url)?.protocol !== 'file:' || !Number.isInteger(tab?.id)) return null;
+      if (!core.pdfCandidate(tab?.url) || core.sourceURL(tab.url).protocol !== 'file:' || !Number.isInteger(tab?.id)) return null;
       try { return chrome.permissions.request({ origins: ['file:///*'] }).catch(() => false); }
       catch { return Promise.resolve(false); }
     }

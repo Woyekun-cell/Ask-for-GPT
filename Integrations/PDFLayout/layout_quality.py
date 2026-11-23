@@ -1,7 +1,7 @@
 """Conservative layout repairs for BabelDOC 0.6.4's existing vector IR.
 
 No text is inferred or removed. Metadata retains its original glyphs. A caption
-word split at a touching same-font glyph is reunited before translation. Only
+or heading word split at a touching same-font glyph is reunited before translation. Only
 translated short table lines are fitted using the target font's real metrics.
 """
 from __future__ import annotations
@@ -18,6 +18,16 @@ _NAME_INITIALS = re.compile(r"\b[A-Z][a-z]+\s+(?:[A-Z]\.\s*)+[A-Z][A-Za-z'’-]+
 _NAMES_LIST = re.compile(r"\b[A-Z][a-z]+\s+[A-Z][a-z]+(?:\s*[,;，]\s*\d*)")
 _EMAIL = re.compile(r"(?:e[ -]?mail\s*:\s*)?[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}", re.I)
 _DOI = re.compile(r"(?:https?://(?:dx\.)?doi\.org/|doi\s*:\s*)?10\.\d{4,9}/[^\s]+", re.I)
+_ARTICLE_TYPE = r"(?:(?:research|review|short) )?article"
+_WORDMARK = re.compile(rf"(?:iscience(?: {_ARTICLE_TYPE})?|cell press)", re.I)
+_OPEN_ACCESS = re.compile(r"(?:ll\s*)?(?:cell press\s*)?open\s*access", re.I)
+_LICENSE = (r"this is an open access article under the cc by(?:-[a-z]+){0,3} license"
+            r"(?:\s*\(https?://creativecommons\.org/licenses/[^\s)]+\))?\.?")
+_COPYRIGHT = r"[©ª] \d{4} (?:the authors?|the author\(s\)|elsevier inc)\.?"
+_PUBLICATION_FOOTER = re.compile(
+    rf"(?:\d{{1,4}} )?iscience \d{{1,4}}, ?e?\d{{3,9}}, "
+    rf"(?:[a-z.]+ \d{{1,2}}, )?\d{{4}}(?: {_COPYRIGHT})?(?: \d{{1,4}})?(?: {_LICENSE})?"
+    rf"|{_COPYRIGHT}|{_LICENSE}", re.I)
 _CAPTIONS = {"table_caption", "figure_caption"}
 CONTENT_POLICY = "figure-original-table-header-v1"
 _REGION_PROSE = _CAPTIONS | {"table_footnote", "figure_footnote"}
@@ -107,7 +117,8 @@ def _same_inline_word(previous, tail):
     table = ((previous_label == "table_caption" and tail_label in {"fallback_line", "table_caption"})
              or (previous_label == "fallback_line" and tail_label == "table_caption"
                  and re.match(r"^Table\s+\d+[A-Za-z]?\s*[|:.]", text)))
-    if not ((classic or table and re.match(r"[a-z]", suffix)) and re.search(r"[a-z]$", text)):
+    heading = {previous_label, tail_label} == {"title", "fallback_line"}
+    if not ((classic or (table or heading) and re.match(r"[a-z]", suffix)) and re.search(r"[a-z]$", text)):
         return False
     a, b = list(_characters(previous)), list(_characters(tail))
     if not a or not b: return False
@@ -115,13 +126,16 @@ def _same_inline_word(previous, tail):
     ab, bb = _box(getattr(last, "box", None)), _box(getattr(first, "box", None))
     sa, sb = _font_size(last), _font_size(first)
     if ab is None or bb is None or sa is None or sb is None: return False
+    if heading and (getattr(last.pdf_style, "graphic_state", None) != getattr(first.pdf_style, "graphic_state", None)
+                    or getattr(previous, "vertical", False) or getattr(tail, "vertical", False)):
+        return False
     return (getattr(last, "xobj_id", None) == getattr(first, "xobj_id", None)
             and getattr(last.pdf_style, "font_id", None) == getattr(first.pdf_style, "font_id", None)
             and abs(sa - sb) <= .05 and abs(ab[1] - bb[1]) <= .05
             and -.05 <= bb[0] - ab[2] <= min(.5, sa * .06))
 
 
-def _join_caption_tails(page):
+def _join_inline_fragments(page):
     paragraphs = getattr(page, "pdf_paragraph", None)
     if not isinstance(paragraphs, list): return
     index = 1
@@ -131,7 +145,10 @@ def _join_caption_tails(page):
             index += 1
             continue
         previous.unicode += tail.unicode
-        if getattr(tail, "layout_label", None) == "table_caption": previous.layout_label = "table_caption"
+        label = getattr(tail, "layout_label", None)
+        if label in {"table_caption", "title"}:
+            previous.layout_label = label
+            if label == "title" and hasattr(tail, "layout_id"): previous.layout_id = tail.layout_id
         previous.pdf_paragraph_composition.extend(tail.pdf_paragraph_composition)
         a, b = _box(previous.box), _box(tail.box)
         if a and b:
@@ -258,6 +275,52 @@ def _metadata(page, paragraph, bounds):
         remainder = re.sub(r"\b(?:and|orcid|id|md|phd)\b", "", remainder, flags=re.I)
         return re.search(r"[A-Za-z]", remainder) is None
     return len(_NAMES_LIST.findall(text)) >= 3 and not re.search(r"[.!?。]($|\s+[A-Z])", text)
+
+
+def _publication_chrome(page, rows):
+    """Recognize separately laid-out press marks and fixed running furniture."""
+    crop = _box(getattr(getattr(page, "cropbox", None), "box", None))
+    if crop is None: return set()
+    left, bottom, right, top = crop
+    width, height = right - left, top - bottom
+    headers, footers, protected = [], [], set()
+    for row in rows:
+        x1, y1, x2, y2 = row["bounds"]
+        text = " ".join(row["text"].split())
+        if not text or row["label"] in _REGION_PROSE: continue
+        side = 0 if x2 <= left + width * .4 else 1 if x1 >= right - width * .4 else None
+        if y1 >= top - height * .12 and side is not None:
+            headers.append((row["id"], row["bounds"], text, side))
+        elif y2 <= bottom + height * .065:
+            footers.append((row["id"], row["bounds"], text, side))
+
+    wordmarks = [row for row in headers if _WORDMARK.fullmatch(row[2])]
+    badges = [row for row in headers if _OPEN_ACCESS.fullmatch(row[2])
+              and (wordmarks or row[2].casefold() not in {"open access", "openaccess"})]
+    protected.update(row[0] for row in wordmarks + badges)
+
+    def near(bounds, anchor, distance):
+        return (max(bounds[0], anchor[0]) - min(bounds[2], anchor[2]) <= distance
+                and max(bounds[1], anchor[1]) - min(bounds[3], anchor[3]) <= distance)
+
+    for identity, bounds, text, side in headers:
+        # Some letters of the Cell Press logo are vector paths and only the
+        # two upright text glyphs ("ll") are extracted as a separate run.
+        if text == "ll" and any(a[3] == side and near(bounds, a[1], 22) for a in badges):
+            protected.add(identity)
+        elif re.fullmatch(_ARTICLE_TYPE, text, re.I) and any(
+                a[3] == side and a[2].casefold().startswith("iscience") and near(bounds, a[1], 24)
+                for a in wordmarks):
+            protected.add(identity)
+
+    imprints = [row for row in footers if _PUBLICATION_FOOTER.fullmatch(row[2])]
+    protected.update(row[0] for row in imprints)
+    for identity, bounds, text, side in footers:
+        if side is None: continue
+        if (re.fullmatch(r"page \d{1,4}(?: of \d{1,4})?", text, re.I)
+                or re.fullmatch(r"\d{1,4}", text) and any(near(bounds, a[1], 28) for a in imprints)):
+            protected.add(identity)
+    return protected
 
 
 def _inside(bounds, region, tolerance=1.):
@@ -547,10 +610,10 @@ def _content_protection(page, header_ids=None, row_label_ids=None):
 
 
 def protect_source_page(page):
+    """Return paragraph object IDs which must bypass translation, unchanged."""
     from paragraph_continuity import join_prose_fragments
     join_prose_fragments(page)
-    """Return paragraph object IDs which must bypass translation, unchanged."""
-    _join_caption_tails(page)
+    _join_inline_fragments(page)
     _join_table_cell_fragments(page)
     _join_table_header_lines(page)
     header_ids, row_label_ids = set(), set()
@@ -571,6 +634,7 @@ def protect_source_page(page):
                          "fontBounds": _source_font_bounds(paragraph, source_fonts),
                          "typography": _prose_typography(paragraph, chars, source_fonts),
                          "glyphs": {id(c) for c in chars}})
+    protected.update(_publication_chrome(page, rows))
     with _LOCK:
         if len(_PAGES) >= 2048: _PAGES.pop(next(iter(_PAGES)))
         _PAGES[id(page)] = (page, rows, protected)

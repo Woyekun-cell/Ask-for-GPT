@@ -84,7 +84,6 @@
     const rect = element.getBoundingClientRect();
     return Math.max(0, rect.top - innerHeight, -rect.bottom);
   }
-  function visible(record) { return distance(record.element) <= 650; }
   function valid(state, record, epoch, version) {
     return run === state && !state.restored && !state.paused && state.epoch === epoch && record.version === version &&
       record.element.isConnected && leaf(record.element) && pairable(record.element) && urlKey() === state.url && sourceText(record.element) === record.source;
@@ -275,7 +274,7 @@
       if (element.isConnected) continue;
       cancelRecord(state, record); releaseTranslation(state, record);
       state.sourceCharacters -= Array.from(record.source).length;
-      state.intersection?.unobserve(element); state.records.delete(element);
+      state.records.delete(element);
     }
   }
   function add(state, element) {
@@ -284,7 +283,7 @@
       if (!existing) return;
       cancelRecord(state, existing); releaseTranslation(state, existing);
       state.sourceCharacters -= Array.from(existing.source).length;
-      state.intersection?.unobserve(element); state.records.delete(element);
+      state.records.delete(element);
     }
     if (!eligible(element) || !pairable(element) || element.querySelector(BLOCKS)) { discard(); return; }
     if (complex(element)) {
@@ -297,7 +296,7 @@
       if (existing) {
         cancelRecord(state, existing); releaseTranslation(state, existing);
         state.sourceCharacters -= Array.from(existing.source).length;
-        state.intersection?.unobserve(element); state.records.delete(element);
+        state.records.delete(element);
       }
       return;
     }
@@ -319,7 +318,6 @@
     const record = { element, source: text, parts: chunks(text), cursor: 0, results: [], version: 0,
       ordinal: ++state.ordinal, host: null, target: null, activeId: null, error: null };
     state.records.set(element, record); state.sourceCharacters += Array.from(text).length;
-    state.intersection?.observe(element);
   }
   function scan(state, root) {
     if (root.nodeType !== 1 || owned(root) || !root.isConnected) return;
@@ -336,9 +334,16 @@
     if (run !== state || state.paused || state.restored || state.busy || state.unsupported) return;
     if (urlKey() !== state.url) { restore(state); return; }
     prune(state);
-    const record = [...state.records.values()].filter(value => value.cursor < value.parts.length && !value.error && !value.layoutBlocked &&
-      leaf(value.element) && pairable(value.element) && visible(value))
-      .sort((a, b) => distance(a.element) - distance(b.element) || a.ordinal - b.ordinal)[0];
+    // Start near the reader, then continue through the rest of the page without requiring a scroll.
+    let record, nearest = Infinity;
+    for (const candidate of state.records.values()) {
+      if (candidate.cursor >= candidate.parts.length || candidate.error || candidate.layoutBlocked) continue;
+      const offset = distance(candidate.element);
+      if (offset >= nearest || !leaf(candidate.element) || !pairable(candidate.element)) continue;
+      record = candidate;
+      nearest = offset;
+      if (nearest === 0) break;
+    }
     if (!record) { updateStatus(state, state.limited ? 'Page limit · results kept' : undefined); return; }
     const epoch = state.epoch, version = record.version;
     const token = {}; state.busy = token;
@@ -425,7 +430,6 @@
     const epoch = state.epoch;
     clearTimeout(state.scanTimer); state.scanTimer = null;
     state.pending.clear(); state.pendingOverflow = false;
-    state.intersection?.disconnect();
     for (const record of state.records.values()) {
       releaseTranslation(state, record);
     }
@@ -438,7 +442,7 @@
   function restore(state, notify = true) {
     if (run !== state || state.restored) return;
     state.restored = true; state.epoch += 1;
-    state.observer?.disconnect(); state.intersection?.disconnect(); clearTimeout(state.scanTimer);
+    state.observer?.disconnect(); clearTimeout(state.scanTimer);
     document.removeEventListener('visibilitychange', state.visibility);
     window.removeEventListener('pagehide', state.pagehide);
     window.removeEventListener('scroll', state.scroll);
@@ -531,7 +535,6 @@
         if (!chrome.runtime.lastError && state.colorRevision === 0) chooseColor(state, values?.[COLOR_KEY]);
       });
     } catch { /* A missing preference does not interrupt translation. */ }
-    state.intersection = typeof IntersectionObserver === 'function' ? new IntersectionObserver(() => drain(state), { rootMargin: '650px' }) : null;
     state.observer = new MutationObserver(records => {
       for (const record of records) {
         if (owned(record.target)) continue;

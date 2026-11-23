@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import json
 from pathlib import Path
@@ -42,6 +43,49 @@ class BatchContractTests(unittest.TestCase):
         for result in variants:
             with self.subTest(result=result), self.assertRaises(ProtocolFailure):
                 batch.validate_translations(result, self.segments)
+
+    def test_rich_text_pairs_move_whole_without_emptying_or_swallowing_formula(self):
+        segments = [{"id": "p0", "text": "Use <b0>red labels</b0>, <b2>italic labels</b2> and {v3}."}]
+        valid = "用<b2>斜体标记</b2>和<b0>红色标记</b0>，还有{v3}。"
+        self.assertEqual(batch.validate_translations([{"id": "p0", "text": valid}], segments)[0]["text"], valid)
+        for text in ("用<b2>斜体标记</b2>和<b0> </b0>红色标记，另有{v3}。",
+                     "用<b0>红色标记<b2>斜体标记</b2></b0>，还有{v3}。",
+                     "用<b2>斜体标记{v3}</b2>和<b0>红色标记</b0>。",
+                     "用<b0>红色标记<b2></b0>斜体标记</b2>和{v3}。"):
+            with self.subTest(text=text), self.assertRaisesRegex(ProtocolFailure, "formula_placeholder_mismatch"):
+                batch.validate_translations([{"id": "p0", "text": text}], segments)
+
+    def test_unembedded_font_name_keeps_explicit_bold_and_italic(self):
+        from babeldoc.format.pdf.document_il.il_version_1 import PdfFont
+        self.assertEqual(batch._source_font_emphasis(
+            PdfFont(name="ABCDEF+TimesNewRomanPS-SemiBoldItalicMT", bold=False, italic=False)), (True, True))
+        self.assertEqual(batch._source_font_emphasis(
+            PdfFont(name="Times-Roman", bold=False, italic=False)), (False, False))
+        self.assertEqual(batch._source_font_emphasis(
+            PdfFont(name="Helvetica-Oblique", bold=False, italic=False)), (False, True))
+
+    def test_synthetic_italic_targets_new_glyphs_at_final_baseline_only(self):
+        from babeldoc.format.pdf.document_il.backend.pdf_creater import CharacterRenderUnit
+        from babeldoc.format.pdf.document_il.il_version_1 import Box, GraphicState, PdfCharacter, PdfStyle
+        from babeldoc.format.pdf.document_il.midend.typesetting import TypesettingUnit
+        char = PdfCharacter(box=Box(x=10, y=20, x2=22, y2=32), xobj_id=-1,
+            pdf_style=PdfStyle(font_id="SourceHanSerifCN-Bold.ttf", font_size=12,
+                               graphic_state=GraphicState(passthrough_per_char_instruction="1 0 0 rg")))
+        unit = SimpleNamespace(unicode="中", original_font=SimpleNamespace(italic=True),
+                               font=SimpleNamespace(is_italic=False))
+        calls = []
+        def capture(draw, output, context):
+            calls.append(draw.char.pdf_style.graphic_state.passthrough_per_char_instruction)
+        with patch.object(TypesettingUnit, "render", return_value=([char], [], [])), \
+             patch.object(CharacterRenderUnit, "render", capture):
+            with batch._preserve_italic_fallback():
+                TypesettingUnit.render(unit)
+                char.box.y = 30
+                CharacterRenderUnit(char, 1).render(None, None)
+                # The original graphic state is shared and must never change.
+                self.assertEqual(char.pdf_style.graphic_state.passthrough_per_char_instruction, "1 0 0 rg")
+            CharacterRenderUnit(char, 1).render(None, None)
+        self.assertEqual(calls, ["1 0 0 rg 1 0 0.18 1 -5.400000 0 cm", "1 0 0 rg"])
 
     def test_page_limits_fail_before_request(self):
         for segments in [[{"id": f"p{i}", "text": "text"} for i in range(257)],
@@ -89,6 +133,66 @@ class BatchContractTests(unittest.TestCase):
         self.assertEqual(pages[0].pdf_paragraph[1].unicode, "SKIP")
         self.assertEqual(pages[1].pdf_paragraph[0].unicode, "译：Page two")
 
+    def test_numeric_batch_failure_retries_in_the_same_page_before_advancing(self):
+        source = "Page sixteen has 34 cases."
+        expected_context = {"before": "Previous original.", "after": ""}
+        attempts, completed = [], []
+        def translate(segments, context):
+            attempts.append((segments, context))
+            if len(attempts) <= 2:
+                failure = ProtocolFailure("batch_invalid")
+                failure.error_detail = "content"
+                raise failure
+            return [{"id": segments[0]["id"], "text": "第十六页有34例。"}]
+        translator = self.page_translator(translate)
+        translator.source_context_by_page = {15: expected_context}
+        translator.translate_engine.page_completed = completed.append
+        page = SimpleNamespace(page_number=15, pdf_font=[], pdf_xobject=[],
+                               pdf_paragraph=[SimpleNamespace(unicode=source)])
+        translator.process_page(page, None, None, SimpleNamespace(new_paragraph=object))
+        self.assertEqual(attempts, [([{"id": "p0", "text": source}], expected_context)] * 3)
+        self.assertEqual(page.pdf_paragraph[0].unicode, "第十六页有34例。")
+        self.assertEqual(completed, [15])
+        self.assertIsNone(translator.translate_engine.fatal_error)
+
+    def test_persistent_numeric_batch_failure_stops_after_bounded_attempts(self):
+        attempts, completed = [], []
+        def translate(segments):
+            attempts.append(segments)
+            failure = ProtocolFailure("batch_invalid")
+            failure.error_detail = "content"
+            raise failure
+        translator = self.page_translator(translate)
+        translator.translate_engine.page_completed = completed.append
+        page = SimpleNamespace(page_number=15, pdf_font=[], pdf_xobject=[],
+                               pdf_paragraph=[SimpleNamespace(unicode="The value is 34.")])
+        with self.assertRaises(ProtocolFailure) as caught:
+            translator.process_page(page, None, None, SimpleNamespace(new_paragraph=object))
+        self.assertEqual(len(attempts), 3)
+        self.assertEqual(caught.exception.error_detail, "content")
+        self.assertEqual(caught.exception.page_index, 15)
+        self.assertEqual(page.pdf_paragraph[0].unicode, "The value is 34.")
+        self.assertEqual(completed, [])
+
+    def test_cancel_between_numeric_attempts_does_not_start_another_batch(self):
+        attempts = []
+        def translate(segments):
+            attempts.append(segments)
+            failure = ProtocolFailure("batch_invalid")
+            failure.error_detail = "content"
+            raise failure
+        def check_cancelled():
+            if attempts:
+                raise asyncio.CancelledError()
+        translator = self.page_translator(translate)
+        translator.translation_config.raise_if_cancelled = check_cancelled
+        page = SimpleNamespace(page_number=15, pdf_font=[], pdf_xobject=[],
+                               pdf_paragraph=[SimpleNamespace(unicode="The value is 34.")])
+        with self.assertRaises(asyncio.CancelledError):
+            translator.process_page(page, None, None, SimpleNamespace(new_paragraph=object))
+        self.assertEqual(len(attempts), 1)
+        self.assertIsNone(translator.translate_engine.fatal_error)
+
     def test_bad_page_batch_does_not_partially_apply_or_fallback(self):
         def translate(segments):
             return [{"id": segments[0]["id"], "text": "First translated"},
@@ -118,7 +222,9 @@ class BatchContractTests(unittest.TestCase):
         self.assertIs(high_level.ILTranslator, original)
 
     def test_page_preserves_only_fixed_batch_error_detail(self):
+        attempts = []
         def translate(segments):
+            attempts.append(segments)
             failure = ProtocolFailure("batch_invalid")
             failure.error_detail = "formula"
             raise failure
@@ -127,6 +233,7 @@ class BatchContractTests(unittest.TestCase):
         with self.assertRaises(ProtocolFailure) as caught:
             translator.process_page(page, None, None, SimpleNamespace(new_paragraph=lambda: object()))
         self.assertEqual(getattr(caught.exception, "error_detail", None), "formula")
+        self.assertEqual(len(attempts), 1)
 
     def test_single_page_model_uses_explicit_cpu_without_global_provider_patch(self):
         self.assertTrue(hasattr(batch, "load_single_page_layout_model"), "single-page CPU model is missing")
@@ -215,7 +322,7 @@ class BatchHelperProtocolTests(unittest.TestCase):
     def make_helper(self, body):
         self.path.write_text("#!/usr/bin/env python3\nimport json,sys,time\n" + body, encoding='utf-8')
         self.path.chmod(0o700)
-        return worker.NativeHelper(self.path, "en", "zh-Hans", batch_timeout=2)
+        return worker.NativeHelper(self.path, "en", "zh-Hans", batch_timeout=10)
 
     def test_batch_launch_flag_and_jsonl_identity(self):
         body = "assert sys.argv[1:] == ['--gpt-batch']\nfor line in sys.stdin:\n r=json.loads(line); print(json.dumps({'id':r['id'],'translations':[{'id':s['id'],'text':'译文 '+s['text']} for s in r['segments']]}),flush=True)\n"
