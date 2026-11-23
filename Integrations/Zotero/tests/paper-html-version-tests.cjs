@@ -28,7 +28,12 @@ function fixture(t) {
     isFile() { return fs.statSync(this.path).isFile(); }
     get fileSize() { return fs.statSync(this.path).size; }
     get lastModifiedTime() { return fs.statSync(this.path).mtimeMs; }
-    createUnique(type, permissions) { assert.equal(type, 1); this.path = fs.mkdtempSync(this.path + '-'); fs.chmodSync(this.path, permissions); }
+    createUnique(type, permissions) {
+      assert.equal(type, 1);
+      assert.equal(permissions, 0o700);
+      this.path = fs.mkdtempSync(this.path + '-');
+      fs.chmodSync(this.path, permissions);
+    }
   }
   const source = {id: 1, key: 'SOURCE01', libraryID: 1, parentID: 2, isPDFAttachment: () => true};
   const children = [1];
@@ -73,8 +78,10 @@ function fixture(t) {
       }},
       File: {pathToFile: value => new File(value)},
       Attachments: {async importSnapshotFromFile(options) {
-        assert.equal(fs.statSync(path.dirname(options.file)).mode & 0o777, 0o700);
-        assert.equal(fs.statSync(options.file).mode & 0o777, 0o600);
+        if (process.platform !== 'win32') {
+          assert.equal(fs.statSync(path.dirname(options.file)).mode & 0o777, 0o700);
+          assert.equal(fs.statSync(options.file).mode & 0o777, 0o600);
+        }
         assert.deepEqual(fs.readFileSync(options.file), HTML);
         imports.push(options);
         const target = path.join(directory, path.basename(options.file));
@@ -86,7 +93,11 @@ function fixture(t) {
         return result;
       }},
       launchFile: value => launches.push(value)},
-    IOUtils: {write: (dest, bytes, options) => fs.promises.writeFile(dest, bytes, {mode: options.permissions, flag: 'wx'}),
+    IOUtils: {write: (dest, bytes, options) => {
+      assert.equal(options.mode, 'create');
+      assert.equal(options.permissions, 0o600);
+      return fs.promises.writeFile(dest, bytes, {mode: options.permissions, flag: 'wx'});
+    },
       remove: (dest, options) => fs.promises.rm(dest, {recursive: options.recursive, force: options.ignoreAbsent})},
     PDF, resolvePDF: () => ({pdfDocument: behavior.document || doc}),
     Components: {interfaces: {nsIFile: {DIRECTORY_TYPE: 1}}},
